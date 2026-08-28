@@ -1,0 +1,66 @@
+{
+  "agent_kind": "m3",
+  "evaluator": {
+    "model": "accounts/fireworks/models/minimax-m3",
+    "provider": "openai_compatible",
+    "transport": "https://api.fireworks.ai/inference/v1"
+  },
+  "execution": {
+    "host_proxy_owned_for_campaign": true,
+    "max_parallel_workers": 24,
+    "mode": "bounded-parallel-with-literal-port-task-concurrent",
+    "task_082_concurrent": true,
+    "task_082_solo": false
+  },
+  "finished_at": "2026-08-27T21:29:02.918615+00:00",
+  "max_steps": 500,
+  "model": "accounts/fireworks/models/minimax-m3",
+  "model_transport": "https://api.fireworks.ai/inference",
+  "osworld_commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154",
+  "purpose": "OSWorld-V2 agent benchmark on E2B",
+  "reasoning": {
+    "budget_tokens": 2048,
+    "mode": null
+  },
+  "records": [],
+  "release": "osworld-v2-2026.08.08",
+  "run_id": "0447872a-3773-4a33-b310-dee9842a33c3",
+  "schema_version": 1,
+  "summary": {
+    "all_recorded_sandboxes_unique": true,
+    "evaluator_ran_count": 0,
+    "expected_tasks": 24,
+    "mean_score": null,
+    "missing_or_invalid_task_ids": [
+      "003",
+      "008",
+      "011",
+      "015",
+      "019",
+      "026",
+      "035",
+      "038",
+      "046",
+      "048",
+      "050",
+      "053",
+      "057",
+      "059",
+      "067",
+      "069",
+      "079",
+      "082",
+      "083",
+      "092",
+      "093",
+      "103",
+      "105",
+      "107"
+    ],
+    "path_ok": 0,
+    "scored_tasks": 0,
+    "tasks": 0,
+    "unique_sandboxes": 0
+  },
+  "template": "osworld-v2-gnome:007fa754-617b-4ff0-957a-42ea4ecf5b8a"
+}

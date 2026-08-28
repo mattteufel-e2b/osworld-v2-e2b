@@ -1,0 +1,32 @@
+{
+  "description": "Twenty-four-task OSWorld 2 stress canary spanning E2B regressions, stateful and dynamic websites, streaming interaction, multiphase evaluation, model judges, high-volume tasks, media editors, and professional desktop applications.",
+  "osworld_commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154",
+  "release": "osworld-v2-2026.08.08",
+  "tasks": [
+    {"domain": "release", "id": "003"},
+    {"domain": "release", "id": "008"},
+    {"domain": "release", "id": "011"},
+    {"domain": "release", "id": "015"},
+    {"domain": "release", "id": "019"},
+    {"domain": "release", "id": "026"},
+    {"domain": "release", "id": "035"},
+    {"domain": "release", "id": "038"},
+    {"domain": "release", "id": "046"},
+    {"domain": "release", "id": "048"},
+    {"domain": "release", "id": "050"},
+    {"domain": "release", "id": "053"},
+    {"domain": "release", "id": "057"},
+    {"domain": "release", "id": "059"},
+    {"domain": "release", "id": "067"},
+    {"domain": "release", "id": "069"},
+    {"domain": "release", "id": "079"},
+    {"domain": "release", "id": "082"},
+    {"domain": "release", "id": "083"},
+    {"domain": "release", "id": "092"},
+    {"domain": "release", "id": "093"},
+    {"domain": "release", "id": "103"},
+    {"domain": "release", "id": "105"},
+    {"domain": "release", "id": "107"}
+  ],
+  "template": "osworld-v2-gnome:007fa754-617b-4ff0-957a-42ea4ecf5b8a"
+}

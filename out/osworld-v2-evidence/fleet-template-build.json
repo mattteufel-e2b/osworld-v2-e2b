@@ -1,0 +1,15 @@
+{
+  "base_image": "debian:bookworm@sha256:6ebd97fa83deb272194a2cf015b3d26a4d538e9ad3a7a79d544c8af5b0a01443",
+  "build_id": "05e2e83f-c579-4ea8-a0ec-87d00b58f964",
+  "cpu_count": 4,
+  "docker_install_sha256": "2df5f9e0f201a967f454191726d9254625f0f08030af3812c9edcdedc78e9693",
+  "generated_at": "2026-08-27T16:40:46.074657+00:00",
+  "memory_mb": 8192,
+  "minimum_root_free_gb": 80,
+  "name": "osworld-v2-fleet-base",
+  "reference": "osworld-v2-fleet-base:05e2e83f-c579-4ea8-a0ec-87d00b58f964",
+  "root_capacity_bytes": 97638326272,
+  "root_free_bytes": 96539947008,
+  "smoke_sandbox_id": "i98282moburh0aoqm3pe4",
+  "template_id": "ku3b9jncitrrs9l5odcv"
+}

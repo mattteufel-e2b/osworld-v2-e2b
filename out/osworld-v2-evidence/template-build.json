@@ -1,0 +1,35 @@
+{
+  "name": "osworld-v2-gnome",
+  "buildId": "007fa754-617b-4ff0-957a-42ea4ecf5b8a",
+  "templateId": "q5r3wzxbxwc1iodjs3pd",
+  "reference": "osworld-v2-gnome:007fa754-617b-4ff0-957a-42ea4ecf5b8a",
+  "cpuCount": 4,
+  "memoryMB": 8192,
+  "diskSizeMB": 103495,
+  "diskSizeMBRequested": 100000,
+  "diskSizeMBNote": "E2B project disk entitlement supplies root capacity; verified from the exact immutable build.",
+  "rootCapacityBytes": 103495585792,
+  "minimumRootCapacityGB": 100,
+  "smokeSandboxId": "ipseme20t4oilz2shz43l",
+  "networkPolicy": {
+    "allowPublicTraffic": false,
+    "denyOut": [
+      "10.0.0.0/8",
+      "100.64.0.0/10",
+      "169.254.0.0/16",
+      "172.16.0.0/12",
+      "192.0.0.0/24",
+      "192.168.0.0/16",
+      "198.18.0.0/15",
+      "224.0.0.0/4",
+      "240.0.0.0/4",
+      "::1/128",
+      "fc00::/7",
+      "fe80::/10",
+      "ff00::/8"
+    ]
+  },
+  "timestamp": "2026-08-27T19:33:29.819Z",
+  "lockfileRelease": "osworld-v2-2026.08.08",
+  "osworldServerCommit": "a3cc3f0c64e463f020d1a44780307e9b46cbcab1"
+}

@@ -1,0 +1,94 @@
+{
+  "probes": {
+    "1_baseline": {
+      "url": "https://80-i8hbhpdmgr7qm0hbr0pis.e2b.app/",
+      "headers_sent": {},
+      "status": 200,
+      "body": "Host: 80-i8hbhpdmgr7qm0hbr0pis.e2b.app\n",
+      "error": null
+    },
+    "2_mailhub_subdomain": {
+      "url": "https://mailhub.80-i8hbhpdmgr7qm0hbr0pis.e2b.app/",
+      "headers_sent": {},
+      "status": null,
+      "body": null,
+      "error": "SSLError(MaxRetryError(\"HTTPSConnectionPool(host='mailhub.80-i8hbhpdmgr7qm0hbr0pis.e2b.app', port=443): Max retries exceeded with url: / (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1010)')))\"))"
+    },
+    "3_curl_resolve_fallback": {
+      "url": "https://mailhub.80-i8hbhpdmgr7qm0hbr0pis.e2b.app/",
+      "resolved_ip": "34.102.227.47",
+      "stdout": "\nHTTP_CODE=000",
+      "stderr": "curl: (35) LibreSSL SSL_connect: SSL_ERROR_SYSCALL in connection to mailhub.80-i8hbhpdmgr7qm0hbr0pis.e2b.app:443 \n",
+      "returncode": 35
+    },
+    "6_tls_handshake_baseline": {
+      "ip": "34.102.227.47",
+      "servername": "80-i8hbhpdmgr7qm0hbr0pis.e2b.app",
+      "returncode": 0,
+      "raw_output": "CONNECTED(00000003)\n---\nCertificate chain\n 0 s:CN=e2b.app\n   i:C=US, O=Google Trust Services, CN=WR3\n   a:PKEY: RSA, 2048 (bit); sigalg: sha256WithRSAEncryption\n   v:NotBefore: Aug  3 23:18:11 2026 GMT; NotAfter: Nov  2 00:14:05 2026 GMT\n 1 s:C=US, O=Google Trust Services, CN=WR3\n   i:C=US, O=Google Trust Services LLC, CN=GTS Root R1\n   a:PKEY: RSA, 2048 (bit); sigalg: sha256WithRSAEncryption\n   v:NotBefore: Dec 13 09:00:00 2023 GMT; NotAfter: Feb 20 14:00:00 2029 GMT\n 2 s:C=US, O=Google Trust Services LLC, CN=GTS Root R1\n   i:C=BE, O=GlobalSign nv-sa, OU=Root CA, CN=GlobalSign Root CA\n   a:PKEY: RSA, 4096 (bit); sigalg: sha256WithRSAEncryption\n   v:NotBefore: Jun 19 00:00:42 2020 GMT; NotAfter: Jan 28 00:00:42 2028 GMT\n---\nServer certificate\n-----BEGIN CERTIFICATE-----\nMIIE+zCCA+OgAwIBAgIRALffydru5hg7EtJxhgatVDgwDQYJKoZIhvcNAQELBQAw\nOzELMAkGA1UEBhMCVVMxHjAcBgNVBAoTFUdvb2dsZSBUcnVzdCBTZXJ2aWNlczEM\nMAoGA1UEAxMDV1IzMB4XDTI2MDgwMzIzMTgxMVoXDTI2MTEwMjAwMTQwNVowEjEQ\nMA4GA1UEAxMHZTJiLmFwcDCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEB\nAMwshELUXF7KLzagbvn+QHlhqZaY8KsUgT7OGcfbWoUk/ahinEBGsjERIfClynX/\n3fVVbDED3dqZ0/bJ/Rj8WGdX0lAQfoQsDx000sXrZIWTmNSZ96ofNSB6kksgG7Gc\nc5FE5siBuLRxvrIG3YFczD49hAwA5uSSILojjGQN51QNCoDTp8GFiLzB5gKjFzR+\nb0sYwRqwKY7Nxj9zLN8eKYLrfafCr14gln3u0ntO4rCaB2QMnHWYLdQKCTonOgjc\nbjukSZz/FqwI6o2Dlt/G2rMQMkSYJxOL3oYdFs8zWxqFiTlpg5C4qHtDLSaauh+L\nGOMQ9/oOZ5hWY/XVdC7V1kECAwEAAaOCAiEwggIdMA4GA1UdDwEB/wQEAwIFoDAT\nBgNVHSUEDDAKBggrBgEFBQcDATAMBgNVHRMBAf8EAjAAMB0GA1UdDgQWBBQTXXnA\n7uwh",
+      "certificate_chain_offered": true,
+      "peer_certificate_subject": "CN=e2b.app",
+      "handshake_error": null
+    },
+    "7_tls_handshake_mailhub": {
+      "ip": "34.102.227.47",
+      "servername": "mailhub.80-i8hbhpdmgr7qm0hbr0pis.e2b.app",
+      "returncode": 1,
+      "raw_output": "CONNECTED(00000003)\n---\nno peer certificate available\n---\nNo client certificate CA names sent\nNegotiated TLS1.3 group: <NULL>\n---\nSSL handshake has read 0 bytes and written 1578 bytes\nVerification: OK\n---\nNew, (NONE), Cipher is (NONE)\nProtocol: TLSv1.3\nThis TLS version forbids renegotiation.\nCompression: NONE\nExpansion: NONE\nNo ALPN negotiated\nEarly data was not sent\nVerify return code: 0 (ok)\n---\n\nConnecting to 34.102.227.47\n805DB9F001000000:error:0A000126:SSL routines::unexpected eof while reading:ssl/record/rec_layer_s3.c:703:\n805DB9F001000000:error:0A000197:SSL routines:SSL_shutdown:shutdown while in init:ssl/ssl_lib.c:2804:",
+      "certificate_chain_offered": false,
+      "peer_certificate_subject": null,
+      "handshake_error": "error:0A000126:SSL routines::unexpected eof while reading:ssl/record/rec_layer_s3.c:703:"
+    },
+    "4a_restricted_no_token": {
+      "url": "https://80-i7tz073ana20mej5oeasc.e2b.app/",
+      "headers_sent": {},
+      "status": 403,
+      "body": "{\"sandboxId\":\"i7tz073ana20mej5oeasc\",\"message\":\"Sandbox is secured with traffic access token. Token header 'e2b-traffic-access-token' is missing\",\"code\":403}",
+      "error": null
+    },
+    "4b_restricted_correct_token": {
+      "url": "https://80-i7tz073ana20mej5oeasc.e2b.app/",
+      "headers_sent": {
+        "e2b-traffic-access-token": "<redacted, 64 chars>"
+      },
+      "status": 200,
+      "body": "Host: 80-i7tz073ana20mej5oeasc.e2b.app\n",
+      "error": null
+    },
+    "4c_restricted_wrong_token": {
+      "url": "https://80-i7tz073ana20mej5oeasc.e2b.app/",
+      "headers_sent": {
+        "e2b-traffic-access-token": "deadbeef"
+      },
+      "status": 403,
+      "body": "{\"sandboxId\":\"i7tz073ana20mej5oeasc\",\"message\":\"Sandbox is secured with traffic access token. Provided token in header 'e2b-traffic-access-token' is invalid\",\"code\":403}",
+      "error": null
+    },
+    "5_mailhub_with_token": {
+      "url": "https://mailhub.80-i7tz073ana20mej5oeasc.e2b.app/",
+      "headers_sent": {
+        "e2b-traffic-access-token": "<redacted, 64 chars>"
+      },
+      "status": null,
+      "body": null,
+      "error": "SSLError(MaxRetryError(\"HTTPSConnectionPool(host='mailhub.80-i7tz073ana20mej5oeasc.e2b.app', port=443): Max retries exceeded with url: / (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1010)')))\"))"
+    }
+  },
+  "sandbox_public": {
+    "sandbox_id": "i8hbhpdmgr7qm0hbr0pis",
+    "traffic_access_token": null,
+    "host": "80-i8hbhpdmgr7qm0hbr0pis.e2b.app",
+    "os_release": "PRETTY_NAME=\"Debian GNU/Linux 12 (bookworm)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"12\"\nVERSION=\"12 (bookworm)\"\nVERSION_CODENAME=bookworm\nID=debian\nHOME_URL=\"https://www.debian.org/\"\nSUPPORT_URL=\"https://www.debian.org/support\"\nBUG_REPORT_URL=\"https://bugs.debian.org/\""
+  },
+  "dns": {
+    "mailhub_host_resolves": true,
+    "resolved_ip": "34.102.227.47"
+  },
+  "sandbox_restricted": {
+    "sandbox_id": "i7tz073ana20mej5oeasc",
+    "traffic_access_token_present": true,
+    "host": "80-i7tz073ana20mej5oeasc.e2b.app"
+  },
+  "host_suffix_mode": "guest-resolver",
+  "decision_rationale": "probe 2 (https://mailhub.80-i8hbhpdmgr7qm0hbr0pis.e2b.app/) did not reach the guest this run: status=None, error='SSLError(MaxRetryError(\"HTTPSConnectionPool(host=\\'mailhub.80-i8hbhpdmgr7qm0hbr0pis.e2b.app\\', port=443): Max retries exceeded with url: / (Caused by SSLError(SSLEOFError(8, \\'[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1010)\\')))\"))'. DNS for the mailhub host resolved to '34.102.227.47' (mailhub_host_resolves=True), so DNS is not the cause. curl --resolve against that resolved IP reproduced the same failure (returncode=35, stderr='curl: (35) LibreSSL SSL_connect: SSL_ERROR_SYSCALL in connection to mailhub.80-i8hbhpdmgr7qm0hbr0pis.e2b.app:443'), confirming it independently of DNS. The primary signal is the contrast between requests that complete TLS+HTTP and those that don't: the token probes against the plain host (4a status=403 body='{\"sandboxId\":\"i7tz073ana20mej5oeasc\",\"message\":\"Sandbox is secured with traffic access token. Token header \\'e2b-traffic-access-token\\' is missing\",\"code\":403}'; 4c status=403 body='{\"sandboxId\":\"i7tz073ana20mej5oeasc\",\"message\":\"Sandbox is secured with traffic access token. Provided token in header \\'e2b-traffic-access-token\\' is invalid\",\"code\":403}') both receive real application-level HTTP 403 JSON from the sandbox's traffic-token gate, while the mailhub probes (2 error='SSLError(MaxRetryError(\"HTTPSConnectionPool(host=\\'mailhub.80-i8hbhpdmgr7qm0hbr0pis.e2b.app\\', port=443): Max retries exceeded with url: / (Caused by SSLError(SSLEOFError(8, \\'[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1010)\\')))\"))'; 5 error='SSLError(MaxRetryError(\"HTTPSConnectionPool(host=\\'mailhub.80-i7tz073ana20mej5oeasc.e2b.app\\', port=443): Max retries exceeded with url: / (Caused by SSLError(SSLEOFError(8, \\'[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1010)\\')))\"))') never get an HTTP response at all \u2014 they fail during the TLS handshake itself, before the request layer (and therefore before token checks) is ever reached. Direct TLS handshake probe (openssl s_client) this run: baseline SNI ('80-i8hbhpdmgr7qm0hbr0pis.e2b.app') certificate_chain_offered=True, peer_certificate_subject='CN=e2b.app'; mailhub SNI ('mailhub.80-i8hbhpdmgr7qm0hbr0pis.e2b.app') certificate_chain_offered=False, peer_certificate_subject=None, handshake_error='error:0A000126:SSL routines::unexpected eof while reading:ssl/record/rec_layer_s3.c:703:'. Task 9 must wire the guest-local dnsmasq + Host-preserving proxy fallback; WEBSITE_HOST_SUFFIX=osworld.internal."
+}

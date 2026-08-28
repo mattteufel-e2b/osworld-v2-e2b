@@ -1,0 +1,59 @@
+{
+ "api_ready_seconds": 168.4,
+ "first_boot_api_ready_seconds": 153.1,
+ "generated_at": "2026-08-28T00:40:18.054547+00:00",
+ "gitlab_external_url": "http://gitlab.127.0.0.1.nip.io",
+ "gitlab_image": "gitlab/gitlab-ce:18.7.0-ce.0",
+ "gitlab_port": 8929,
+ "gitlab_url": "http://gitlab.127.0.0.1.nip.io:8090",
+ "harness_url_api_check": null,
+ "host_ingress_api_status": 200,
+ "host_proxy": {
+  "note": "host proxy exited immediately (see .hostmap_proxy.log)",
+  "pid": null,
+  "port": 8090,
+  "ports": [
+   8090
+  ],
+  "running": false
+ },
+ "ingress_host": "8929-i561t8hctfztdo6gj8bwf.e2b.app",
+ "repo": {
+  "url": "https://github.com/Task-Web/gitlab"
+ },
+ "restricted_ingress": true,
+ "runs": [
+  {
+   "api_ready_seconds": 0.1,
+   "at": "2026-08-26T18:05:28.690244+00:00",
+   "sandbox_created_this_run": false
+  },
+  {
+   "api_ready_seconds": 0.3,
+   "at": "2026-08-26T19:12:18.431970+00:00",
+   "sandbox_created_this_run": false
+  },
+  {
+   "api_ready_seconds": 0.2,
+   "at": "2026-08-26T22:46:20.331513+00:00",
+   "sandbox_created_this_run": false
+  },
+  {
+   "api_ready_seconds": 167.4,
+   "at": "2026-08-27T16:45:59.691631+00:00",
+   "sandbox_created_this_run": true
+  },
+  {
+   "api_ready_seconds": 168.4,
+   "at": "2026-08-28T00:40:18.054519+00:00",
+   "sandbox_created_this_run": true
+  }
+ ],
+ "sandbox_created_this_run": true,
+ "sandbox_id": "i561t8hctfztdo6gj8bwf",
+ "sandbox_memory_mb": 8192,
+ "schema_version": 2,
+ "template": "osworld-v2-fleet-base:05e2e83f-c579-4ea8-a0ec-87d00b58f964",
+ "token_committed": false,
+ "token_file": "services/.gitlab-token (local, gitignored)"
+}

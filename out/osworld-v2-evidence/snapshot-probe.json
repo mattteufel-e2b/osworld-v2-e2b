@@ -1,0 +1,23 @@
+{
+  "all_checks_passed": true,
+  "checks": {
+    "initial guest from template": true,
+    "marker absent after template reset": true,
+    "marker survives snapshot revert": true,
+    "marker written in sandbox A": true,
+    "restricted ingress at start": true,
+    "restricted ingress preserved on revert": true,
+    "restricted ingress preserved on template reset": true,
+    "revert created a new sandbox": true,
+    "revert source is the snapshot": true,
+    "sandbox A resumed after snapshot": true,
+    "snapshot saved": true,
+    "unsaved name falls back to template": true
+  },
+  "sandbox_a": "irtrdv6yya42bsnhru2h4",
+  "sandbox_b": "izc9c1hpjawn574q956t3",
+  "sandbox_c": "i08h4gc2jizn53cfql77o",
+  "snapshot_id": "dpm79hkiquv4bzvkm75f:default",
+  "template": "osworld-v2-gnome:817519a3-6360-475f-bdae-77780743d6a5",
+  "tested_at": "2026-08-26T22:24:25.621267+00:00"
+}

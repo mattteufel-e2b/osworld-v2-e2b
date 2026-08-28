@@ -1,0 +1,18 @@
+{
+  "release": "osworld-v2-2026.08.08",
+  "template": "osworld-v2-gnome:007fa754-617b-4ff0-957a-42ea4ecf5b8a",
+  "osworld_commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154",
+  "description": "Fixed 10-task environment-path validation sample for the OSWorld-V2 -> E2B conversion. IDs only; no task content. Mix: at least 6 domains, 2 website tasks (069, 005), 1 GitLab task (026), and 1 audio task (067). Use full-manifest.json for complete release coverage, including task_082.",
+  "tasks": [
+    {"id": "003", "domain": "gimp"},
+    {"id": "030", "domain": "vscode"},
+    {"id": "004", "domain": "libreoffice_impress"},
+    {"id": "027", "domain": "excel"},
+    {"id": "097", "domain": "zotero"},
+    {"id": "103", "domain": "freecad"},
+    {"id": "067", "domain": "musescore"},
+    {"id": "026", "domain": "gitlab"},
+    {"id": "069", "domain": "chrome"},
+    {"id": "005", "domain": "chrome"}
+  ]
+}

@@ -1,0 +1,666 @@
+{
+  "aggregate": {
+    "cpu_cores_used_peak": 1.541,
+    "cpu_count": 4,
+    "cpu_saturated": false,
+    "cpu_used_pct_of_allocation_peak": 38.52,
+    "disk_pressure": false,
+    "disk_total_bytes": 103495585792,
+    "disk_total_gib": 96.388,
+    "disk_used_bytes_peak": 7363870720,
+    "disk_used_gib_peak": 6.858,
+    "mem_pressure": false,
+    "mem_total_bytes": 8343158784,
+    "mem_total_gib": 7.77,
+    "mem_used_bytes_peak": 818216960,
+    "mem_used_gib_peak": 0.762,
+    "profiled_sandbox_count": 15
+  },
+  "flags": [],
+  "generated_at": "2026-08-28T01:06:59.395524+00:00",
+  "per_sandbox": [
+    {
+      "samples": [
+        {
+          "cpu_count": 4,
+          "cpu_used_pct": 23.24,
+          "disk_total": 103495585792,
+          "disk_used": 7363870720,
+          "mem_cache": 522014720,
+          "mem_total": 8343158784,
+          "mem_used": 812187648,
+          "timestamp": "2026-08-28T00:16:20+00:00"
+        }
+      ],
+      "sandbox_id": "ia4fwi2xwwqglyr7t4vv8",
+      "summary": {
+        "cpu_cores_used_peak": 0.93,
+        "cpu_count": 4,
+        "cpu_saturated": false,
+        "cpu_used_pct_of_allocation_mean": 23.24,
+        "cpu_used_pct_of_allocation_peak": 23.24,
+        "disk_pressure": false,
+        "disk_total_bytes": 103495585792,
+        "disk_total_gib": 96.388,
+        "disk_used_bytes_peak": 7363870720,
+        "disk_used_gib_mean": 6.858,
+        "disk_used_gib_peak": 6.858,
+        "duration_seconds": 0.0,
+        "mem_cache_bytes_peak": 522014720,
+        "mem_pressure": false,
+        "mem_total_bytes": 8343158784,
+        "mem_total_gib": 7.77,
+        "mem_used_bytes_peak": 812187648,
+        "mem_used_gib_mean": 0.756,
+        "mem_used_gib_peak": 0.756,
+        "sample_count": 1
+      }
+    },
+    {
+      "samples": [
+        {
+          "cpu_count": 4,
+          "cpu_used_pct": 37.11,
+          "disk_total": 103495585792,
+          "disk_used": 7363784704,
+          "mem_cache": 520646656,
+          "mem_total": 8343158784,
+          "mem_used": 806608896,
+          "timestamp": "2026-08-28T00:16:15+00:00"
+        }
+      ],
+      "sandbox_id": "ihhdpkiyzsjn4148qy79g",
+      "summary": {
+        "cpu_cores_used_peak": 1.484,
+        "cpu_count": 4,
+        "cpu_saturated": false,
+        "cpu_used_pct_of_allocation_mean": 37.11,
+        "cpu_used_pct_of_allocation_peak": 37.11,
+        "disk_pressure": false,
+        "disk_total_bytes": 103495585792,
+        "disk_total_gib": 96.388,
+        "disk_used_bytes_peak": 7363784704,
+        "disk_used_gib_mean": 6.858,
+        "disk_used_gib_peak": 6.858,
+        "duration_seconds": 0.0,
+        "mem_cache_bytes_peak": 520646656,
+        "mem_pressure": false,
+        "mem_total_bytes": 8343158784,
+        "mem_total_gib": 7.77,
+        "mem_used_bytes_peak": 806608896,
+        "mem_used_gib_mean": 0.751,
+        "mem_used_gib_peak": 0.751,
+        "sample_count": 1
+      }
+    },
+    {
+      "samples": [
+        {
+          "cpu_count": 4,
+          "cpu_used_pct": 20.86,
+          "disk_total": 103495585792,
+          "disk_used": 7363870720,
+          "mem_cache": 522027008,
+          "mem_total": 8343158784,
+          "mem_used": 814735360,
+          "timestamp": "2026-08-28T00:16:20+00:00"
+        }
+      ],
+      "sandbox_id": "iho962o0ne1f64sv0su11",
+      "summary": {
+        "cpu_cores_used_peak": 0.834,
+        "cpu_count": 4,
+        "cpu_saturated": false,
+        "cpu_used_pct_of_allocation_mean": 20.86,
+        "cpu_used_pct_of_allocation_peak": 20.86,
+        "disk_pressure": false,
+        "disk_total_bytes": 103495585792,
+        "disk_total_gib": 96.388,
+        "disk_used_bytes_peak": 7363870720,
+        "disk_used_gib_mean": 6.858,
+        "disk_used_gib_peak": 6.858,
+        "duration_seconds": 0.0,
+        "mem_cache_bytes_peak": 522027008,
+        "mem_pressure": false,
+        "mem_total_bytes": 8343158784,
+        "mem_total_gib": 7.77,
+        "mem_used_bytes_peak": 814735360,
+        "mem_used_gib_mean": 0.759,
+        "mem_used_gib_peak": 0.759,
+        "sample_count": 1
+      }
+    },
+    {
+      "samples": [
+        {
+          "cpu_count": 4,
+          "cpu_used_pct": 19.67,
+          "disk_total": 103495585792,
+          "disk_used": 7362027520,
+          "mem_cache": 519630848,
+          "mem_total": 8343158784,
+          "mem_used": 811958272,
+          "timestamp": "2026-08-28T00:16:20+00:00"
+        }
+      ],
+      "sandbox_id": "i81e47rv8si6myuzjjz9q",
+      "summary": {
+        "cpu_cores_used_peak": 0.787,
+        "cpu_count": 4,
+        "cpu_saturated": false,
+        "cpu_used_pct_of_allocation_mean": 19.67,
+        "cpu_used_pct_of_allocation_peak": 19.67,
+        "disk_pressure": false,
+        "disk_total_bytes": 103495585792,
+        "disk_total_gib": 96.388,
+        "disk_used_bytes_peak": 7362027520,
+        "disk_used_gib_mean": 6.856,
+        "disk_used_gib_peak": 6.856,
+        "duration_seconds": 0.0,
+        "mem_cache_bytes_peak": 519630848,
+        "mem_pressure": false,
+        "mem_total_bytes": 8343158784,
+        "mem_total_gib": 7.77,
+        "mem_used_bytes_peak": 811958272,
+        "mem_used_gib_mean": 0.756,
+        "mem_used_gib_peak": 0.756,
+        "sample_count": 1
+      }
+    },
+    {
+      "samples": [],
+      "sandbox_id": "id004bog8lt4avurflu39",
+      "summary": {
+        "sample_count": 0
+      }
+    },
+    {
+      "samples": [],
+      "sandbox_id": "idy2frk5nvbf305af090z",
+      "summary": {
+        "sample_count": 0
+      }
+    },
+    {
+      "samples": [
+        {
+          "cpu_count": 4,
+          "cpu_used_pct": 36.48,
+          "disk_total": 103495585792,
+          "disk_used": 7362002944,
+          "mem_cache": 518606848,
+          "mem_total": 8343158784,
+          "mem_used": 806019072,
+          "timestamp": "2026-08-28T00:16:20+00:00"
+        }
+      ],
+      "sandbox_id": "ie0fqj0dzu7fphnkbhwyo",
+      "summary": {
+        "cpu_cores_used_peak": 1.459,
+        "cpu_count": 4,
+        "cpu_saturated": false,
+        "cpu_used_pct_of_allocation_mean": 36.48,
+        "cpu_used_pct_of_allocation_peak": 36.48,
+        "disk_pressure": false,
+        "disk_total_bytes": 103495585792,
+        "disk_total_gib": 96.388,
+        "disk_used_bytes_peak": 7362002944,
+        "disk_used_gib_mean": 6.856,
+        "disk_used_gib_peak": 6.856,
+        "duration_seconds": 0.0,
+        "mem_cache_bytes_peak": 518606848,
+        "mem_pressure": false,
+        "mem_total_bytes": 8343158784,
+        "mem_total_gib": 7.77,
+        "mem_used_bytes_peak": 806019072,
+        "mem_used_gib_mean": 0.751,
+        "mem_used_gib_peak": 0.751,
+        "sample_count": 1
+      }
+    },
+    {
+      "samples": [],
+      "sandbox_id": "igqg1hldfeh87mim9ict1",
+      "summary": {
+        "sample_count": 0
+      }
+    },
+    {
+      "samples": [],
+      "sandbox_id": "idcx549a574rdx5virw1k",
+      "summary": {
+        "sample_count": 0
+      }
+    },
+    {
+      "samples": [],
+      "sandbox_id": "io5yjpiq1st8ssaj0knyv",
+      "summary": {
+        "sample_count": 0
+      }
+    },
+    {
+      "samples": [
+        {
+          "cpu_count": 4,
+          "cpu_used_pct": 38.52,
+          "disk_total": 103495585792,
+          "disk_used": 7363784704,
+          "mem_cache": 520503296,
+          "mem_total": 8343158784,
+          "mem_used": 807755776,
+          "timestamp": "2026-08-28T00:54:30+00:00"
+        }
+      ],
+      "sandbox_id": "i79kjrsc5rth9p3g14m8q",
+      "summary": {
+        "cpu_cores_used_peak": 1.541,
+        "cpu_count": 4,
+        "cpu_saturated": false,
+        "cpu_used_pct_of_allocation_mean": 38.52,
+        "cpu_used_pct_of_allocation_peak": 38.52,
+        "disk_pressure": false,
+        "disk_total_bytes": 103495585792,
+        "disk_total_gib": 96.388,
+        "disk_used_bytes_peak": 7363784704,
+        "disk_used_gib_mean": 6.858,
+        "disk_used_gib_peak": 6.858,
+        "duration_seconds": 0.0,
+        "mem_cache_bytes_peak": 520503296,
+        "mem_pressure": false,
+        "mem_total_bytes": 8343158784,
+        "mem_total_gib": 7.77,
+        "mem_used_bytes_peak": 807755776,
+        "mem_used_gib_mean": 0.752,
+        "mem_used_gib_peak": 0.752,
+        "sample_count": 1
+      }
+    },
+    {
+      "samples": [
+        {
+          "cpu_count": 4,
+          "cpu_used_pct": 25.7,
+          "disk_total": 103495585792,
+          "disk_used": 7362027520,
+          "mem_cache": 519184384,
+          "mem_total": 8343158784,
+          "mem_used": 815755264,
+          "timestamp": "2026-08-28T00:54:35+00:00"
+        }
+      ],
+      "sandbox_id": "iih46q4x5znbztumkmbcq",
+      "summary": {
+        "cpu_cores_used_peak": 1.028,
+        "cpu_count": 4,
+        "cpu_saturated": false,
+        "cpu_used_pct_of_allocation_mean": 25.7,
+        "cpu_used_pct_of_allocation_peak": 25.7,
+        "disk_pressure": false,
+        "disk_total_bytes": 103495585792,
+        "disk_total_gib": 96.388,
+        "disk_used_bytes_peak": 7362027520,
+        "disk_used_gib_mean": 6.856,
+        "disk_used_gib_peak": 6.856,
+        "duration_seconds": 0.0,
+        "mem_cache_bytes_peak": 519184384,
+        "mem_pressure": false,
+        "mem_total_bytes": 8343158784,
+        "mem_total_gib": 7.77,
+        "mem_used_bytes_peak": 815755264,
+        "mem_used_gib_mean": 0.76,
+        "mem_used_gib_peak": 0.76,
+        "sample_count": 1
+      }
+    },
+    {
+      "samples": [],
+      "sandbox_id": "i1znoxxzfnbgrcpnathp2",
+      "summary": {
+        "sample_count": 0
+      }
+    },
+    {
+      "samples": [
+        {
+          "cpu_count": 4,
+          "cpu_used_pct": 24.1,
+          "disk_total": 103495585792,
+          "disk_used": 7363870720,
+          "mem_cache": 521981952,
+          "mem_total": 8343158784,
+          "mem_used": 816406528,
+          "timestamp": "2026-08-28T00:54:35+00:00"
+        }
+      ],
+      "sandbox_id": "iwmg6kb9gmwahtj094v4x",
+      "summary": {
+        "cpu_cores_used_peak": 0.964,
+        "cpu_count": 4,
+        "cpu_saturated": false,
+        "cpu_used_pct_of_allocation_mean": 24.1,
+        "cpu_used_pct_of_allocation_peak": 24.1,
+        "disk_pressure": false,
+        "disk_total_bytes": 103495585792,
+        "disk_total_gib": 96.388,
+        "disk_used_bytes_peak": 7363870720,
+        "disk_used_gib_mean": 6.858,
+        "disk_used_gib_peak": 6.858,
+        "duration_seconds": 0.0,
+        "mem_cache_bytes_peak": 521981952,
+        "mem_pressure": false,
+        "mem_total_bytes": 8343158784,
+        "mem_total_gib": 7.77,
+        "mem_used_bytes_peak": 816406528,
+        "mem_used_gib_mean": 0.76,
+        "mem_used_gib_peak": 0.76,
+        "sample_count": 1
+      }
+    },
+    {
+      "samples": [
+        {
+          "cpu_count": 4,
+          "cpu_used_pct": 33.02,
+          "disk_total": 103495585792,
+          "disk_used": 7363846144,
+          "mem_cache": 521474048,
+          "mem_total": 8343158784,
+          "mem_used": 806060032,
+          "timestamp": "2026-08-28T00:54:30+00:00"
+        }
+      ],
+      "sandbox_id": "ii08mzesn5ikv1i8q1666",
+      "summary": {
+        "cpu_cores_used_peak": 1.321,
+        "cpu_count": 4,
+        "cpu_saturated": false,
+        "cpu_used_pct_of_allocation_mean": 33.02,
+        "cpu_used_pct_of_allocation_peak": 33.02,
+        "disk_pressure": false,
+        "disk_total_bytes": 103495585792,
+        "disk_total_gib": 96.388,
+        "disk_used_bytes_peak": 7363846144,
+        "disk_used_gib_mean": 6.858,
+        "disk_used_gib_peak": 6.858,
+        "duration_seconds": 0.0,
+        "mem_cache_bytes_peak": 521474048,
+        "mem_pressure": false,
+        "mem_total_bytes": 8343158784,
+        "mem_total_gib": 7.77,
+        "mem_used_bytes_peak": 806060032,
+        "mem_used_gib_mean": 0.751,
+        "mem_used_gib_peak": 0.751,
+        "sample_count": 1
+      }
+    },
+    {
+      "samples": [],
+      "sandbox_id": "ihhsww06mc0m8rncnwc0t",
+      "summary": {
+        "sample_count": 0
+      }
+    },
+    {
+      "samples": [
+        {
+          "cpu_count": 4,
+          "cpu_used_pct": 18.29,
+          "disk_total": 103495585792,
+          "disk_used": 7362027520,
+          "mem_cache": 519614464,
+          "mem_total": 8343158784,
+          "mem_used": 817897472,
+          "timestamp": "2026-08-28T00:54:35+00:00"
+        }
+      ],
+      "sandbox_id": "ipqba55jjab27m5pgxtxo",
+      "summary": {
+        "cpu_cores_used_peak": 0.732,
+        "cpu_count": 4,
+        "cpu_saturated": false,
+        "cpu_used_pct_of_allocation_mean": 18.29,
+        "cpu_used_pct_of_allocation_peak": 18.29,
+        "disk_pressure": false,
+        "disk_total_bytes": 103495585792,
+        "disk_total_gib": 96.388,
+        "disk_used_bytes_peak": 7362027520,
+        "disk_used_gib_mean": 6.856,
+        "disk_used_gib_peak": 6.856,
+        "duration_seconds": 0.0,
+        "mem_cache_bytes_peak": 519614464,
+        "mem_pressure": false,
+        "mem_total_bytes": 8343158784,
+        "mem_total_gib": 7.77,
+        "mem_used_bytes_peak": 817897472,
+        "mem_used_gib_mean": 0.762,
+        "mem_used_gib_peak": 0.762,
+        "sample_count": 1
+      }
+    },
+    {
+      "samples": [
+        {
+          "cpu_count": 4,
+          "cpu_used_pct": 29.13,
+          "disk_total": 103495585792,
+          "disk_used": 7363870720,
+          "mem_cache": 522031104,
+          "mem_total": 8343158784,
+          "mem_used": 806572032,
+          "timestamp": "2026-08-28T00:54:30+00:00"
+        }
+      ],
+      "sandbox_id": "ituzru412s84p6dqfvse9",
+      "summary": {
+        "cpu_cores_used_peak": 1.165,
+        "cpu_count": 4,
+        "cpu_saturated": false,
+        "cpu_used_pct_of_allocation_mean": 29.13,
+        "cpu_used_pct_of_allocation_peak": 29.13,
+        "disk_pressure": false,
+        "disk_total_bytes": 103495585792,
+        "disk_total_gib": 96.388,
+        "disk_used_bytes_peak": 7363870720,
+        "disk_used_gib_mean": 6.858,
+        "disk_used_gib_peak": 6.858,
+        "duration_seconds": 0.0,
+        "mem_cache_bytes_peak": 522031104,
+        "mem_pressure": false,
+        "mem_total_bytes": 8343158784,
+        "mem_total_gib": 7.77,
+        "mem_used_bytes_peak": 806572032,
+        "mem_used_gib_mean": 0.751,
+        "mem_used_gib_peak": 0.751,
+        "sample_count": 1
+      }
+    },
+    {
+      "samples": [
+        {
+          "cpu_count": 4,
+          "cpu_used_pct": 22.92,
+          "disk_total": 103495585792,
+          "disk_used": 7362027520,
+          "mem_cache": 519581696,
+          "mem_total": 8343158784,
+          "mem_used": 818216960,
+          "timestamp": "2026-08-28T00:54:35+00:00"
+        }
+      ],
+      "sandbox_id": "ii0bkb0echpz2zsbj76v2",
+      "summary": {
+        "cpu_cores_used_peak": 0.917,
+        "cpu_count": 4,
+        "cpu_saturated": false,
+        "cpu_used_pct_of_allocation_mean": 22.92,
+        "cpu_used_pct_of_allocation_peak": 22.92,
+        "disk_pressure": false,
+        "disk_total_bytes": 103495585792,
+        "disk_total_gib": 96.388,
+        "disk_used_bytes_peak": 7362027520,
+        "disk_used_gib_mean": 6.856,
+        "disk_used_gib_peak": 6.856,
+        "duration_seconds": 0.0,
+        "mem_cache_bytes_peak": 519581696,
+        "mem_pressure": false,
+        "mem_total_bytes": 8343158784,
+        "mem_total_gib": 7.77,
+        "mem_used_bytes_peak": 818216960,
+        "mem_used_gib_mean": 0.762,
+        "mem_used_gib_peak": 0.762,
+        "sample_count": 1
+      }
+    },
+    {
+      "samples": [
+        {
+          "cpu_count": 4,
+          "cpu_used_pct": 16.03,
+          "disk_total": 103495585792,
+          "disk_used": 7363870720,
+          "mem_cache": 521973760,
+          "mem_total": 8343158784,
+          "mem_used": 815591424,
+          "timestamp": "2026-08-28T00:54:35+00:00"
+        }
+      ],
+      "sandbox_id": "i9oyarastugu8v0u2gqgj",
+      "summary": {
+        "cpu_cores_used_peak": 0.641,
+        "cpu_count": 4,
+        "cpu_saturated": false,
+        "cpu_used_pct_of_allocation_mean": 16.03,
+        "cpu_used_pct_of_allocation_peak": 16.03,
+        "disk_pressure": false,
+        "disk_total_bytes": 103495585792,
+        "disk_total_gib": 96.388,
+        "disk_used_bytes_peak": 7363870720,
+        "disk_used_gib_mean": 6.858,
+        "disk_used_gib_peak": 6.858,
+        "duration_seconds": 0.0,
+        "mem_cache_bytes_peak": 521973760,
+        "mem_pressure": false,
+        "mem_total_bytes": 8343158784,
+        "mem_total_gib": 7.77,
+        "mem_used_bytes_peak": 815591424,
+        "mem_used_gib_mean": 0.76,
+        "mem_used_gib_peak": 0.76,
+        "sample_count": 1
+      }
+    },
+    {
+      "samples": [
+        {
+          "cpu_count": 4,
+          "cpu_used_pct": 34.16,
+          "disk_total": 103495585792,
+          "disk_used": 7363846144,
+          "mem_cache": 521277440,
+          "mem_total": 8343158784,
+          "mem_used": 806809600,
+          "timestamp": "2026-08-28T00:54:30+00:00"
+        }
+      ],
+      "sandbox_id": "iave1n8x5a7mq18wpfyzd",
+      "summary": {
+        "cpu_cores_used_peak": 1.366,
+        "cpu_count": 4,
+        "cpu_saturated": false,
+        "cpu_used_pct_of_allocation_mean": 34.16,
+        "cpu_used_pct_of_allocation_peak": 34.16,
+        "disk_pressure": false,
+        "disk_total_bytes": 103495585792,
+        "disk_total_gib": 96.388,
+        "disk_used_bytes_peak": 7363846144,
+        "disk_used_gib_mean": 6.858,
+        "disk_used_gib_peak": 6.858,
+        "duration_seconds": 0.0,
+        "mem_cache_bytes_peak": 521277440,
+        "mem_pressure": false,
+        "mem_total_bytes": 8343158784,
+        "mem_total_gib": 7.77,
+        "mem_used_bytes_peak": 806809600,
+        "mem_used_gib_mean": 0.751,
+        "mem_used_gib_peak": 0.751,
+        "sample_count": 1
+      }
+    },
+    {
+      "samples": [
+        {
+          "cpu_count": 4,
+          "cpu_used_pct": 24.96,
+          "disk_total": 103495585792,
+          "disk_used": 7363870720,
+          "mem_cache": 521900032,
+          "mem_total": 8343158784,
+          "mem_used": 811544576,
+          "timestamp": "2026-08-28T00:54:35+00:00"
+        }
+      ],
+      "sandbox_id": "itsf4kqjee11wbdl4o3el",
+      "summary": {
+        "cpu_cores_used_peak": 0.998,
+        "cpu_count": 4,
+        "cpu_saturated": false,
+        "cpu_used_pct_of_allocation_mean": 24.96,
+        "cpu_used_pct_of_allocation_peak": 24.96,
+        "disk_pressure": false,
+        "disk_total_bytes": 103495585792,
+        "disk_total_gib": 96.388,
+        "disk_used_bytes_peak": 7363870720,
+        "disk_used_gib_mean": 6.858,
+        "disk_used_gib_peak": 6.858,
+        "duration_seconds": 0.0,
+        "mem_cache_bytes_peak": 521900032,
+        "mem_pressure": false,
+        "mem_total_bytes": 8343158784,
+        "mem_total_gib": 7.77,
+        "mem_used_bytes_peak": 811544576,
+        "mem_used_gib_mean": 0.756,
+        "mem_used_gib_peak": 0.756,
+        "sample_count": 1
+      }
+    },
+    {
+      "samples": [],
+      "sandbox_id": "iwiawo7jlc0un59tciwr5",
+      "summary": {
+        "sample_count": 0
+      }
+    },
+    {
+      "samples": [],
+      "sandbox_id": "ihbo8ca1jvg3oo0zdo7is",
+      "summary": {
+        "sample_count": 0
+      }
+    }
+  ],
+  "profiled_sandbox_count": 15,
+  "recommendation": {
+    "cpu_note": "Keep the tested allocation unless CPU saturated. cpu_saturated=False",
+    "disk_note": "Disk is an E2B account-tier capacity constraint, not a template knob: the workload's peak used must fit the tier's disk_total.",
+    "disk_peak_used_gib": 6.858,
+    "disk_tier_capacity_gib": 96.388,
+    "memory_basis": "max(1.25 x measured peak, peak + 1 GiB), rounded up to 128 MiB",
+    "observed_cpu_count": 4,
+    "recommended_memory_gib": 1.875,
+    "recommended_memory_mib": 1920
+  },
+  "requested_sandbox_count": 24,
+  "resource_requirements_complete": false,
+  "sandboxes_without_metrics": [
+    "id004bog8lt4avurflu39",
+    "idy2frk5nvbf305af090z",
+    "igqg1hldfeh87mim9ict1",
+    "idcx549a574rdx5virw1k",
+    "io5yjpiq1st8ssaj0knyv",
+    "i1znoxxzfnbgrcpnathp2",
+    "ihhsww06mc0m8rncnwc0t",
+    "iwiawo7jlc0un59tciwr5",
+    "ihbo8ca1jvg3oo0zdo7is"
+  ],
+  "schema": "e2b-resource-requirements/v1"
+}

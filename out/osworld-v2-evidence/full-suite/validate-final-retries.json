@@ -1,0 +1,142 @@
+{
+  "execution": {
+    "host_proxy_owned_for_campaign": true,
+    "max_parallel_workers": 3,
+    "mode": "bounded-parallel-with-literal-port-task-solo",
+    "task_082_solo": true
+  },
+  "finished_at": "2026-08-27T19:19:12.338138+00:00",
+  "host": {
+    "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "python": "3.14.6"
+  },
+  "manifest": {
+    "description": "Targeted retry of high-wave setup transients plus literal-port task 082 on the final immutable guest build.",
+    "osworld_commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154",
+    "release": "osworld-v2-2026.08.08",
+    "tasks": [
+      {
+        "domain": "release",
+        "id": "057"
+      },
+      {
+        "domain": "release",
+        "id": "072"
+      },
+      {
+        "domain": "release",
+        "id": "082"
+      },
+      {
+        "domain": "release",
+        "id": "093"
+      }
+    ],
+    "template": "osworld-v2-gnome:96d6bc77-8195-4a01-9393-8d307b22b518"
+  },
+  "osworld_commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154",
+  "purpose": "environment-path validation; not an agent benchmark score",
+  "records": [
+    {
+      "cause": "environment-setup",
+      "detail": "EnvironmentSetupError: Custom task setup failed: Expecting value: line 1 column 1 (char 0)",
+      "domain": "release",
+      "duration_seconds": 55.4,
+      "evaluator_ran": false,
+      "finished_at": "2026-08-27T19:15:36.651501+00:00",
+      "id": "057",
+      "multiphase": false,
+      "path_status": "PATH_FAIL",
+      "related_apps": [
+        "chrome",
+        "terminal",
+        "vscode"
+      ],
+      "score": null,
+      "stage": "reset",
+      "started_at": "2026-08-27T19:14:41.263929+00:00",
+      "task_class": "Task057"
+    },
+    {
+      "cause": "environment-setup",
+      "detail": "EnvironmentSetupError: Custom task setup failed: Expecting value: line 1 column 1 (char 0)",
+      "domain": "release",
+      "duration_seconds": 56.0,
+      "evaluator_ran": false,
+      "finished_at": "2026-08-27T19:15:37.219191+00:00",
+      "id": "072",
+      "multiphase": false,
+      "path_status": "PATH_FAIL",
+      "related_apps": [
+        "chrome"
+      ],
+      "score": null,
+      "stage": "reset",
+      "started_at": "2026-08-27T19:14:41.262750+00:00",
+      "task_class": "Task072"
+    },
+    {
+      "domain": "release",
+      "duration_seconds": 72.0,
+      "evaluator_ran": true,
+      "finished_at": "2026-08-27T19:19:12.338138+00:00",
+      "id": "082",
+      "multiphase": false,
+      "observation": {
+        "accessibility_characters": 242104,
+        "screenshot_bytes": 74125
+      },
+      "path_status": "PATH_PASS",
+      "related_apps": [
+        "chrome",
+        "mailhub",
+        "terminal"
+      ],
+      "sandbox": {
+        "generation": 2,
+        "id": "i17q54ueawp6v4zteqbue",
+        "restricted_ingress": true,
+        "template": "osworld-v2-gnome:96d6bc77-8195-4a01-9393-8d307b22b518",
+        "unique_in_run": true
+      },
+      "score": 0.0,
+      "stage": "complete",
+      "started_at": "2026-08-27T19:18:00.377104+00:00",
+      "task_class": "Task082"
+    },
+    {
+      "cause": "environment-setup",
+      "detail": "EnvironmentSetupError: Custom task setup failed: Command verification failed: {\"error\":\"\",\"output\":\"\",\"returncode\":0,\"status\":\"verification_failed\",\"verification\":\"failed\",\"wait_time\":30}",
+      "domain": "release",
+      "duration_seconds": 193.9,
+      "evaluator_ran": false,
+      "finished_at": "2026-08-27T19:17:55.140435+00:00",
+      "id": "093",
+      "multiphase": false,
+      "path_status": "PATH_FAIL",
+      "related_apps": [
+        "libreoffice_impress",
+        "openboard"
+      ],
+      "score": null,
+      "stage": "reset",
+      "started_at": "2026-08-27T19:14:41.261520+00:00",
+      "task_class": "Task093"
+    }
+  ],
+  "release": "osworld-v2-2026.08.08",
+  "run_id": "4533d98c-0f81-42d7-beb0-a1e64e7df6cc",
+  "schema_version": 1,
+  "started_at": "2026-08-27T19:14:41.261520+00:00",
+  "summary": {
+    "all_recorded_sandboxes_unique": true,
+    "evaluator_ran_count": 1,
+    "expected_tasks": 4,
+    "missing_or_invalid_task_ids": [],
+    "path_failures": 3,
+    "path_passes": 1,
+    "tasks": 4,
+    "unique_sandboxes": 1
+  },
+  "template": "osworld-v2-gnome:96d6bc77-8195-4a01-9393-8d307b22b518"
+}

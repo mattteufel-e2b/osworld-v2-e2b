@@ -1,0 +1,80 @@
+{
+  "sandbox_id": "i2l2uftdzsuf88xjkp1qm",
+  "template": "default (no template arg passed to Sandbox.create())",
+  "template_note": "Brief specified ubuntu:22.04; the actual E2B default base template is Debian 12 (bookworm) per /etc/os-release observed in-sandbox. Ran checks against the true default rather than substituting a template name that doesn't exist.",
+  "checks": {
+    "apt": {
+      "exit": 0,
+      "out_tail": "l:amd64 (1.5-2) ...\r\nSetting up ffmpeg (7:5.1.9-0+deb12u1) ...\r\nSetting up libqt5quick5:amd64 (5.15.8+dfsg-3) ...\r\nSetting up libgtk-3-common (3.24.38-2~deb12u3) ...\r\nSetting up gsettings-desktop-schemas (43.0-1) ...\r\nSetting up libpoppler-qt5-1:amd64 (22.12.0-2+deb12u3) ...\r\nSetting up libqt5svg5:amd64 (5.15.8-3) ...\r\nSetting up qml-module-qtquick-window2:amd64 (5.15.8+dfsg-3) ...\r\nSetting up qml-module-qtquick-layouts:amd64 (5.15.8+dfsg-3) ...\r\nSetting up libqt5waylandcompositor5:amd64 (5.15.8-2) ...\r\nSetting up qml-module-qtquick2:amd64 (5.15.8+dfsg-3) ...\r\nSetting up qml-module-qtquick-privatewidgets:amd64 (5.15.8-2) ...\r\nSetting up qtwayland5:amd64 (5.15.8-2) ...\r\nSetting up qml-module-qtgraphicaleffects:amd64 (5.15.8-2) ...\r\nSetting up qml-module-qtquick-dialogs:amd64 (5.15.8-2) ...\r\nSetting up qml-module-qtquick-controls:amd64 (5.15.8-2) ...\r\nSetting up musescore3 (3.2.3+dfsg2-16) ...\r\nSetting up liblwp-protocol-https-perl (6.10-1) ...\r\nSetting up libwww-perl (6.68-1) ...\r\nSetting up libxml-parser-perl (2.46-4+deb12u1) ...\r\nSetting up libxml-twig-perl (1:3.52-2) ...\r\nSetting up libnet-dbus-perl (1.2.0-2) ...\r\nProcessing triggers for shared-mime-info (2.2-1) ...\r\nProcessing triggers for fontconfig (2.14.1-4) ...\r\nProcessing triggers for hicolor-icon-theme (0.17-2) ...\r\nProcessing triggers for libglib2.0-0:amd64 (2.74.6-2) ...\r\nSetting up libgtk-3-0:amd64 (3.24.38-2~deb12u3) ...\r\nProcessing triggers for libc-bin (2.36-9+deb12u3) ...\r\nSetting up libgtk-3-bin (3.24.38-2~deb12u3) ...\r\nSetting up qt5-gtk-platformtheme:amd64 (5.15.8+dfsg-11+deb12u3) ...\r\nSetting up at-spi2-core (2.46.0-5) ...\r\nProcessing triggers for sgml-base (1.31) ...\r\nSetting up polkitd (122-3) ...\r\nCreating group 'polkitd' with GID 996.\r\r\nCreating user 'polkitd' (polkit) with UID 996 and GID 996.\r\r\ninvoke-rc.d: policy-rc.d denied execution of reload.\r\nSetting up rtkit (0.13-5) ...\r\ninvoke-rc.d: policy-rc.d denied execution of force-reload.\r\nProcessing triggers for dbus (1.14.10-1~deb12u1) ...\r\n",
+      "err_tail": "",
+      "elapsed_s": 42.58,
+      "user": "root"
+    },
+    "pulse_start": {
+      "exit": 0,
+      "out_tail": "Server String: /tmp/pulse-ThGTzewlowWm/native\nLibrary Protocol Version: 35\nServer Protocol Version: 35\nIs Local: yes\nClient Index: 0\nTile Size: 65472\nUser Name: user\nHost Name: e2b.local\nServer Name: pulseaudio\nServer Version: 16.1\nDefault Sample Specification: s16le 2ch 44100Hz\nDefault Channel Map: front-left,front-right\nDefault Sink: auto_null\nDefault Source: auto_null.monitor\nCookie: ee36:c584\n",
+      "err_tail": "",
+      "elapsed_s": 1.29,
+      "user": "user"
+    },
+    "null_sink": {
+      "exit": 0,
+      "out_tail": "17\n",
+      "err_tail": "",
+      "elapsed_s": 0.07,
+      "user": "user"
+    },
+    "sink_list": {
+      "exit": 0,
+      "out_tail": "1\tvsink\tmodule-null-sink.c\ts16le 2ch 44100Hz\tIDLE\n",
+      "err_tail": "",
+      "elapsed_s": 0.07,
+      "user": "user"
+    },
+    "tone_render": {
+      "exit": 0,
+      "out_tail": "  Stream #0:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 44100 Hz, mono, s16, 705 kb/s\n    Metadata:\n      encoder         : Lavc59.37.100 pcm_s16le\nsize=       2kB time=00:00:00.02 bitrate= 732.5kbits/s speed=N/A    \rsize=      86kB time=00:00:01.00 bitrate= 706.2kbits/s speed= 651x    \nvideo:0kB audio:86kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 0.088435%\nTONE_OK\n-rw-r--r-- 1 user user 88278 Aug 26 05:54 /tmp/tone.wav\n",
+      "err_tail": "",
+      "elapsed_s": 0.25,
+      "user": "user"
+    },
+    "play_to_sink": {
+      "exit": 0,
+      "out_tail": "EXIT:0\n",
+      "err_tail": "",
+      "elapsed_s": 2.04,
+      "user": "user"
+    },
+    "alsa_devices": {
+      "exit": 0,
+      "out_tail": "cat: /proc/asound/cards: No such file or directory\n---\ncat: /proc/asound/version: No such file or directory\n",
+      "err_tail": "",
+      "elapsed_s": 0.09,
+      "user": "user"
+    },
+    "snd_dummy": {
+      "exit": 0,
+      "out_tail": "modprobe: FATAL: Module snd-dummy not found in directory /lib/modules/6.1.158+\nEXIT:1\n",
+      "err_tail": "",
+      "elapsed_s": 0.12,
+      "user": "root"
+    },
+    "musescore_render": {
+      "exit": 0,
+      "out_tail": " - Note; Pitch: D5 (sounding as D5); Duration: Dotted Half (on 13\u2030 off 1000\u2030); Voice: 1; Measure: 22; Beat: 1; Staff: 1\n   - Note; Pitch: D5 (sounding as D5); Duration: Dotted Half (on 0\u2030 off 950\u2030); Voice: 1; Measure: 23; Beat: 1; Staff: 1\n ... which will continue to sound.\nMIDI collision detected: newly played...\n - Note; Pitch: E5 (sounding as E5); Duration: 32nd (on 0\u2030 off 950\u2030); Voice: 1; Measure: 22; Beat: 2.25; Staff: 2\n ... interferes with already playing...\n - Note; Pitch: E5 (sounding as E5); Duration: Dotted Half (on 27\u2030 off 1000\u2030); Voice: 1; Measure: 22; Beat: 1; Staff: 1\n   - Note; Pitch: E5 (sounding as E5); Duration: Dotted Half (on 0\u2030 off 950\u2030); Voice: 1; Measure: 23; Beat: 1; Staff: 1\n ... which will continue to sound.\nMIDI collision detected: newly played...\n - Note; Pitch: A5 (sounding as A5); Duration: 32nd (on 0\u2030 off 950\u2030); Voice: 1; Measure: 22; Beat: 2.5; Staff: 2\n ... interferes with already playing...\n - Note; Pitch: A5 (sounding as A5); Duration: Dotted Half (on 40\u2030 off 1000\u2030); Voice: 1; Measure: 22; Beat: 1; Staff: 1\n   - Note; Pitch: A5 (sounding as A5); Duration: Dotted Half (on 0\u2030 off 950\u2030); Voice: 1; Measure: 23; Beat: 1; Staff: 1\n ... which will continue to sound.\nSoundFont(/usr/share/mscore3-3.2/sound/sf3/MuseScore_General.sf3) Sample(Piano MF B1(L)) start(0) startloop(328404) endloop(478112) end(478118) smaller than SoundFont 2.04 spec chapter 7.10 recommendation\nSoundFont(/usr/share/mscore3-3.2/sound/sf3/MuseScore_General.sf3) Sample(Piano MF B1(R)) start(0) startloop(328404) endloop(478112) end(478118) smaller than SoundFont 2.04 spec chapter 7.10 recommendation\nQMutex: destroying locked mutex\nQMutex: destroying locked mutex\n... success!\nMUSESCORE_OK\n-rw-r--r-- 1 user user 8474668 Aug 26 05:54 /tmp/out.wav\n",
+      "err_tail": "",
+      "elapsed_s": 5.11,
+      "user": "user"
+    }
+  },
+  "gate": {
+    "null_sink_ok": true,
+    "play_to_sink_ok": true,
+    "tone_render_ok": true,
+    "musescore_render_ok": true,
+    "gate_pass": true,
+    "hard_blocker": false,
+    "verdict": "audio is userspace-viable: PulseAudio null sink + paplay work, and both the ffmpeg tone-render and full MuseScore headless render succeeded (ALSA/snd-dummy absent as expected, not required)",
+    "reaper_note": "REAPER is not apt-packaged; not exercised in this spike. Needs its own .deb in the guest template (Task 8). MuseScore + paplay-to-null-sink is the go/no-go signal for this spike per the brief."
+  }
+}

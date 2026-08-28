@@ -1,0 +1,64 @@
+{
+  "execution": {
+    "host_proxy_owned_for_campaign": true,
+    "max_parallel_workers": 1,
+    "mode": "bounded-parallel-with-literal-port-task-solo",
+    "task_082_solo": true
+  },
+  "finished_at": "2026-08-27T18:51:15.076989+00:00",
+  "host": {
+    "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "python": "3.14.6"
+  },
+  "manifest": {
+    "description": "Targeted 100 GB nested-Docker and literal-port validation for task 082.",
+    "osworld_commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154",
+    "release": "osworld-v2-2026.08.08",
+    "tasks": [
+      {
+        "domain": "release",
+        "id": "082"
+      }
+    ],
+    "template": "osworld-v2-gnome:aa73e348-31e7-449d-a8c5-a08efa3be9ed"
+  },
+  "osworld_commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154",
+  "purpose": "environment-path validation; not an agent benchmark score",
+  "records": [
+    {
+      "cause": "environment/reset",
+      "detail": "KeyboardInterrupt: ",
+      "domain": "release",
+      "duration_seconds": 273.2,
+      "evaluator_ran": false,
+      "finished_at": "2026-08-27T18:51:15.076989+00:00",
+      "id": "082",
+      "multiphase": false,
+      "path_status": "PATH_FAIL",
+      "related_apps": [
+        "chrome",
+        "mailhub",
+        "terminal"
+      ],
+      "score": null,
+      "stage": "reset",
+      "started_at": "2026-08-27T18:46:41.915989+00:00",
+      "task_class": "Task082"
+    }
+  ],
+  "release": "osworld-v2-2026.08.08",
+  "run_id": "dc77be8d-d8ee-4e76-8463-d6eb1dbf46dd",
+  "schema_version": 1,
+  "started_at": "2026-08-27T18:46:41.915989+00:00",
+  "summary": {
+    "all_recorded_sandboxes_unique": true,
+    "evaluator_ran_count": 0,
+    "expected_tasks": 1,
+    "missing_or_invalid_task_ids": [],
+    "path_failures": 1,
+    "path_passes": 0,
+    "tasks": 1,
+    "unique_sandboxes": 0
+  },
+  "template": "osworld-v2-gnome:aa73e348-31e7-449d-a8c5-a08efa3be9ed"
+}

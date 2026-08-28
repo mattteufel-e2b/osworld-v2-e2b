@@ -1,0 +1,7 @@
+# Host-side dependencies for the OSWorld-V2 E2B boundary layer (relay.py +
+# desktop_env.providers.e2b). Installed alongside the pinned OSWorld-V2 checkout's
+# own requirements (pyproject: requires-python >=3.12). Pins mirror hark's proven
+# 1.0 set, with e2b bumped to 2.34.0 to match the toolchain the osworld-v2-gnome
+# guest template was built with (template/package.json).
+aiohttp==3.14.1
+e2b==2.34.0

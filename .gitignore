@@ -1,0 +1,34 @@
+.DS_Store
+.env
+.env.*
+__pycache__/
+*.py[cod]
+node_modules/
+.pytest_cache/
+.ruff_cache/
+.venv/
+
+# Guest template build-local receipt (canonical copy: out/osworld-v2-evidence/).
+template/results/
+
+# Fetched upstream osworld-server payload. Upstream publishes no license, so it
+# is fetched at build-prep time (template/fetch_server.sh), never committed.
+template/files/server/main.py
+template/files/server/src/
+
+# Service fleet runtime state + secrets (sandbox ids, per-sandbox traffic
+# tokens, the run-local GitLab PAT). Never commit these.
+services/.runtime.json
+services/.gitlab-token
+services/.hostmap_proxy.pid
+services/.hostmap_proxy.log
+
+# Pinned upstream checkout and gated task data: downloaded per-consumer after
+# accepting the upstream dataset gate, never committed.
+OSWorld-V2/
+tasks/
+
+# Raw run outputs (trajectories, screenshots, failure traces) may quote gated
+# task content; only the redacted receipts in out/osworld-v2-evidence/ are
+# committed.
+out/osworld-v2-raw/

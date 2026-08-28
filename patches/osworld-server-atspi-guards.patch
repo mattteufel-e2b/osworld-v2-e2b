@@ -1,0 +1,89 @@
+diff -ruN a/src/accessibility.py b/src/accessibility.py
+--- a/src/accessibility.py	2026-08-27 20:24:28
++++ b/src/accessibility.py	2026-08-27 20:24:28
+@@ -137,7 +137,9 @@
+ 
+ 
+ def create_atspi_node(node: Accessible, depth: int = 0, flag: Optional[str] = None) -> _Element:
+-    node_name = node.name
++    # AT-SPI can transiently expose defunct objects whose name or role is
++    # None. Preserve the rest of the tree instead of failing the endpoint.
++    node_name = node.name or ""
+     attribute_dict: Dict[str, Any] = {"name": node_name}
+ 
+     states: List[StateType] = node.getState().get_states()
+@@ -206,13 +208,13 @@
+     try:
+         action: ATAction = node.queryAction()
+         for i in range(action.nActions):
+-            action_name: str = action.getName(i).replace(" ", "-")
+-            attribute_dict[f"{{{accessibility_ns_map_ubuntu['act']}}}{action_name}_desc"] = action.getDescription(i)
+-            attribute_dict[f"{{{accessibility_ns_map_ubuntu['act']}}}{action_name}_kb"] = action.getKeyBinding(i)
++            action_name: str = (action.getName(i) or "unknown").replace(" ", "-")
++            attribute_dict[f"{{{accessibility_ns_map_ubuntu['act']}}}{action_name}_desc"] = action.getDescription(i) or ""
++            attribute_dict[f"{{{accessibility_ns_map_ubuntu['act']}}}{action_name}_kb"] = action.getKeyBinding(i) or ""
+     except NotImplementedError:
+         pass
+ 
+-    raw_role_name: str = node.getRoleName().strip()
++    raw_role_name: str = (node.getRoleName() or "").strip()
+     node_role_name = (raw_role_name or "unknown").replace(" ", "-")
+ 
+     if not flag:
+diff -ruN a/src/http_routes.py b/src/http_routes.py
+--- a/src/http_routes.py	2026-08-27 20:24:28
++++ b/src/http_routes.py	2026-08-27 20:24:28
+@@ -46,6 +46,26 @@
+     return None
+ 
+ 
++def _process_has_exact_path_argument(path: Path) -> bool:
++    """Return true when a live Linux process was launched with this file.
++
++    Some applications keep a generic title while asynchronously loading a
++    large document (Shotcut reports ``Untitled - Shotcut``). In that case the
++    exact argv path is stronger evidence than waiting forever for a title that
++    never contains the filename.
++    """
++    if platform.system() != "Linux":
++        return False
++    needle = os.fsencode(str(path))
++    for cmdline in Path("/proc").glob("[0-9]*/cmdline"):
++        try:
++            if needle in cmdline.read_bytes().split(b"\0"):
++                return True
++        except (OSError, PermissionError):
++            continue
++    return False
++
++
+ def _xfce_wallpaper_properties() -> List[str]:
+     try:
+         output = subprocess.check_output(
+@@ -634,6 +654,12 @@
+                             app.logger.warning("wmctrl command is not ready, will keep retrying...")
+                             wmctrl_failed_once = True
+ 
++                    # Allow the desktop app a short launch grace, then accept
++                    # an exact argv match when its window title is generic.
++                    if time.time() - start_time >= 5 and _process_has_exact_path_argument(path_obj):
++                        window_found = True
++                        break
++
+                 time.sleep(1)
+ 
+             if window_found:
+@@ -760,6 +786,13 @@
+         screen_width, screen_height = get_screen_size()
+         start_command = [
+             "ffmpeg",
++            # Nothing drains stderr while recording, so keep it near-silent:
++            # default banner + per-half-second stats fill the 64KB pipe buffer in
++            # minutes and block ffmpeg's write, silently freezing the capture.
++            "-hide_banner",
++            "-nostats",
++            "-loglevel",
++            "error",
+             "-y",
+             *build_ffmpeg_capture_input_args(screen_width, screen_height, 30, draw_mouse=True),
+             "-c:v",

@@ -1,0 +1,12 @@
+{
+  "description": "Focused exact-build environment-path validation for the Overleaf redirect, nested Docker Compose, and OpenBoard compatibility fixes.",
+  "osworld_commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154",
+  "release": "osworld-v2-2026.08.08",
+  "tasks": [
+    {"domain": "release", "id": "057"},
+    {"domain": "release", "id": "072"},
+    {"domain": "release", "id": "082"},
+    {"domain": "release", "id": "093"}
+  ],
+  "template": "osworld-v2-gnome:007fa754-617b-4ff0-957a-42ea4ecf5b8a"
+}

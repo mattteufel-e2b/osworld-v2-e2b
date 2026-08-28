@@ -1,0 +1,82 @@
+{
+  "release": "osworld-v2-2026.08.08",
+  "osworld_commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154",
+  "unit": "GB",
+  "semantics": "Each value is the minimum usable root-filesystem capacity requested through OSWorld's prepare_volume/finalize_volume provider hooks. E2B satisfies it with sandbox root disk capacity; it is not an E2B persistent Volume mount.",
+  "task_count": 18,
+  "maximum_required_gb": 100,
+  "tasks": [
+    {
+      "id": "023",
+      "required_root_capacity_gb": 32
+    },
+    {
+      "id": "030",
+      "required_root_capacity_gb": 50
+    },
+    {
+      "id": "033",
+      "required_root_capacity_gb": 50
+    },
+    {
+      "id": "047",
+      "required_root_capacity_gb": 60
+    },
+    {
+      "id": "048",
+      "required_root_capacity_gb": 64
+    },
+    {
+      "id": "057",
+      "required_root_capacity_gb": 80
+    },
+    {
+      "id": "059",
+      "required_root_capacity_gb": 60
+    },
+    {
+      "id": "061",
+      "required_root_capacity_gb": 50
+    },
+    {
+      "id": "064",
+      "required_root_capacity_gb": 50
+    },
+    {
+      "id": "071",
+      "required_root_capacity_gb": 50
+    },
+    {
+      "id": "076",
+      "required_root_capacity_gb": 60
+    },
+    {
+      "id": "077",
+      "required_root_capacity_gb": 60
+    },
+    {
+      "id": "080",
+      "required_root_capacity_gb": 60
+    },
+    {
+      "id": "082",
+      "required_root_capacity_gb": 100
+    },
+    {
+      "id": "088",
+      "required_root_capacity_gb": 60
+    },
+    {
+      "id": "091",
+      "required_root_capacity_gb": 60
+    },
+    {
+      "id": "107",
+      "required_root_capacity_gb": 80
+    },
+    {
+      "id": "108",
+      "required_root_capacity_gb": 80
+    }
+  ]
+}

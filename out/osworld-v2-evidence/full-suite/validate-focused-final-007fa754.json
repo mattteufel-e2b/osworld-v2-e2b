@@ -1,0 +1,169 @@
+{
+  "execution": {
+    "host_proxy_owned_for_campaign": true,
+    "max_parallel_workers": 4,
+    "mode": "bounded-parallel-with-literal-port-task-solo",
+    "task_082_solo": true
+  },
+  "finished_at": "2026-08-27T19:37:22.364747+00:00",
+  "host": {
+    "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "python": "3.14.6"
+  },
+  "manifest": {
+    "description": "Focused exact-build environment-path validation for the Overleaf redirect, nested Docker Compose, and OpenBoard compatibility fixes.",
+    "osworld_commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154",
+    "release": "osworld-v2-2026.08.08",
+    "tasks": [
+      {
+        "domain": "release",
+        "id": "057"
+      },
+      {
+        "domain": "release",
+        "id": "072"
+      },
+      {
+        "domain": "release",
+        "id": "082"
+      },
+      {
+        "domain": "release",
+        "id": "093"
+      }
+    ],
+    "template": "osworld-v2-gnome:007fa754-617b-4ff0-957a-42ea4ecf5b8a"
+  },
+  "osworld_commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154",
+  "purpose": "environment-path validation; not an agent benchmark score",
+  "records": [
+    {
+      "domain": "release",
+      "duration_seconds": 52.1,
+      "evaluator_ran": true,
+      "finished_at": "2026-08-27T19:36:14.998922+00:00",
+      "id": "057",
+      "multiphase": false,
+      "observation": {
+        "accessibility_characters": 216521,
+        "screenshot_bytes": 46491
+      },
+      "path_status": "PATH_PASS",
+      "related_apps": [
+        "chrome",
+        "terminal",
+        "vscode"
+      ],
+      "sandbox": {
+        "generation": 2,
+        "id": "iizwjjbqopb85888sij2g",
+        "restricted_ingress": true,
+        "template": "osworld-v2-gnome:007fa754-617b-4ff0-957a-42ea4ecf5b8a",
+        "unique_in_run": true
+      },
+      "score": 0.0,
+      "stage": "complete",
+      "started_at": "2026-08-27T19:35:22.898374+00:00",
+      "task_class": "Task057"
+    },
+    {
+      "domain": "release",
+      "duration_seconds": 36.5,
+      "evaluator_ran": true,
+      "finished_at": "2026-08-27T19:35:59.407753+00:00",
+      "id": "072",
+      "multiphase": false,
+      "observation": {
+        "accessibility_characters": 218570,
+        "screenshot_bytes": 52149
+      },
+      "path_status": "PATH_PASS",
+      "related_apps": [
+        "chrome"
+      ],
+      "sandbox": {
+        "generation": 2,
+        "id": "i9iykl65gp9hrhxai5isl",
+        "restricted_ingress": true,
+        "template": "osworld-v2-gnome:007fa754-617b-4ff0-957a-42ea4ecf5b8a",
+        "unique_in_run": true
+      },
+      "score": 0.0,
+      "stage": "complete",
+      "started_at": "2026-08-27T19:35:22.899297+00:00",
+      "task_class": "Task072"
+    },
+    {
+      "domain": "release",
+      "duration_seconds": 62.1,
+      "evaluator_ran": true,
+      "finished_at": "2026-08-27T19:37:22.364747+00:00",
+      "id": "082",
+      "multiphase": false,
+      "observation": {
+        "accessibility_characters": 239278,
+        "screenshot_bytes": 32152
+      },
+      "path_status": "PATH_PASS",
+      "related_apps": [
+        "chrome",
+        "mailhub",
+        "terminal"
+      ],
+      "sandbox": {
+        "generation": 2,
+        "id": "i4qtm7isfheaw6mskppyk",
+        "restricted_ingress": true,
+        "template": "osworld-v2-gnome:007fa754-617b-4ff0-957a-42ea4ecf5b8a",
+        "unique_in_run": true
+      },
+      "score": 0.0,
+      "stage": "complete",
+      "started_at": "2026-08-27T19:36:20.260193+00:00",
+      "task_class": "Task082"
+    },
+    {
+      "domain": "release",
+      "duration_seconds": 43.2,
+      "evaluator_ran": true,
+      "finished_at": "2026-08-27T19:36:06.132928+00:00",
+      "id": "093",
+      "multiphase": false,
+      "observation": {
+        "accessibility_characters": 590857,
+        "screenshot_bytes": 252920
+      },
+      "path_status": "PATH_PASS",
+      "related_apps": [
+        "libreoffice_impress",
+        "openboard"
+      ],
+      "sandbox": {
+        "generation": 2,
+        "id": "iv14ae0s8zifhhapw0ghj",
+        "restricted_ingress": true,
+        "template": "osworld-v2-gnome:007fa754-617b-4ff0-957a-42ea4ecf5b8a",
+        "unique_in_run": true
+      },
+      "score": 0.0,
+      "stage": "complete",
+      "started_at": "2026-08-27T19:35:22.897317+00:00",
+      "task_class": "Task093"
+    }
+  ],
+  "release": "osworld-v2-2026.08.08",
+  "run_id": "40722acc-1149-4522-b20e-56a246075b0d",
+  "schema_version": 1,
+  "started_at": "2026-08-27T19:35:22.897317+00:00",
+  "summary": {
+    "all_recorded_sandboxes_unique": true,
+    "evaluator_ran_count": 4,
+    "expected_tasks": 4,
+    "missing_or_invalid_task_ids": [],
+    "path_failures": 0,
+    "path_passes": 4,
+    "tasks": 4,
+    "unique_sandboxes": 4
+  },
+  "template": "osworld-v2-gnome:007fa754-617b-4ff0-957a-42ea4ecf5b8a"
+}

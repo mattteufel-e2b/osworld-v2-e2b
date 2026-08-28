@@ -1,0 +1,114 @@
+{
+  "fidelity_threshold": 0.2,
+  "gate": {
+    "every_evaluator_ran_without_infrastructure_error": true,
+    "fidelity_flag_count": 0,
+    "fidelity_flagged_task_ids": [],
+    "rung_status": "PASS"
+  },
+  "generated_at": "2026-08-26T22:40:18.451364+00:00",
+  "osworld_commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154",
+  "purpose": "No-agent (initial-state) evaluator scores per task, extracted from the Task 11 environment-path validation receipts. A no-agent score is the task evaluator's partial-credit result with NO agent actions applied; a value above the fidelity threshold means the task's initial state already satisfies part of its own rubric (a fidelity question, not a failure).",
+  "release": "osworld-v2-2026.08.08",
+  "rung": 5,
+  "schema_version": 1,
+  "source_receipts": {
+    "run1": "out/osworld-v2-evidence/validate-run1.json",
+    "run1_id": "942778c2-72d5-490d-9afd-4bb17f53ad90",
+    "run2": "out/osworld-v2-evidence/validate-run2.json",
+    "run2_id": "5e4eb56f-6250-4477-8469-b66ca7f9cc76"
+  },
+  "tasks": [
+    {
+      "domain": "gimp",
+      "evaluator_ran_both_runs": true,
+      "fidelity_flag": false,
+      "id": "003",
+      "initial_state_partial_credit_max": 0.0,
+      "no_agent_score_run1": 0.0,
+      "no_agent_score_run2": 0.0
+    },
+    {
+      "domain": "vscode",
+      "evaluator_ran_both_runs": true,
+      "fidelity_flag": false,
+      "id": "030",
+      "initial_state_partial_credit_max": 0.0,
+      "no_agent_score_run1": 0.0,
+      "no_agent_score_run2": 0.0
+    },
+    {
+      "domain": "libreoffice_impress",
+      "evaluator_ran_both_runs": true,
+      "fidelity_flag": false,
+      "id": "004",
+      "initial_state_partial_credit_max": 0.0,
+      "no_agent_score_run1": 0.0,
+      "no_agent_score_run2": 0.0
+    },
+    {
+      "domain": "excel",
+      "evaluator_ran_both_runs": true,
+      "fidelity_flag": false,
+      "id": "027",
+      "initial_state_partial_credit_max": 0.0,
+      "no_agent_score_run1": 0.0,
+      "no_agent_score_run2": 0.0
+    },
+    {
+      "domain": "zotero",
+      "evaluator_ran_both_runs": true,
+      "fidelity_flag": false,
+      "id": "097",
+      "initial_state_partial_credit_max": 0.0,
+      "no_agent_score_run1": 0.0,
+      "no_agent_score_run2": 0.0
+    },
+    {
+      "domain": "freecad",
+      "evaluator_ran_both_runs": true,
+      "fidelity_flag": false,
+      "id": "103",
+      "initial_state_partial_credit_max": 0.0,
+      "no_agent_score_run1": 0.0,
+      "no_agent_score_run2": 0.0
+    },
+    {
+      "domain": "musescore",
+      "evaluator_ran_both_runs": true,
+      "fidelity_flag": false,
+      "id": "067",
+      "initial_state_partial_credit_max": 0.0,
+      "no_agent_score_run1": 0.0,
+      "no_agent_score_run2": 0.0
+    },
+    {
+      "domain": "gitlab",
+      "evaluator_ran_both_runs": true,
+      "fidelity_flag": false,
+      "id": "026",
+      "initial_state_partial_credit_max": 0.0,
+      "no_agent_score_run1": 0.0,
+      "no_agent_score_run2": 0.0
+    },
+    {
+      "domain": "chrome",
+      "evaluator_ran_both_runs": true,
+      "fidelity_flag": false,
+      "id": "069",
+      "initial_state_partial_credit_max": 0.0,
+      "no_agent_score_run1": 0.0,
+      "no_agent_score_run2": 0.0
+    },
+    {
+      "domain": "chrome",
+      "evaluator_ran_both_runs": true,
+      "fidelity_flag": false,
+      "id": "005",
+      "initial_state_partial_credit_max": 0.0,
+      "no_agent_score_run1": 0.0,
+      "no_agent_score_run2": 0.0
+    }
+  ],
+  "template": "osworld-v2-gnome:817519a3-6360-475f-bdae-77780743d6a5"
+}

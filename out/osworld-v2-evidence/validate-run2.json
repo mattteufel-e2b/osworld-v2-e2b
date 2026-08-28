@@ -1,0 +1,365 @@
+{
+  "dependencies": {
+    "aiohttp": "3.14.1",
+    "e2b": "2.34.0"
+  },
+  "finished_at": "2026-08-26T19:32:54.022551+00:00",
+  "host": {
+    "platform": "macOS-26.5.2-arm64-arm-64bit",
+    "python": "3.12.13"
+  },
+  "manifest": {
+    "description": "Fixed 10-task environment-path validation sample for the OSWorld-V2 -> E2B conversion. Ids only; no task content. Mix: >=6 domains, 2 website (069, 005), 1 GitLab (026), 1 audio (067). task_082 (100GB volume) is excluded per the Task-11 ruling.",
+    "osworld_commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154",
+    "release": "osworld-v2-2026.08.08",
+    "tasks": [
+      {
+        "domain": "gimp",
+        "id": "003"
+      },
+      {
+        "domain": "vscode",
+        "id": "030"
+      },
+      {
+        "domain": "libreoffice_impress",
+        "id": "004"
+      },
+      {
+        "domain": "excel",
+        "id": "027"
+      },
+      {
+        "domain": "zotero",
+        "id": "097"
+      },
+      {
+        "domain": "freecad",
+        "id": "103"
+      },
+      {
+        "domain": "musescore",
+        "id": "067"
+      },
+      {
+        "domain": "gitlab",
+        "id": "026"
+      },
+      {
+        "domain": "chrome",
+        "id": "069"
+      },
+      {
+        "domain": "chrome",
+        "id": "005"
+      }
+    ],
+    "template": "osworld-v2-gnome:817519a3-6360-475f-bdae-77780743d6a5"
+  },
+  "osworld_commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154",
+  "purpose": "environment-path validation; not an agent benchmark score",
+  "records": [
+    {
+      "domain": "gimp",
+      "duration_seconds": 18.3,
+      "evaluator_ran": true,
+      "finished_at": "2026-08-26T19:24:32.338690+00:00",
+      "id": "003",
+      "multiphase": false,
+      "observation": {
+        "accessibility_characters": 123497,
+        "screenshot_bytes": 12722
+      },
+      "path_status": "PATH_PASS",
+      "related_apps": [
+        "gimp"
+      ],
+      "sandbox": {
+        "generation": 2,
+        "id": "i9wpzrp26dpmzjb92nvv7",
+        "restricted_ingress": true,
+        "template": "osworld-v2-gnome:817519a3-6360-475f-bdae-77780743d6a5",
+        "unique_in_run": true
+      },
+      "score": 0.0,
+      "stage": "complete",
+      "started_at": "2026-08-26T19:24:14.066646+00:00",
+      "task_class": "Task003"
+    },
+    {
+      "domain": "vscode",
+      "duration_seconds": 87.3,
+      "evaluator_ran": true,
+      "finished_at": "2026-08-26T19:25:59.639270+00:00",
+      "id": "030",
+      "multiphase": false,
+      "observation": {
+        "accessibility_characters": 554970,
+        "screenshot_bytes": 179545
+      },
+      "path_status": "PATH_PASS",
+      "related_apps": [
+        "vscode",
+        "terminal"
+      ],
+      "sandbox": {
+        "generation": 3,
+        "id": "i46gug34sft6v63q4f0q5",
+        "restricted_ingress": true,
+        "template": "osworld-v2-gnome:817519a3-6360-475f-bdae-77780743d6a5",
+        "unique_in_run": true
+      },
+      "score": 0.0,
+      "stage": "complete",
+      "started_at": "2026-08-26T19:24:32.342863+00:00",
+      "task_class": "Task030"
+    },
+    {
+      "domain": "libreoffice_impress",
+      "duration_seconds": 69.7,
+      "evaluator_ran": true,
+      "finished_at": "2026-08-26T19:27:09.330977+00:00",
+      "id": "004",
+      "multiphase": false,
+      "observation": {
+        "accessibility_characters": 514474,
+        "screenshot_bytes": 131555
+      },
+      "path_status": "PATH_PASS",
+      "related_apps": [
+        "libreoffice_impress"
+      ],
+      "sandbox": {
+        "generation": 4,
+        "id": "iahfei28qjpb8e3kr25cm",
+        "restricted_ingress": true,
+        "template": "osworld-v2-gnome:817519a3-6360-475f-bdae-77780743d6a5",
+        "unique_in_run": true
+      },
+      "score": 0.0,
+      "stage": "complete",
+      "started_at": "2026-08-26T19:25:59.640237+00:00",
+      "task_class": "Task004"
+    },
+    {
+      "domain": "excel",
+      "duration_seconds": 43.4,
+      "evaluator_ran": true,
+      "finished_at": "2026-08-26T19:27:52.745005+00:00",
+      "id": "027",
+      "multiphase": false,
+      "observation": {
+        "accessibility_characters": 2169512,
+        "screenshot_bytes": 108193
+      },
+      "path_status": "PATH_PASS",
+      "related_apps": [
+        "excel"
+      ],
+      "sandbox": {
+        "generation": 5,
+        "id": "ivlsi0h6etohm8xmu8c1x",
+        "restricted_ingress": true,
+        "template": "osworld-v2-gnome:817519a3-6360-475f-bdae-77780743d6a5",
+        "unique_in_run": true
+      },
+      "score": 0.0,
+      "stage": "complete",
+      "started_at": "2026-08-26T19:27:09.331817+00:00",
+      "task_class": "Task027"
+    },
+    {
+      "domain": "zotero",
+      "duration_seconds": 48.6,
+      "evaluator_ran": true,
+      "finished_at": "2026-08-26T19:28:41.314140+00:00",
+      "id": "097",
+      "multiphase": false,
+      "observation": {
+        "accessibility_characters": 220538,
+        "screenshot_bytes": 86799
+      },
+      "path_status": "PATH_PASS",
+      "related_apps": [
+        "zotero",
+        "vscode"
+      ],
+      "sandbox": {
+        "generation": 6,
+        "id": "ifm7hj8xdie4fl14rugvd",
+        "restricted_ingress": true,
+        "template": "osworld-v2-gnome:817519a3-6360-475f-bdae-77780743d6a5",
+        "unique_in_run": true
+      },
+      "score": 0.0,
+      "stage": "complete",
+      "started_at": "2026-08-26T19:27:52.745908+00:00",
+      "task_class": "Task097"
+    },
+    {
+      "domain": "freecad",
+      "duration_seconds": 15.6,
+      "evaluator_ran": true,
+      "finished_at": "2026-08-26T19:28:56.932690+00:00",
+      "id": "103",
+      "multiphase": false,
+      "observation": {
+        "accessibility_characters": 159810,
+        "screenshot_bytes": 12832
+      },
+      "path_status": "PATH_PASS",
+      "related_apps": [
+        "freecad",
+        "pdf_viewer"
+      ],
+      "sandbox": {
+        "generation": 7,
+        "id": "in8tlxj9gg8apbnkxck5u",
+        "restricted_ingress": true,
+        "template": "osworld-v2-gnome:817519a3-6360-475f-bdae-77780743d6a5",
+        "unique_in_run": true
+      },
+      "score": 0.0,
+      "stage": "complete",
+      "started_at": "2026-08-26T19:28:41.315938+00:00",
+      "task_class": "Task103"
+    },
+    {
+      "domain": "musescore",
+      "duration_seconds": 32.8,
+      "evaluator_ran": true,
+      "finished_at": "2026-08-26T19:29:29.718162+00:00",
+      "id": "067",
+      "multiphase": false,
+      "observation": {
+        "accessibility_characters": 138330,
+        "screenshot_bytes": 12630
+      },
+      "path_status": "PATH_PASS",
+      "related_apps": [
+        "musescore"
+      ],
+      "sandbox": {
+        "generation": 8,
+        "id": "itkcevh5z1anjl97ed5ru",
+        "restricted_ingress": true,
+        "template": "osworld-v2-gnome:817519a3-6360-475f-bdae-77780743d6a5",
+        "unique_in_run": true
+      },
+      "score": 0.0,
+      "stage": "complete",
+      "started_at": "2026-08-26T19:28:56.934260+00:00",
+      "task_class": "Task067"
+    },
+    {
+      "domain": "gitlab",
+      "duration_seconds": 155.9,
+      "evaluator_ran": true,
+      "finished_at": "2026-08-26T19:32:05.671535+00:00",
+      "id": "026",
+      "multiphase": false,
+      "observation": {
+        "accessibility_characters": 215138,
+        "screenshot_bytes": 61309
+      },
+      "path_status": "PATH_PASS",
+      "related_apps": [
+        "vscode",
+        "libreoffice_impress",
+        "google-chrome"
+      ],
+      "sandbox": {
+        "generation": 9,
+        "id": "i1uwxe90oycge1oum89dn",
+        "restricted_ingress": true,
+        "template": "osworld-v2-gnome:817519a3-6360-475f-bdae-77780743d6a5",
+        "unique_in_run": true
+      },
+      "score": 0.0,
+      "stage": "complete",
+      "started_at": "2026-08-26T19:29:29.738062+00:00",
+      "task_class": "Task026"
+    },
+    {
+      "domain": "chrome",
+      "duration_seconds": 31.8,
+      "evaluator_ran": true,
+      "finished_at": "2026-08-26T19:32:37.437940+00:00",
+      "id": "069",
+      "multiphase": true,
+      "observation": {
+        "accessibility_characters": 329856,
+        "screenshot_bytes": 88121
+      },
+      "path_status": "PATH_PASS",
+      "related_apps": [
+        "chrome",
+        "mailhub",
+        "calendar",
+        "libreoffice_writer"
+      ],
+      "sandbox": {
+        "generation": 10,
+        "id": "ibcugsxb1hj0hugyf3ge0",
+        "restricted_ingress": true,
+        "template": "osworld-v2-gnome:817519a3-6360-475f-bdae-77780743d6a5",
+        "unique_in_run": true
+      },
+      "score": 0.0,
+      "stage": "complete",
+      "started_at": "2026-08-26T19:32:05.677463+00:00",
+      "task_class": "Task069"
+    },
+    {
+      "domain": "chrome",
+      "duration_seconds": 16.5,
+      "evaluator_ran": true,
+      "finished_at": "2026-08-26T19:32:54.020830+00:00",
+      "id": "005",
+      "multiphase": false,
+      "observation": {
+        "accessibility_characters": 138330,
+        "screenshot_bytes": 12816
+      },
+      "path_status": "PATH_PASS",
+      "related_apps": [
+        "chrome"
+      ],
+      "sandbox": {
+        "generation": 11,
+        "id": "izjktdwfa2ibgnp7fwo8h",
+        "restricted_ingress": true,
+        "template": "osworld-v2-gnome:817519a3-6360-475f-bdae-77780743d6a5",
+        "unique_in_run": true
+      },
+      "score": 0.0,
+      "stage": "complete",
+      "started_at": "2026-08-26T19:32:37.496686+00:00",
+      "task_class": "Task005"
+    }
+  ],
+  "relay": {
+    "generation": 1,
+    "ready": true,
+    "restricted_ingress": true,
+    "sandbox_id": "iadq1znbi55r3h96cleop",
+    "sandbox_timeout_seconds": 3600,
+    "source": "template",
+    "template": "osworld-v2-gnome:817519a3-6360-475f-bdae-77780743d6a5"
+  },
+  "release": "osworld-v2-2026.08.08",
+  "run_id": "5e4eb56f-6250-4477-8469-b66ca7f9cc76",
+  "schema_version": 1,
+  "started_at": "2026-08-26T19:24:14.054519+00:00",
+  "summary": {
+    "all_recorded_sandboxes_unique": true,
+    "evaluator_ran_count": 10,
+    "path_failures": 0,
+    "path_passes": 10,
+    "score_max": 0.0,
+    "score_min": 0.0,
+    "tasks": 10,
+    "unique_sandboxes": 10
+  },
+  "template": "osworld-v2-gnome:817519a3-6360-475f-bdae-77780743d6a5"
+}

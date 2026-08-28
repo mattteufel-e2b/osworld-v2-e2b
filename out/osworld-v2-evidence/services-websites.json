@@ -1,0 +1,142 @@
+{
+  "addressing_evidence": {
+    "caddy_passthrough_probe": {
+      "body": "Invalid host\n",
+      "connection_host": "80-ivlttu6vtji3y6eh7wn19.e2b.app",
+      "description": "override HTTP Host to the site name while connecting to the Caddy ingress host; if ingress forwarded it, single-port routing would work.",
+      "sent_host": "mailhub.127.0.0.1.nip.io",
+      "status": 400
+    },
+    "mode": "per-port-fanout",
+    "per_port_probe": {
+      "body_prefix": "{\"user_id\":\"hostprobe\",\"state\":{\"meta\":{\"created_at\":\"2026-08-28T00:53:27.049640Z\",\"updated_at\":\"2026-08-28T00:53:27.049",
+      "ingress_host": "13014-ivlttu6vtji3y6eh7wn19.e2b.app",
+      "port": 13014,
+      "site": "mailhub",
+      "status": 200
+    }
+  },
+  "addressing_mode": "per-port-fanout",
+  "compose_build_seconds": 605.8,
+  "control_plane_readiness_seconds": {
+    "awsconsole": 0.5,
+    "budgetwise": 0.6,
+    "calendar": 0.8,
+    "careerlink": 0.9,
+    "cloudcrm": 1.1,
+    "dinogame": 1.2,
+    "eventix": 1.4,
+    "expenseflow": 1.5,
+    "formcraft": 1.7,
+    "glbviewer": 1.9,
+    "insurance-claim": 2.0,
+    "mailhub": 2.2,
+    "overleaf-collab": 2.3,
+    "reviewsphere": 2.7,
+    "slidepuzzle": 2.9,
+    "streamview": 3.0,
+    "teamchat": 3.1,
+    "travelhubpro": 3.5,
+    "trippza": 3.8,
+    "vaultbank": 4.1,
+    "visaapplication": 4.3,
+    "wandb": 4.5
+  },
+  "docker_start_seconds": 2.3,
+  "first_boot_compose_build_seconds": 524.2,
+  "generated_at": "2026-08-28T00:53:28.676672+00:00",
+  "guest_proxy_evidence": {
+    "guest_sandbox_id": "ipwvrlfnmd7xbq3dqjej0",
+    "guest_template": "osworld-v2-gnome:2d3c4c7d-3623-4b68-a307-a6f844726ef6",
+    "in_guest_gitlab_api_v4_user_8080": "200",
+    "in_guest_mailhub_api_state_80": "200",
+    "in_guest_mailhub_api_state_8080": "200",
+    "listeners": "LISTEN 0      5       169.254.0.21:8080       0.0.0.0:*    users:((\"socat\",pid=2495,fd=6))                         \nLISTEN 0      5          127.0.0.1:80         0.0.0.0:*    users:((\"python3\",pid=2492,fd=3))                       \nLISTEN 0      5          127.0.0.1:8080       0.0.0.0:*    users:((\"python3\",pid=2492,fd=5))                       \nLISTEN 0      5       169.254.0.21:80         0.0.0.0:*    users:((\"socat\",pid=2494,fd=6))",
+    "nip_io_resolves_in_guest": true,
+    "proxy_bind_ports": "80,8080"
+  },
+  "host_proxy": {
+    "note": "host proxy exited immediately (see .hostmap_proxy.log)",
+    "pid": null,
+    "port": 8090,
+    "ports": [
+      8090
+    ],
+    "running": false
+  },
+  "host_proxy_path_check": null,
+  "repo": {
+    "tag": "v2026.08.08",
+    "url": "https://github.com/Task-Web/OSWorld-web"
+  },
+  "restricted_ingress": true,
+  "runs": [
+    {
+      "at": "2026-08-26T18:05:06.811660+00:00",
+      "compose_build_seconds": 0.2,
+      "sandbox_created_this_run": false
+    },
+    {
+      "at": "2026-08-26T19:12:41.008657+00:00",
+      "compose_build_seconds": 0.1,
+      "sandbox_created_this_run": false
+    },
+    {
+      "at": "2026-08-26T22:46:05.342898+00:00",
+      "compose_build_seconds": 0.1,
+      "sandbox_created_this_run": false
+    },
+    {
+      "at": "2026-08-27T16:51:58.971481+00:00",
+      "compose_build_seconds": 583.7,
+      "sandbox_created_this_run": true
+    },
+    {
+      "at": "2026-08-27T18:17:31.520429+00:00",
+      "compose_build_seconds": 0.5,
+      "sandbox_created_this_run": false
+    },
+    {
+      "at": "2026-08-28T00:53:28.676637+00:00",
+      "compose_build_seconds": 605.8,
+      "sandbox_created_this_run": true
+    }
+  ],
+  "sandbox_cpu": 4,
+  "sandbox_created_this_run": true,
+  "sandbox_id": "ivlttu6vtji3y6eh7wn19",
+  "sandbox_memory_mb": 8192,
+  "schema_version": 2,
+  "site_port_map": {
+    "awsconsole": 13001,
+    "basesite": 13002,
+    "budgetwise": 13003,
+    "calendar": 13004,
+    "careerlink": 13005,
+    "cloudcrm": 13006,
+    "dinogame": 13007,
+    "eventix": 13008,
+    "expenseflow": 13009,
+    "formcraft": 13010,
+    "glbviewer": 13011,
+    "insurance-claim": 13012,
+    "interfacinglinux": 13013,
+    "mailhub": 13014,
+    "overleaf": 13015,
+    "overleaf-collab": 13016,
+    "reviewsphere": 13017,
+    "slidepuzzle": 13018,
+    "streamview": 13019,
+    "studio.streamview": 13020,
+    "teamchat": 13021,
+    "travelhubpro": 13022,
+    "trippza": 13023,
+    "vaultbank": 13024,
+    "visaapplication": 13025,
+    "wandb": 13026
+  },
+  "template": "osworld-v2-fleet-base:05e2e83f-c579-4ea8-a0ec-87d00b58f964",
+  "v2_build_website_url_check": null,
+  "website_host_suffix": "127.0.0.1.nip.io:8090",
+  "website_host_suffix_portless": "127.0.0.1.nip.io"
+}

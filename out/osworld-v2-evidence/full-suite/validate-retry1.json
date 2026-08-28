@@ -1,0 +1,235 @@
+{
+  "execution": {
+    "host_proxy_owned_for_campaign": true,
+    "max_parallel_workers": 4,
+    "mode": "bounded-parallel-with-literal-port-task-solo",
+    "task_082_solo": true
+  },
+  "finished_at": "2026-08-27T18:29:39.941881+00:00",
+  "host": {
+    "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "python": "3.14.6"
+  },
+  "manifest": {
+    "description": "Targeted retry inventory for non-model failures from the full path-validation wave.",
+    "osworld_commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154",
+    "release": "osworld-v2-2026.08.08",
+    "tasks": [
+      {
+        "domain": "release",
+        "id": "015"
+      },
+      {
+        "domain": "release",
+        "id": "048"
+      },
+      {
+        "domain": "release",
+        "id": "050"
+      },
+      {
+        "domain": "release",
+        "id": "055"
+      },
+      {
+        "domain": "release",
+        "id": "056"
+      },
+      {
+        "domain": "release",
+        "id": "057"
+      },
+      {
+        "domain": "release",
+        "id": "072"
+      },
+      {
+        "domain": "release",
+        "id": "081"
+      },
+      {
+        "domain": "release",
+        "id": "082"
+      },
+      {
+        "domain": "release",
+        "id": "093"
+      }
+    ],
+    "template": "osworld-v2-gnome:87d8a46b-31b5-4486-9944-20665c8af1b1"
+  },
+  "osworld_commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154",
+  "purpose": "environment-path validation; not an agent benchmark score",
+  "records": [
+    {
+      "domain": "release",
+      "duration_seconds": 50.3,
+      "evaluator_ran": true,
+      "finished_at": "2026-08-27T18:19:31.478361+00:00",
+      "id": "015",
+      "multiphase": false,
+      "observation": {
+        "accessibility_characters": 1478924,
+        "screenshot_bytes": 238302
+      },
+      "path_status": "PATH_PASS",
+      "related_apps": [
+        "libreoffice_writer",
+        "pdf_viewer",
+        "labplot",
+        "chrome"
+      ],
+      "sandbox": {
+        "generation": 2,
+        "id": "ihgusmaifb4427n1axg64",
+        "restricted_ingress": true,
+        "template": "osworld-v2-gnome:87d8a46b-31b5-4486-9944-20665c8af1b1",
+        "unique_in_run": true
+      },
+      "score": 0.0,
+      "stage": "complete",
+      "started_at": "2026-08-27T18:18:41.181973+00:00",
+      "task_class": "Task015"
+    },
+    {
+      "cause": "transport",
+      "detail": "URLError: <urlopen error [Errno 61] Connection refused>",
+      "domain": "release",
+      "duration_seconds": 653.6,
+      "evaluator_ran": false,
+      "finished_at": "2026-08-27T18:29:32.735564+00:00",
+      "id": "048",
+      "multiphase": false,
+      "path_status": "PATH_FAIL",
+      "related_apps": [
+        "chrome"
+      ],
+      "score": null,
+      "stage": "reset",
+      "started_at": "2026-08-27T18:18:39.153900+00:00",
+      "task_class": "Task048"
+    },
+    {
+      "domain": "release",
+      "duration_seconds": 48.9,
+      "evaluator_ran": true,
+      "finished_at": "2026-08-27T18:19:30.314843+00:00",
+      "id": "050",
+      "multiphase": false,
+      "observation": {
+        "accessibility_characters": 278018,
+        "screenshot_bytes": 119337
+      },
+      "path_status": "PATH_PASS",
+      "related_apps": [
+        "reaper",
+        "chrome",
+        "libreoffice_calc"
+      ],
+      "sandbox": {
+        "generation": 2,
+        "id": "i4ghfstg5qc6csejpgjpf",
+        "restricted_ingress": true,
+        "template": "osworld-v2-gnome:87d8a46b-31b5-4486-9944-20665c8af1b1",
+        "unique_in_run": true
+      },
+      "score": 0.0,
+      "stage": "complete",
+      "started_at": "2026-08-27T18:18:41.419044+00:00",
+      "task_class": "Task050"
+    },
+    {
+      "cause": "transport",
+      "detail": "URLError: <urlopen error [Errno 61] Connection refused>",
+      "domain": "release",
+      "duration_seconds": 653.4,
+      "evaluator_ran": false,
+      "finished_at": "2026-08-27T18:29:32.526024+00:00",
+      "id": "055",
+      "multiphase": false,
+      "path_status": "PATH_FAIL",
+      "related_apps": [
+        "shotcut"
+      ],
+      "score": null,
+      "stage": "reset",
+      "started_at": "2026-08-27T18:18:39.156831+00:00",
+      "task_class": "Task055"
+    },
+    {
+      "cause": "environment/reset",
+      "detail": "HTTPError: HTTP Error 503: Service Unavailable",
+      "domain": "release",
+      "duration_seconds": 1.0,
+      "evaluator_ran": false,
+      "finished_at": "2026-08-27T18:29:35.328794+00:00",
+      "id": "056",
+      "multiphase": false,
+      "path_status": "PATH_FAIL",
+      "related_apps": [
+        "shotcut",
+        "chrome"
+      ],
+      "score": null,
+      "stage": "reset",
+      "started_at": "2026-08-27T18:29:34.333584+00:00",
+      "task_class": "Task056"
+    },
+    {
+      "cause": "environment/reset",
+      "detail": "HTTPError: HTTP Error 503: Service Unavailable",
+      "domain": "release",
+      "duration_seconds": 1.0,
+      "evaluator_ran": false,
+      "finished_at": "2026-08-27T18:29:35.359613+00:00",
+      "id": "072",
+      "multiphase": false,
+      "path_status": "PATH_FAIL",
+      "related_apps": [
+        "chrome"
+      ],
+      "score": null,
+      "stage": "reset",
+      "started_at": "2026-08-27T18:29:34.331835+00:00",
+      "task_class": "Task072"
+    },
+    {
+      "cause": "environment/reset",
+      "detail": "HTTPError: HTTP Error 500: Internal Server Error",
+      "domain": "release",
+      "duration_seconds": 0.7,
+      "evaluator_ran": false,
+      "finished_at": "2026-08-27T18:29:39.941881+00:00",
+      "id": "093",
+      "multiphase": false,
+      "path_status": "PATH_FAIL",
+      "related_apps": [
+        "libreoffice_impress",
+        "openboard"
+      ],
+      "score": null,
+      "stage": "reset",
+      "started_at": "2026-08-27T18:29:39.278067+00:00",
+      "task_class": "Task093"
+    }
+  ],
+  "release": "osworld-v2-2026.08.08",
+  "run_id": "cfc8e5ad-3677-49f1-b7ad-d05c68072c66",
+  "schema_version": 1,
+  "started_at": "2026-08-27T18:18:39.153900+00:00",
+  "summary": {
+    "all_recorded_sandboxes_unique": true,
+    "evaluator_ran_count": 2,
+    "expected_tasks": 10,
+    "missing_or_invalid_task_ids": [
+      "057",
+      "081",
+      "082"
+    ],
+    "path_failures": 5,
+    "path_passes": 2,
+    "tasks": 7,
+    "unique_sandboxes": 2
+  },
+  "template": "osworld-v2-gnome:87d8a46b-31b5-4486-9944-20665c8af1b1"
+}

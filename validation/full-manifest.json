@@ -1,0 +1,440 @@
+{
+  "release": "osworld-v2-2026.08.08",
+  "template": "osworld-v2-gnome:007fa754-617b-4ff0-957a-42ea4ecf5b8a",
+  "osworld_commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154",
+  "description": "Complete 108-task OSWorld 2.0 environment-path validation inventory. IDs only; no gated task content. The domain label is intentionally generic because the harness records each loaded task's authoritative related_apps.",
+  "tasks": [
+    {
+      "id": "001",
+      "domain": "release"
+    },
+    {
+      "id": "002",
+      "domain": "release"
+    },
+    {
+      "id": "003",
+      "domain": "release"
+    },
+    {
+      "id": "004",
+      "domain": "release"
+    },
+    {
+      "id": "005",
+      "domain": "release"
+    },
+    {
+      "id": "006",
+      "domain": "release"
+    },
+    {
+      "id": "007",
+      "domain": "release"
+    },
+    {
+      "id": "008",
+      "domain": "release"
+    },
+    {
+      "id": "009",
+      "domain": "release"
+    },
+    {
+      "id": "010",
+      "domain": "release"
+    },
+    {
+      "id": "011",
+      "domain": "release"
+    },
+    {
+      "id": "012",
+      "domain": "release"
+    },
+    {
+      "id": "013",
+      "domain": "release"
+    },
+    {
+      "id": "014",
+      "domain": "release"
+    },
+    {
+      "id": "015",
+      "domain": "release"
+    },
+    {
+      "id": "016",
+      "domain": "release"
+    },
+    {
+      "id": "017",
+      "domain": "release"
+    },
+    {
+      "id": "018",
+      "domain": "release"
+    },
+    {
+      "id": "019",
+      "domain": "release"
+    },
+    {
+      "id": "020",
+      "domain": "release"
+    },
+    {
+      "id": "021",
+      "domain": "release"
+    },
+    {
+      "id": "022",
+      "domain": "release"
+    },
+    {
+      "id": "023",
+      "domain": "release"
+    },
+    {
+      "id": "024",
+      "domain": "release"
+    },
+    {
+      "id": "025",
+      "domain": "release"
+    },
+    {
+      "id": "026",
+      "domain": "release"
+    },
+    {
+      "id": "027",
+      "domain": "release"
+    },
+    {
+      "id": "028",
+      "domain": "release"
+    },
+    {
+      "id": "029",
+      "domain": "release"
+    },
+    {
+      "id": "030",
+      "domain": "release"
+    },
+    {
+      "id": "031",
+      "domain": "release"
+    },
+    {
+      "id": "032",
+      "domain": "release"
+    },
+    {
+      "id": "033",
+      "domain": "release"
+    },
+    {
+      "id": "034",
+      "domain": "release"
+    },
+    {
+      "id": "035",
+      "domain": "release"
+    },
+    {
+      "id": "036",
+      "domain": "release"
+    },
+    {
+      "id": "037",
+      "domain": "release"
+    },
+    {
+      "id": "038",
+      "domain": "release"
+    },
+    {
+      "id": "039",
+      "domain": "release"
+    },
+    {
+      "id": "040",
+      "domain": "release"
+    },
+    {
+      "id": "041",
+      "domain": "release"
+    },
+    {
+      "id": "042",
+      "domain": "release"
+    },
+    {
+      "id": "043",
+      "domain": "release"
+    },
+    {
+      "id": "044",
+      "domain": "release"
+    },
+    {
+      "id": "045",
+      "domain": "release"
+    },
+    {
+      "id": "046",
+      "domain": "release"
+    },
+    {
+      "id": "047",
+      "domain": "release"
+    },
+    {
+      "id": "048",
+      "domain": "release"
+    },
+    {
+      "id": "049",
+      "domain": "release"
+    },
+    {
+      "id": "050",
+      "domain": "release"
+    },
+    {
+      "id": "051",
+      "domain": "release"
+    },
+    {
+      "id": "052",
+      "domain": "release"
+    },
+    {
+      "id": "053",
+      "domain": "release"
+    },
+    {
+      "id": "054",
+      "domain": "release"
+    },
+    {
+      "id": "055",
+      "domain": "release"
+    },
+    {
+      "id": "056",
+      "domain": "release"
+    },
+    {
+      "id": "057",
+      "domain": "release"
+    },
+    {
+      "id": "058",
+      "domain": "release"
+    },
+    {
+      "id": "059",
+      "domain": "release"
+    },
+    {
+      "id": "060",
+      "domain": "release"
+    },
+    {
+      "id": "061",
+      "domain": "release"
+    },
+    {
+      "id": "062",
+      "domain": "release"
+    },
+    {
+      "id": "063",
+      "domain": "release"
+    },
+    {
+      "id": "064",
+      "domain": "release"
+    },
+    {
+      "id": "065",
+      "domain": "release"
+    },
+    {
+      "id": "066",
+      "domain": "release"
+    },
+    {
+      "id": "067",
+      "domain": "release"
+    },
+    {
+      "id": "068",
+      "domain": "release"
+    },
+    {
+      "id": "069",
+      "domain": "release"
+    },
+    {
+      "id": "070",
+      "domain": "release"
+    },
+    {
+      "id": "071",
+      "domain": "release"
+    },
+    {
+      "id": "072",
+      "domain": "release"
+    },
+    {
+      "id": "073",
+      "domain": "release"
+    },
+    {
+      "id": "074",
+      "domain": "release"
+    },
+    {
+      "id": "075",
+      "domain": "release"
+    },
+    {
+      "id": "076",
+      "domain": "release"
+    },
+    {
+      "id": "077",
+      "domain": "release"
+    },
+    {
+      "id": "078",
+      "domain": "release"
+    },
+    {
+      "id": "079",
+      "domain": "release"
+    },
+    {
+      "id": "080",
+      "domain": "release"
+    },
+    {
+      "id": "081",
+      "domain": "release"
+    },
+    {
+      "id": "082",
+      "domain": "release"
+    },
+    {
+      "id": "083",
+      "domain": "release"
+    },
+    {
+      "id": "084",
+      "domain": "release"
+    },
+    {
+      "id": "085",
+      "domain": "release"
+    },
+    {
+      "id": "086",
+      "domain": "release"
+    },
+    {
+      "id": "087",
+      "domain": "release"
+    },
+    {
+      "id": "088",
+      "domain": "release"
+    },
+    {
+      "id": "089",
+      "domain": "release"
+    },
+    {
+      "id": "090",
+      "domain": "release"
+    },
+    {
+      "id": "091",
+      "domain": "release"
+    },
+    {
+      "id": "092",
+      "domain": "release"
+    },
+    {
+      "id": "093",
+      "domain": "release"
+    },
+    {
+      "id": "094",
+      "domain": "release"
+    },
+    {
+      "id": "095",
+      "domain": "release"
+    },
+    {
+      "id": "096",
+      "domain": "release"
+    },
+    {
+      "id": "097",
+      "domain": "release"
+    },
+    {
+      "id": "098",
+      "domain": "release"
+    },
+    {
+      "id": "099",
+      "domain": "release"
+    },
+    {
+      "id": "100",
+      "domain": "release"
+    },
+    {
+      "id": "101",
+      "domain": "release"
+    },
+    {
+      "id": "102",
+      "domain": "release"
+    },
+    {
+      "id": "103",
+      "domain": "release"
+    },
+    {
+      "id": "104",
+      "domain": "release"
+    },
+    {
+      "id": "105",
+      "domain": "release"
+    },
+    {
+      "id": "106",
+      "domain": "release"
+    },
+    {
+      "id": "107",
+      "domain": "release"
+    },
+    {
+      "id": "108",
+      "domain": "release"
+    }
+  ]
+}

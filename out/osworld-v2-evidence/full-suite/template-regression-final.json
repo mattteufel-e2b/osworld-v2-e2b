@@ -1,0 +1,102 @@
+{
+  "execution": {
+    "host_proxy_owned_for_campaign": true,
+    "max_parallel_workers": 2,
+    "mode": "bounded-parallel-with-literal-port-task-solo",
+    "task_082_solo": true
+  },
+  "finished_at": "2026-08-27T18:46:17.598913+00:00",
+  "host": {
+    "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "python": "3.14.6"
+  },
+  "manifest": {
+    "description": "Targeted immutable-template regression validation for tasks 048 and 055.",
+    "osworld_commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154",
+    "release": "osworld-v2-2026.08.08",
+    "tasks": [
+      {
+        "domain": "release",
+        "id": "048"
+      },
+      {
+        "domain": "release",
+        "id": "055"
+      }
+    ],
+    "template": "osworld-v2-gnome:aa73e348-31e7-449d-a8c5-a08efa3be9ed"
+  },
+  "osworld_commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154",
+  "purpose": "environment-path validation; not an agent benchmark score",
+  "records": [
+    {
+      "domain": "release",
+      "duration_seconds": 128.2,
+      "evaluator_ran": true,
+      "finished_at": "2026-08-27T18:46:17.598913+00:00",
+      "id": "048",
+      "multiphase": false,
+      "observation": {
+        "accessibility_characters": 145596,
+        "screenshot_bytes": 44295
+      },
+      "path_status": "PATH_PASS",
+      "related_apps": [
+        "chrome"
+      ],
+      "sandbox": {
+        "generation": 2,
+        "id": "ig8a9t5k7exmj0et6q4sy",
+        "restricted_ingress": true,
+        "template": "osworld-v2-gnome:aa73e348-31e7-449d-a8c5-a08efa3be9ed",
+        "unique_in_run": true
+      },
+      "score": 0.0,
+      "stage": "complete",
+      "started_at": "2026-08-27T18:44:09.418523+00:00",
+      "task_class": "Task048"
+    },
+    {
+      "domain": "release",
+      "duration_seconds": 120.5,
+      "evaluator_ran": true,
+      "finished_at": "2026-08-27T18:46:09.890742+00:00",
+      "id": "055",
+      "multiphase": false,
+      "observation": {
+        "accessibility_characters": 459626,
+        "screenshot_bytes": 250713
+      },
+      "path_status": "PATH_PASS",
+      "related_apps": [
+        "shotcut"
+      ],
+      "sandbox": {
+        "generation": 2,
+        "id": "iuafehpgp65f7943qdx4x",
+        "restricted_ingress": true,
+        "template": "osworld-v2-gnome:aa73e348-31e7-449d-a8c5-a08efa3be9ed",
+        "unique_in_run": true
+      },
+      "score": 0.0,
+      "stage": "complete",
+      "started_at": "2026-08-27T18:44:09.423407+00:00",
+      "task_class": "Task055"
+    }
+  ],
+  "release": "osworld-v2-2026.08.08",
+  "run_id": "7c86bffe-c147-45a9-b109-e022a67562cd",
+  "schema_version": 1,
+  "started_at": "2026-08-27T18:44:09.418523+00:00",
+  "summary": {
+    "all_recorded_sandboxes_unique": true,
+    "evaluator_ran_count": 2,
+    "expected_tasks": 2,
+    "missing_or_invalid_task_ids": [],
+    "path_failures": 0,
+    "path_passes": 2,
+    "tasks": 2,
+    "unique_sandboxes": 2
+  },
+  "template": "osworld-v2-gnome:aa73e348-31e7-449d-a8c5-a08efa3be9ed"
+}
