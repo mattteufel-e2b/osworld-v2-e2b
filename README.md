@@ -37,6 +37,34 @@ immutable build restores with ≥100 GB usable root capacity. `runner/setup.sh` 
 (grep-guarded patches); `runner/setup.sh --restore` reverts its patch footprint for pin
 verification.
 
+## Resource requirements
+
+What the validated builds allocate, and what real runs actually used
+(`out/osworld-v2-evidence/sample-24/resource-live-*.json` — live agent-run profile via E2B's
+sandbox-metrics API; 15 sandboxes, no CPU/memory/disk saturation flags):
+
+| Sandbox | vCPU | RAM | Disk (root) | Measured peaks |
+| --- | --- | --- | --- | --- |
+| Guest (one per task/worker) | 4 | 8 GB | ≥100 GB usable | 1.5 cores, 0.8 GiB RAM, ~7 GiB disk |
+| Fleet ×2 (websites, GitLab) | 4 | 8 GB (+8 GB swap at launch) | same entitlement | first compose build is the heavy phase (~524 s) |
+
+Don't trim below these even though measured peaks look low:
+
+- **8 GB guest RAM is the validated floor** — at 4 GB, `chrome_open_tabs` tasks (3 heavy
+  sites at once) thrash and leave CDP unresponsive for minutes (upstream's reference VM has
+  16 GB). The ~0.8 GiB measured peak is the desktop baseline between browser-heavy phases.
+- **100 GB root is a release contract, not observed usage** — 18 tasks declare
+  `volume_size` of 32–100 GB (`validation/volume-requirements.json`), and the relay fails
+  task setup if the live root is undersized. The build gate enforces ≥100 GB on restore.
+- **4 vCPU matches upstream's t3.xlarge reference**; measured peak was 1.5 cores with no
+  saturation, so this has headroom rather than slack to cut.
+- **Fleet swap is required once**: the websites fleet's first-boot compose build (23 images)
+  OOM-wedges an 8 GB sandbox without it; launchers add it idempotently.
+
+Account level: the full-suite parallel drivers (80 workers) peak near 160 guest sandboxes
+(strict reset briefly holds two per worker) plus the two fleet sandboxes — sized for a
+200-concurrent-sandbox ceiling. Host needs are negligible (localhost relay + harness).
+
 ## Layout
 
 - **`template/`** — guest Template source: GNOME under Xvfb + software GL, pinned/held
