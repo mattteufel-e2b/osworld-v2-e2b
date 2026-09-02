@@ -1,16 +1,20 @@
 from __future__ import annotations
 
+import asyncio
 import importlib
 import json
 import os
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+import aiohttp
 from aiohttp import web
 from aiohttp.test_utils import make_mocked_request
+from e2b import InvalidArgumentException
 
 # The relay ships as a standalone module in the sibling relay/ directory (it runs
 # on the OSWorld host next to run.py, not as part of an installed package), so put
@@ -460,15 +464,29 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_setup_upload_uses_one_native_file_write_without_http_forward(self):
         writes = []
-        staged_paths = []
+        renames = []
+        host_staged_paths = []
 
         class Files:
-            def write(self, path, data, **kwargs):
-                staged_paths.append(Path(data.name))
-                writes.append((path, data.read(), kwargs))
+            def __init__(self):
+                self.entries = {}
 
+            def write(self, path, data, **kwargs):
+                payload = data.read()
+                host_staged_paths.append(Path(data.name))
+                writes.append((path, payload, kwargs))
+                self.entries[path] = payload
+
+            def rename(self, old_path, new_path, **kwargs):
+                renames.append((old_path, new_path, kwargs))
+                self.entries[new_path] = self.entries.pop(old_path)
+
+            def remove(self, path, **_kwargs):
+                self.entries.pop(path, None)
+
+        files = Files()
         guest = relay.Guest(
-            sandbox=type("Sandbox", (), {"files": Files()})(),
+            sandbox=type("Sandbox", (), {"files": files})(),
             sandbox_id="sandbox-1",
             traffic_token="token",
             hosts={5000: "5000-sandbox-1.example.test"},
@@ -498,7 +516,9 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200)
         self.assertEqual(response.text, "File Uploaded: 12 bytes")
         self.assertEqual(len(writes), 1)
-        self.assertEqual(writes[0][0], "/home/user/Desktop/input.bin")
+        guest_staging_path = writes[0][0]
+        self.assertEqual(Path(guest_staging_path).parent, Path("/home/user/Desktop"))
+        self.assertTrue(Path(guest_staging_path).name.startswith(".input.bin.osworld-upload-"))
         self.assertEqual(writes[0][1], b"file-payload")
         self.assertEqual(
             writes[0][2],
@@ -508,22 +528,46 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
                 "use_octet_stream": True,
             },
         )
+        self.assertEqual(
+            renames,
+            [
+                (
+                    guest_staging_path,
+                    "/home/user/Desktop/input.bin",
+                    {
+                        "user": "user",
+                        "request_timeout": relay.RELAY_HTTP_TIMEOUT_S,
+                    },
+                )
+            ],
+        )
+        self.assertEqual(files.entries, {"/home/user/Desktop/input.bin": b"file-payload"})
         self.assertEqual(proxy_requests, [])
-        self.assertEqual(len(staged_paths), 1)
-        self.assertFalse(staged_paths[0].exists())
+        self.assertEqual(len(host_staged_paths), 1)
+        self.assertFalse(host_staged_paths[0].exists())
 
     async def test_setup_upload_transport_failure_is_bounded_502_and_cleans_staging(
         self,
     ):
-        staged_paths = []
+        writes = []
+        removals = []
 
         class Files:
-            def write(self, _path, data, **_kwargs):
-                staged_paths.append(Path(data.name))
-                raise ConnectionError("control-plane upload failed")
+            def __init__(self):
+                self.entries = {"/home/user/Desktop/input.bin": b"original"}
 
+            def write(self, path, _data, **_kwargs):
+                writes.append(path)
+                self.entries[path] = b"partial"
+                raise aiohttp.ClientConnectionError("control-plane upload failed")
+
+            def remove(self, path, **kwargs):
+                removals.append((path, kwargs))
+                self.entries.pop(path, None)
+
+        files = Files()
         guest = relay.Guest(
-            sandbox=type("Sandbox", (), {"files": Files()})(),
+            sandbox=type("Sandbox", (), {"files": files})(),
             sandbox_id="sandbox-1",
             traffic_token="token",
             hosts={5000: "5000-sandbox-1.example.test"},
@@ -551,14 +595,108 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
         ):
             await relay.make_proxy_handler(relay.SERVER_LOCAL)(self._upload_request())
 
-        self.assertEqual(len(staged_paths), 3)
-        self.assertEqual(len(set(staged_paths)), 1)
-        self.assertFalse(staged_paths[0].exists())
+        self.assertEqual(len(writes), 3)
+        self.assertEqual(len(set(writes)), 1)
+        self.assertNotEqual(writes[0], "/home/user/Desktop/input.bin")
+        self.assertEqual(files.entries, {"/home/user/Desktop/input.bin": b"original"})
+        self.assertEqual(
+            removals,
+            [
+                (
+                    writes[0],
+                    {
+                        "user": "user",
+                        "request_timeout": relay.RELAY_HTTP_TIMEOUT_S,
+                    },
+                )
+            ],
+        )
         self.assertEqual(retry_sleep.await_count, 2)
         self.assertTrue(
             all(0 <= call.args[0] <= 2 for call in retry_sleep.await_args_list)
         )
         self.assertEqual(proxy_requests, [])
+
+    async def test_setup_upload_retries_transient_transport_then_renames(self):
+        attempts = 0
+        renames = []
+
+        class Files:
+            def __init__(self):
+                self.entries = {}
+
+            def write(self, path, data, **_kwargs):
+                nonlocal attempts
+                attempts += 1
+                if attempts < 3:
+                    self.entries[path] = b"partial"
+                    raise aiohttp.ClientConnectionError("connection reset")
+                self.entries[path] = data.read()
+
+            def rename(self, old_path, new_path, **_kwargs):
+                renames.append((old_path, new_path))
+                self.entries[new_path] = self.entries.pop(old_path)
+
+            def remove(self, path, **_kwargs):
+                self.entries.pop(path, None)
+
+        files = Files()
+        guest = relay.Guest(
+            sandbox=type("Sandbox", (), {"files": files})(),
+            sandbox_id="sandbox-1",
+            traffic_token="token",
+            hosts={},
+            generation=1,
+        )
+
+        with patch.object(relay.asyncio, "sleep", AsyncMock()) as retry_sleep:
+            response = await relay._direct_setup_upload(self._upload_request(), guest)
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(attempts, 3)
+        self.assertEqual(retry_sleep.await_count, 2)
+        self.assertEqual(len(renames), 1)
+        self.assertEqual(files.entries, {"/home/user/Desktop/input.bin": b"file-payload"})
+
+    async def test_setup_upload_permanent_sdk_failure_is_not_retried_and_cleans_staging(
+        self,
+    ):
+        writes = []
+        removals = []
+
+        class Files:
+            def __init__(self):
+                self.entries = {"/home/user/Desktop/input.bin": b"original"}
+
+            def write(self, path, _data, **_kwargs):
+                writes.append(path)
+                self.entries[path] = b"partial"
+                raise InvalidArgumentException("invalid destination")
+
+            def remove(self, path, **_kwargs):
+                removals.append(path)
+                self.entries.pop(path, None)
+
+        files = Files()
+        guest = relay.Guest(
+            sandbox=type("Sandbox", (), {"files": files})(),
+            sandbox_id="sandbox-1",
+            traffic_token="token",
+            hosts={},
+            generation=1,
+        )
+
+        retry_sleep = AsyncMock()
+        with (
+            patch.object(relay.asyncio, "sleep", retry_sleep),
+            self.assertRaises(web.HTTPBadGateway),
+        ):
+            await relay._direct_setup_upload(self._upload_request(), guest)
+
+        self.assertEqual(len(writes), 1)
+        self.assertEqual(removals, [writes[0]])
+        self.assertEqual(files.entries, {"/home/user/Desktop/input.bin": b"original"})
+        self.assertEqual(retry_sleep.await_count, 0)
 
     async def test_setup_upload_rejects_relative_destination_without_sdk_write(self):
         writes = []
@@ -691,6 +829,35 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(await self.manager._heartbeat_once())
 
         self.assertEqual(guest.sandbox.timeout_calls, [relay.SANDBOX_TIMEOUT_S])
+
+    async def test_heartbeat_does_not_consume_replacement_guest_activity(self):
+        refresh_started = threading.Event()
+        release_refresh = threading.Event()
+        with (
+            patch.object(relay, "Sandbox", FakeSandbox),
+            patch.object(self.manager, "_wait_ready", AsyncMock()),
+        ):
+            first = await self.manager.replace()
+
+            def blocked_set_timeout(seconds):
+                refresh_started.set()
+                release_refresh.wait(timeout=2)
+                first.sandbox.timeout_calls.append(seconds)
+
+            first.sandbox.set_timeout = blocked_set_timeout
+            self.manager.touch()
+            heartbeat = asyncio.create_task(self.manager._heartbeat_once())
+            self.assertTrue(await asyncio.to_thread(refresh_started.wait, 2))
+
+            second = await self.manager.replace()
+            self.manager.touch()
+            release_refresh.set()
+
+            self.assertFalse(await heartbeat)
+            self.assertTrue(await self.manager._heartbeat_once())
+
+        self.assertEqual(first.sandbox.timeout_calls, [relay.SANDBOX_TIMEOUT_S])
+        self.assertEqual(second.sandbox.timeout_calls, [relay.SANDBOX_TIMEOUT_S])
 
     async def test_heartbeat_never_refreshes_after_stop(self):
         with (

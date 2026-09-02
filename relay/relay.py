@@ -13,15 +13,17 @@ import contextlib
 import json
 import os
 import re
+import secrets
 import signal
 import sys
 import tempfile
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import aiohttp
+import httpx
 from aiohttp import web
-from e2b import Sandbox
+from e2b import Sandbox, TimeoutException
 from e2b_policy import require_immutable_template_ref, sandbox_network_policy
 
 TEMPLATE = os.environ.get("GUEST_TEMPLATE", "osworld-v2-gnome")
@@ -56,6 +58,12 @@ HEARTBEAT_RETRY_ATTEMPTS = 3
 HEARTBEAT_RETRY_DELAY_S = 2.0
 SETUP_UPLOAD_RETRY_ATTEMPTS = 3
 SETUP_UPLOAD_RETRY_DELAY_S = 1.0
+SETUP_UPLOAD_TRANSIENT_ERRORS = (
+    TimeoutError,
+    TimeoutException,
+    aiohttp.ClientConnectionError,
+    httpx.TransportError,
+)
 # How long a websocket upgrade retries the upstream connect before giving up.
 # Covers the resume window after create_snapshot (the capture pauses the guest,
 # dropping live CDP sockets): a client that re-dials immediately connects as soon
@@ -295,33 +303,68 @@ async def _direct_setup_upload(request: web.Request, guest: Guest) -> web.Respon
 
         if (
             destination is None
-            or not Path(destination).is_absolute()
+            or not PurePosixPath(destination).is_absolute()
             or staged_path is None
         ):
             raise web.HTTPBadRequest(
                 text="absolute file_path and file_data are required"
             )
 
-        for attempt in range(1, SETUP_UPLOAD_RETRY_ATTEMPTS + 1):
-            try:
-                with staged_path.open("rb") as payload:
+        destination_path = PurePosixPath(destination)
+        staging_name = (
+            f".{destination_path.name or 'upload'}.osworld-upload-"
+            f"{secrets.token_hex(12)}"
+        )
+        guest_staging_path = str(destination_path.parent / staging_name)
+        committed = False
+        try:
+            for attempt in range(1, SETUP_UPLOAD_RETRY_ATTEMPTS + 1):
+                try:
+                    with staged_path.open("rb") as payload:
+                        await asyncio.to_thread(
+                            guest.sandbox.files.write,
+                            guest_staging_path,
+                            payload,
+                            user="user",
+                            request_timeout=RELAY_HTTP_TIMEOUT_S,
+                            use_octet_stream=True,
+                        )
                     await asyncio.to_thread(
-                        guest.sandbox.files.write,
+                        guest.sandbox.files.rename,
+                        guest_staging_path,
                         destination,
-                        payload,
                         user="user",
                         request_timeout=RELAY_HTTP_TIMEOUT_S,
-                        use_octet_stream=True,
                     )
-                size = staged_path.stat().st_size
-                return web.Response(text=f"File Uploaded: {size} bytes")
-            except Exception as exc:
-                if attempt == SETUP_UPLOAD_RETRY_ATTEMPTS:
+                    committed = True
+                    size = staged_path.stat().st_size
+                    return web.Response(text=f"File Uploaded: {size} bytes")
+                except SETUP_UPLOAD_TRANSIENT_ERRORS as exc:
+                    if attempt == SETUP_UPLOAD_RETRY_ATTEMPTS:
+                        raise web.HTTPBadGateway(
+                            text="native E2B setup upload failed"
+                        ) from exc
+                    await asyncio.sleep(SETUP_UPLOAD_RETRY_DELAY_S * attempt)
+                except Exception as exc:
                     raise web.HTTPBadGateway(
                         text="native E2B setup upload failed"
                     ) from exc
-                await asyncio.sleep(SETUP_UPLOAD_RETRY_DELAY_S * attempt)
-        raise AssertionError("unreachable")
+            raise AssertionError("unreachable")
+        finally:
+            if not committed:
+                try:
+                    await asyncio.to_thread(
+                        guest.sandbox.files.remove,
+                        guest_staging_path,
+                        user="user",
+                        request_timeout=RELAY_HTTP_TIMEOUT_S,
+                    )
+                except Exception as exc:
+                    print(
+                        f"[relay] warning: could not remove failed upload staging "
+                        f"{guest_staging_path}: {exc}",
+                        file=sys.stderr,
+                    )
     finally:
         if staged_path is not None:
             staged_path.unlink(missing_ok=True)
@@ -377,7 +420,10 @@ class GuestManager:
                 if attempt == HEARTBEAT_RETRY_ATTEMPTS:
                     return False
                 await asyncio.sleep(HEARTBEAT_RETRY_DELAY_S * attempt)
-        self._last_refresh = asyncio.get_running_loop().time()
+        async with self._lock:
+            if self._stopped or self._guest is not guest:
+                return False
+            self._last_refresh = asyncio.get_running_loop().time()
         return True
 
     async def heartbeat(self) -> None:
