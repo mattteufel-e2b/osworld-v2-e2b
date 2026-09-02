@@ -26,11 +26,11 @@ template/files/server/src/
 
 # Service fleet runtime state + secrets (sandbox ids, per-sandbox traffic
 # tokens, the run-local GitLab PAT). Never commit these.
-services/.runtime*.json
-services/.*-token
-services/*.token
-services/*.pid
-services/*.log
+services/**/.runtime*.json
+services/**/.*-token
+services/**/*.token
+services/**/*.pid
+services/**/*.log
 
 # Pinned upstream checkout and gated task data: downloaded per-consumer after
 # accepting the upstream dataset gate, never committed.
