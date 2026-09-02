@@ -104,10 +104,19 @@ class FleetRuntimePolicyTests(unittest.TestCase):
             websites.RECEIPT,
             V2_ROOT / "out" / "osworld-v2-evidence" / "services-websites.json",
         )
+        self.assertEqual(websites.V2_CHECKOUT, V2_ROOT / "OSWorld-V2")
         self.assertEqual(
             builder.RECEIPT,
             V2_ROOT / "out" / "osworld-v2-evidence" / "fleet-template-build.json",
         )
+
+    def test_failed_v2_website_builder_check_is_release_blocking(self):
+        websites = load_websites_launcher()
+
+        with self.assertRaisesRegex(RuntimeError, "V2 website routing check failed"):
+            websites.require_v2_builder_success(
+                {"status": None, "error": "checkout could not be imported"}
+            )
 
     def test_runtime_write_atomically_replaces_complete_owner_only_file(self):
         with tempfile.TemporaryDirectory() as directory:

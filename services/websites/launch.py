@@ -271,7 +271,7 @@ def probe_host_ingress(sbx, ports: dict[str, int], token: str) -> dict:
     }
 
 
-V2_CHECKOUT = fl.REPO_ROOT / "rewrites" / "osworld-v2" / "OSWorld-V2"
+V2_CHECKOUT = fl.REPO_ROOT / "OSWorld-V2"
 
 
 def verify_via_v2_builder(public_suffix: str, site: str = "mailhub") -> dict:
@@ -325,6 +325,11 @@ def verify_via_v2_builder(public_suffix: str, site: str = "mailhub") -> dict:
         return {"status": None, "error": f"builder subprocess failed: {res.stderr[-300:]}"}
 
 
+def require_v2_builder_success(result: dict) -> None:
+    if result.get("status") != 200:
+        raise RuntimeError("V2 website routing check failed")
+
+
 def main() -> int:
     fl.load_e2b_key()
     template_ref = fl.ensure_fleet_template()
@@ -374,6 +379,7 @@ def main() -> int:
         )
         fl.log(f"host proxy path check: {proxy_path_check}")
         v2_builder_check = verify_via_v2_builder(public_suffix, "mailhub")
+        require_v2_builder_success(v2_builder_check)
         fl.log(f"V2 build_website_url check: {v2_builder_check}")
 
     # Preserve first-boot timing across reuse (MINOR review item): keep a runs log.
