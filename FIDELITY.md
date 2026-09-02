@@ -23,8 +23,11 @@ without a reference to match against, and what is excluded or unexercised outrig
   `out/osworld-v2-evidence/template-build.json` `pinnedVersions`.
 - **Guest control server**: V2's FastAPI/uvicorn `osworld-server`, vendored at
   `xlang-ai/osworld-server@a3cc3f0c64e463f020d1a44780307e9b46cbcab1`, with hark's null-safe
-  AT-SPI serializer guards re-applied (V2 carries the identical defect — `role`, `name`,
-  action description, key binding, stripped role-name — at the same call sites as V1).
+  AT-SPI serializer guards re-applied, plus the exact-process-path open-file fallback and
+  near-silent ffmpeg recording flags. The unlicensed source is generated only by
+  `template/fetch_server.sh`; the repository carries two reviewable patches against the pin,
+  not a copy of upstream source. V2 carries the identical AT-SPI defect — `role`, `name`,
+  action description, key binding, stripped role-name — at the same call sites as V1.
   Corroborated live: accessibility observations returned substantial, non-empty content
   with no serialization crash across every one of the 20 validated sandboxes
   (`out/osworld-v2-evidence/validate-run1.json`, `validate-run2.json`,

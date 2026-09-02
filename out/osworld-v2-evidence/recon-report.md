@@ -4,8 +4,8 @@ Release: `osworld-v2-2026.08.08`. Tasks dataset `xlangai/osworld_v2_tasks` @
 `2c538752e5ef2f40eccc6f546c05738ce9b4228b` (108 `task_*.py` files, matches the release manifest's
 `task_hash_manifest.task_count`). Assets dataset `xlangai/osworld_v2_assets_gated` @
 `402754cc7bd74690168c46ef0c58c375542c4afe` (1061 files, ~4.2GB, downloaded but not inventoried
-beyond directory structure — not required by the brief). Both were downloaded into
-`rewrites/osworld-v2/tasks/` (gitignored; `git status --porcelain` has zero entries under that
+beyond directory structure — not required by the brief). Both were downloaded into this
+repository's ignored `tasks/` workspace (`git status --porcelain` had zero entries under that
 path). No task prompts, evaluator source, or asset content are reproduced below — counts, task
 ids, domain/app tags, and endpoint names only.
 

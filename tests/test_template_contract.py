@@ -1,3 +1,5 @@
+import re
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -67,11 +69,65 @@ def test_absolute_chrome_launches_get_software_webgl_flags():
     assert "--ignore-gpu-blocklist" in chrome
 
 
-def test_open_file_accepts_generic_app_window_when_exact_path_is_running():
-    server = (ROOT / "template" / "files" / "server" / "src" / "http_routes.py").read_text()
+def test_fetch_server_applies_every_committed_patch_to_the_pinned_checkout():
+    fetch = (ROOT / "template" / "fetch_server.sh").read_text()
+    build = (ROOT / "template" / "build.ts").read_text()
+    patches = sorted((ROOT / "patches").glob("*.patch"))
 
-    assert "def _process_has_exact_path_argument" in server
-    assert "_process_has_exact_path_argument(path_obj)" in server
+    server_commit = "a3cc3f0c64e463f020d1a44780307e9b46cbcab1"
+    assert f'COMMIT="{server_commit}"' in fetch
+    assert f"const OSWORLD_SERVER_COMMIT = '{server_commit}'" in build
+    assert [patch.name for patch in patches] == [
+        "osworld-server-atspi-guards.patch",
+        "osworld-server-runtime-reliability.patch",
+    ]
+    assert 'PATCH_DIR="$REPO_ROOT/patches"' in fetch
+    assert 'for patch_file in "$PATCH_DIR"/*.patch; do' in fetch
+    assert 'patch -p1 -s < "$patch_file"' in fetch
+
+
+def test_server_runtime_patch_adds_exact_path_fallback_and_quiet_recording():
+    patch = (ROOT / "patches" / "osworld-server-runtime-reliability.patch").read_text()
+
+    assert "def _process_has_exact_path_argument(path: Path) -> bool:" in patch
+    assert "_process_has_exact_path_argument(path_obj)" in patch
+    assert re.search(
+        r'^\+\s+"-hide_banner",\n\+\s+"-nostats",\n'
+        r'\+\s+"-loglevel",\n\+\s+"error",$',
+        patch,
+        re.MULTILINE,
+    )
+
+
+def test_public_docs_and_scripts_use_only_standalone_repository_paths():
+    tracked = (
+        subprocess.check_output(
+            [
+                "git",
+                "-C",
+                str(ROOT),
+                "ls-files",
+                "-z",
+                "*.md",
+                "*.sh",
+                "*.py",
+                "*.ts",
+                ":(exclude)tests/**",
+            ]
+        )
+        .decode()
+        .split("\0")
+    )
+    violations: list[str] = []
+
+    for relative_path in filter(None, tracked):
+        text = (ROOT / relative_path).read_text()
+        if "env-registry" in text or "rewrites/osworld-v2" in text:
+            violations.append(relative_path)
+        if re.search(r"(?m)^\s*(?:\$\s*)?cd\s+\.\./", text):
+            violations.append(relative_path)
+
+    assert not violations, "non-standalone paths: " + ", ".join(sorted(set(violations)))
 
 
 def test_xt_owner_rule_is_translated_to_native_nft_skuid():

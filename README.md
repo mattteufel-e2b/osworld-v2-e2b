@@ -10,7 +10,9 @@ Two things are never committed here: the upstream checkout (`OSWorld-V2/`) and t
 data (`tasks/`) — OSWorld 2.0's datasets are gated upstream, so each consumer accepts the
 gate and downloads them with their own credentials. The upstream guest server
 (`xlang-ai/osworld-server`) publishes no license, so it is fetched at a pinned commit and
-patched locally (`template/fetch_server.sh` + `patches/`), never redistributed.
+patched locally (`template/fetch_server.sh` + `patches/`), never redistributed. Run the fetch
+script before template typechecking or building; it replaces the ignored generated payload with
+a fresh copy of the pin and applies every committed patch in lexical order.
 
 `FIDELITY.md` is the verification ledger: what was verified against a reference, what was
 only recorded, and what is excluded (no VNC, no ALSA kernel modules, pause/resume unused).
@@ -22,9 +24,10 @@ Prerequisites: `E2B_API_KEY=...` in `.env.local` at the repo root, `uv`, Node 20
 
 ```bash
 template/fetch_server.sh                    # fetch + patch the pinned guest server
-cd template && uv run --env-file ../.env.local npm run build   # guest template
-cd ../services && uv run --env-file ../.env.local --python 3.12 --with e2b==2.34.0 \
-    python build_fleet_template.py          # fleet template
+uv run --env-file .env.local npm --prefix template run typecheck
+uv run --env-file .env.local npm --prefix template run build   # guest template
+uv run --env-file .env.local --python 3.12 --with e2b==2.34.0 \
+    python services/build_fleet_template.py                      # fleet template
 export GUEST_TEMPLATE=<name:build_id>       # from template/results/template-build.json
 export FLEET_TEMPLATE=<name:build_id>       # from out/osworld-v2-evidence/fleet-template-build.json
 runner/setup.sh                             # clone pinned OSWorld-V2 + apply e2b patches
