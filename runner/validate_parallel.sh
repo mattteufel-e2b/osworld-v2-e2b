@@ -7,7 +7,8 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 V2ROOT="$(cd "$HERE/.." && pwd)"
-REPO_ROOT="$V2ROOT"SERVICES_DIR="$V2ROOT/services"
+REPO_ROOT="$V2ROOT"
+SERVICES_DIR="$V2ROOT/services"
 MANIFEST="${VALIDATION_MANIFEST:-$V2ROOT/validation/full-manifest.json}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-$REPO_ROOT/out/osworld-v2-evidence/full-suite}"
 RAW_DIR="${RAW_DIR:-$REPO_ROOT/out/osworld-v2-raw/full-suite}"

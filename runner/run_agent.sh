@@ -16,7 +16,8 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 V2ROOT="$(cd "$HERE/.." && pwd)"
-REPO_ROOT="$V2ROOT"OSWORLD_ROOT="${OSWORLD_ROOT:-$V2ROOT/OSWorld-V2}"
+REPO_ROOT="$V2ROOT"
+OSWORLD_ROOT="${OSWORLD_ROOT:-$V2ROOT/OSWorld-V2}"
 TASKS_DIR="${OSWORLD_TASKS_DIR:-$V2ROOT/tasks}"
 SERVICES_DIR="$V2ROOT/services"
 RAW_DIR="${RAW_DIR:-$REPO_ROOT/out/osworld-v2-raw}"

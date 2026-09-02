@@ -1,0 +1,8 @@
+{
+  "suite": "osworld-v2",
+  "release": "osworld-v2-2026.08.08",
+  "code": {
+    "repository": "xlang-ai/OSWorld-V2",
+    "commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154"
+  }
+}

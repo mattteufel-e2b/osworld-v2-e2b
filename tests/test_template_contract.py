@@ -1,3 +1,4 @@
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -128,6 +129,76 @@ def test_public_docs_and_scripts_use_only_standalone_repository_paths():
             violations.append(relative_path)
 
     assert not violations, "non-standalone paths: " + ", ".join(sorted(set(violations)))
+
+
+def test_quick_start_installs_node_dependencies_before_template_commands():
+    readme = (ROOT / "README.md").read_text()
+
+    install = "npm --prefix template ci --ignore-scripts"
+    typecheck = "npm --prefix template run typecheck"
+    build = "npm --prefix template run build"
+    assert "Node >=20.18.1" in readme
+    assert readme.index(install) < readme.index(typecheck) < readme.index(build)
+
+
+def test_runner_scripts_do_not_swallow_assignments_at_line_boundaries():
+    violations: list[str] = []
+
+    for script in sorted((ROOT / "runner").glob("*.sh")):
+        for line_number, line in enumerate(script.read_text().splitlines(), start=1):
+            code_before_comment, separator, comment = line.partition("#")
+            if (
+                separator
+                and code_before_comment.strip()
+                and re.search(r"[A-Z][A-Z0-9_]*=", comment)
+            ):
+                violations.append(f"{script.relative_to(ROOT)}:{line_number}")
+            if re.search(
+                r'^[A-Z][A-Z0-9_]*=.*"[A-Z][A-Z0-9_]*=',
+                code_before_comment.strip(),
+            ):
+                violations.append(f"{script.relative_to(ROOT)}:{line_number}")
+
+    assert not violations, "comment-swallowed or concatenated assignments: " + ", ".join(
+        sorted(set(violations))
+    )
+
+
+def test_setup_preflight_validates_local_inputs_without_calling_git(tmp_path):
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    git_called = tmp_path / "git-called"
+    fake_git = fake_bin / "git"
+    fake_git.write_text(f'#!/bin/sh\ntouch "{git_called}"\nexit 97\n')
+    fake_git.chmod(0o755)
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}:{env['PATH']}"
+
+    result = subprocess.run(
+        ["bash", str(ROOT / "runner" / "setup.sh"), "--preflight"],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "preflight ok" in result.stdout
+    assert "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154" in result.stdout
+    assert not git_called.exists()
+
+
+def test_upstream_lock_is_not_shadowed_by_checkout_ignore_rule():
+    lock = "examples/osworld-v2/upstream.lock.json"
+
+    ignored = subprocess.run(
+        ["git", "-C", str(ROOT), "check-ignore", "--quiet", lock],
+        check=False,
+    )
+
+    assert (ROOT / lock).is_file()
+    assert ignored.returncode == 1
 
 
 def test_xt_owner_rule_is_translated_to_native_nft_skuid():

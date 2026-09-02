@@ -8,7 +8,8 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 V2ROOT="$(cd "$HERE/.." && pwd)"
-REPO_ROOT="$V2ROOT"SERVICES_DIR="$V2ROOT/services"
+REPO_ROOT="$V2ROOT"
+SERVICES_DIR="$V2ROOT/services"
 MANIFEST="${AGENT_MANIFEST:-$V2ROOT/validation/full-manifest.json}"
 PARALLEL_CONCURRENCY="${PARALLEL_CONCURRENCY:-80}"
 AGENT_RETRY_ATTEMPTS="${AGENT_RETRY_ATTEMPTS:-2}"

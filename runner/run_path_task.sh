@@ -6,7 +6,8 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 V2ROOT="$(cd "$HERE/.." && pwd)"
-REPO_ROOT="$V2ROOT"OSWORLD_ROOT="${OSWORLD_ROOT:-$V2ROOT/OSWorld-V2}"
+REPO_ROOT="$V2ROOT"
+OSWORLD_ROOT="${OSWORLD_ROOT:-$V2ROOT/OSWorld-V2}"
 TASKS_DIR="${OSWORLD_TASKS_DIR:-$V2ROOT/tasks}"
 SERVICES_DIR="$V2ROOT/services"
 FULL_MANIFEST="${VALIDATION_MANIFEST:-$V2ROOT/validation/full-manifest.json}"
@@ -103,4 +104,3 @@ fi
     --manifest "$WORKER_MANIFEST" \
     --raw-dir "$WORKER_DIR" \
     --output "$OUTPUT" )
-

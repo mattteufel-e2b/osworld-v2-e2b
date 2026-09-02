@@ -20,10 +20,12 @@ Receipts live in `out/osworld-v2-evidence/`.
 
 ## Quick start
 
-Prerequisites: `E2B_API_KEY=...` in `.env.local` at the repo root, `uv`, Node 20+, `git`.
+Prerequisites: `E2B_API_KEY=...` in `.env.local` at the repo root, `uv`, Node >=20.18.1,
+`npm`, and `git`.
 
 ```bash
 template/fetch_server.sh                    # fetch + patch the pinned guest server
+npm --prefix template ci --ignore-scripts
 uv run --env-file .env.local npm --prefix template run typecheck
 uv run --env-file .env.local npm --prefix template run build   # guest template
 uv run --env-file .env.local --python 3.12 --with e2b==2.34.0 \

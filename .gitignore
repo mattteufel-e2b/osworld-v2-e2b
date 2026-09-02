@@ -34,7 +34,7 @@ services/**/*.log
 
 # Pinned upstream checkout and gated task data: downloaded per-consumer after
 # accepting the upstream dataset gate, never committed.
-OSWorld-V2/
+/OSWorld-V2/
 tasks/
 
 # Raw run outputs (trajectories, screenshots, failure traces) may quote gated

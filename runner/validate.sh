@@ -9,7 +9,8 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-V2ROOT="$(cd "$HERE/.." && pwd)"            # repo rootREPO_ROOT="$V2ROOT"
+V2ROOT="$(cd "$HERE/.." && pwd)"            # repo root
+REPO_ROOT="$V2ROOT"
 OSWORLD_ROOT="${OSWORLD_ROOT:-$V2ROOT/OSWorld-V2}"
 TASKS_DIR="${OSWORLD_TASKS_DIR:-$V2ROOT/tasks}"
 SERVICES_DIR="$V2ROOT/services"

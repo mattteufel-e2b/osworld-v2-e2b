@@ -18,10 +18,12 @@
 #
 # Usage:  ./setup.sh [dest-dir]            apply patches (default state)
 #         ./setup.sh --restore [dest-dir]  revert to pristine, then exit
+#         ./setup.sh --preflight           validate local inputs and pin, then exit
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-V2ROOT="$(cd "$HERE/.." && pwd)"            # repo rootRELAY_DIR="$V2ROOT/relay"
+V2ROOT="$(cd "$HERE/.." && pwd)"            # repo root
+RELAY_DIR="$V2ROOT/relay"
 PROVIDER_DIR="$V2ROOT/provider"
 POLICY_FILE="$V2ROOT/e2b_policy.py"
 LOCKFILE="$V2ROOT/examples/osworld-v2/upstream.lock.json"
@@ -30,7 +32,14 @@ LOCKFILE="$V2ROOT/examples/osworld-v2/upstream.lock.json"
 PIN=d578d2d4e0dc82b43e270fdaa7fa89d9708cd154
 
 RESTORE=0
-if [ "${1:-}" = "--restore" ]; then RESTORE=1; shift; fi
+PREFLIGHT=0
+if [ "${1:-}" = "--restore" ]; then
+    RESTORE=1
+    shift
+elif [ "${1:-}" = "--preflight" ]; then
+    PREFLIGHT=1
+    shift
+fi
 DEST="${1:-$PWD/OSWorld-V2}"
 
 # --restore returns the checkout to pristine (pin-verification state) by reverting
@@ -65,6 +74,24 @@ EOF
 if [ "$LOCK_PIN" != "$PIN" ]; then
     echo "ERROR: setup.sh PIN ($PIN) != upstream.lock.json commit ($LOCK_PIN)" >&2
     exit 1
+fi
+
+for required_file in \
+    "$RELAY_DIR/relay.py" \
+    "$PROVIDER_DIR/provider.py" \
+    "$PROVIDER_DIR/manager.py" \
+    "$POLICY_FILE" \
+    "$HERE/requirements-e2b.txt"
+do
+    if [ ! -f "$required_file" ]; then
+        echo "ERROR: required local file not found at $required_file" >&2
+        exit 1
+    fi
+done
+
+if [ "$PREFLIGHT" -eq 1 ]; then
+    echo "preflight ok: local inputs present; OSWorld-V2 pin $PIN"
+    exit 0
 fi
 
 if [ ! -d "$DEST/.git" ]; then
