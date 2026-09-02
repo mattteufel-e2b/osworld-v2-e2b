@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+from aiohttp import web
 from aiohttp.test_utils import make_mocked_request
 
 # The relay ships as a standalone module in the sibling relay/ directory (it runs
@@ -38,6 +39,7 @@ PROTECTED_EGRESS_CIDRS = [
 
 class FakeSandbox:
     created = []
+    deleted_snapshots = []
     root_capacity_bytes = 100 * 1024**3
 
     def __init__(self, sandbox_id):
@@ -73,6 +75,10 @@ class FakeSandbox:
         cls.created.append(sandbox)
         return sandbox
 
+    @classmethod
+    def delete_snapshot(cls, snapshot_id):
+        cls.deleted_snapshots.append(snapshot_id)
+
     def get_host(self, port):
         return f"{port}-{self.sandbox_id}.example.test"
 
@@ -92,8 +98,84 @@ class FakeSandbox:
 class RelayTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         FakeSandbox.created.clear()
+        FakeSandbox.deleted_snapshots.clear()
         relay.TEMPLATE = IMMUTABLE_TEMPLATE
         self.manager = relay.GuestManager()
+
+    @staticmethod
+    def _upload_request(
+        destination="/home/user/Desktop/input.bin", data=b"file-payload"
+    ):
+        class Part:
+            def __init__(self, name, payload):
+                self.name = name
+                self.payload = payload
+                self.offset = 0
+
+            async def text(self):
+                return self.payload.decode()
+
+            async def read_chunk(self, size=8192):
+                chunk = self.payload[self.offset : self.offset + size]
+                self.offset += len(chunk)
+                return chunk
+
+        class Reader:
+            def __init__(self):
+                self.parts = iter(
+                    [
+                        Part("file_path", destination.encode()),
+                        Part("file_data", data),
+                    ]
+                )
+
+            async def next(self):
+                return next(self.parts, None)
+
+        class Request:
+            method = "POST"
+            path = "/setup/upload"
+            rel_url = "/setup/upload"
+            headers = {}
+
+            async def multipart(self):
+                return Reader()
+
+            async def read(self):
+                return b"proxied-upload-body"
+
+        return Request()
+
+    @staticmethod
+    def _proxy_session(requests):
+        class Response:
+            status = 200
+            headers = {}
+
+            async def read(self):
+                return b"proxied"
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_args):
+                return None
+
+        class Session:
+            def __init__(self, **_kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_args):
+                return None
+
+            def request(self, method, url, **kwargs):
+                requests.append((method, url, kwargs))
+                return Response()
+
+        return Session
 
     async def test_guest_proxy_install_omits_host_credentials_and_paths(self):
         runtime = {
@@ -376,6 +458,145 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("traffic_token", relay._public_state(guest))
         self.assertNotIn("top-secret", json.dumps(relay._public_state(guest)))
 
+    async def test_setup_upload_uses_one_native_file_write_without_http_forward(self):
+        writes = []
+        staged_paths = []
+
+        class Files:
+            def write(self, path, data, **kwargs):
+                staged_paths.append(Path(data.name))
+                writes.append((path, data.read(), kwargs))
+
+        guest = relay.Guest(
+            sandbox=type("Sandbox", (), {"files": Files()})(),
+            sandbox_id="sandbox-1",
+            traffic_token="token",
+            hosts={5000: "5000-sandbox-1.example.test"},
+            generation=1,
+        )
+
+        class Manager:
+            async def current(self):
+                return guest
+
+            def touch(self):
+                pass
+
+        proxy_requests = []
+        with (
+            patch.object(relay, "manager", Manager()),
+            patch.object(
+                relay.aiohttp,
+                "ClientSession",
+                self._proxy_session(proxy_requests),
+            ),
+        ):
+            response = await relay.make_proxy_handler(relay.SERVER_LOCAL)(
+                self._upload_request()
+            )
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.text, "File Uploaded: 12 bytes")
+        self.assertEqual(len(writes), 1)
+        self.assertEqual(writes[0][0], "/home/user/Desktop/input.bin")
+        self.assertEqual(writes[0][1], b"file-payload")
+        self.assertEqual(
+            writes[0][2],
+            {
+                "user": "user",
+                "request_timeout": relay.RELAY_HTTP_TIMEOUT_S,
+                "use_octet_stream": True,
+            },
+        )
+        self.assertEqual(proxy_requests, [])
+        self.assertEqual(len(staged_paths), 1)
+        self.assertFalse(staged_paths[0].exists())
+
+    async def test_setup_upload_transport_failure_is_bounded_502_and_cleans_staging(
+        self,
+    ):
+        staged_paths = []
+
+        class Files:
+            def write(self, _path, data, **_kwargs):
+                staged_paths.append(Path(data.name))
+                raise ConnectionError("control-plane upload failed")
+
+        guest = relay.Guest(
+            sandbox=type("Sandbox", (), {"files": Files()})(),
+            sandbox_id="sandbox-1",
+            traffic_token="token",
+            hosts={5000: "5000-sandbox-1.example.test"},
+            generation=1,
+        )
+
+        class Manager:
+            async def current(self):
+                return guest
+
+            def touch(self):
+                pass
+
+        proxy_requests = []
+        retry_sleep = AsyncMock()
+        with (
+            patch.object(relay, "manager", Manager()),
+            patch.object(
+                relay.aiohttp,
+                "ClientSession",
+                self._proxy_session(proxy_requests),
+            ),
+            patch.object(relay.asyncio, "sleep", retry_sleep),
+            self.assertRaises(web.HTTPBadGateway),
+        ):
+            await relay.make_proxy_handler(relay.SERVER_LOCAL)(self._upload_request())
+
+        self.assertEqual(len(staged_paths), 3)
+        self.assertEqual(len(set(staged_paths)), 1)
+        self.assertFalse(staged_paths[0].exists())
+        self.assertEqual(retry_sleep.await_count, 2)
+        self.assertTrue(
+            all(0 <= call.args[0] <= 2 for call in retry_sleep.await_args_list)
+        )
+        self.assertEqual(proxy_requests, [])
+
+    async def test_setup_upload_rejects_relative_destination_without_sdk_write(self):
+        writes = []
+
+        class Files:
+            def write(self, *args, **kwargs):
+                writes.append((args, kwargs))
+
+        guest = relay.Guest(
+            sandbox=type("Sandbox", (), {"files": Files()})(),
+            sandbox_id="sandbox-1",
+            traffic_token="token",
+            hosts={5000: "5000-sandbox-1.example.test"},
+            generation=1,
+        )
+
+        class Manager:
+            async def current(self):
+                return guest
+
+            def touch(self):
+                pass
+
+        with (
+            patch.object(relay, "manager", Manager()),
+            patch.object(
+                relay.aiohttp,
+                "ClientSession",
+                self._proxy_session([]),
+            ),
+            self.assertRaises(web.HTTPBadRequest),
+        ):
+            await relay.make_proxy_handler(relay.SERVER_LOCAL)(
+                self._upload_request(destination="home/user/Desktop/input.bin")
+            )
+
+        self.assertEqual(writes, [])
+
     async def test_saved_snapshot_reverts_to_running_state_source(self):
         with (
             patch.object(relay, "Sandbox", FakeSandbox),
@@ -414,6 +635,63 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(await self.manager._heartbeat_once())
             self.assertEqual(guest.sandbox.timeout_calls, [relay.SANDBOX_TIMEOUT_S])
 
+    async def test_heartbeat_retries_transient_control_plane_failure(self):
+        with (
+            patch.object(relay, "Sandbox", FakeSandbox),
+            patch.object(self.manager, "_wait_ready", AsyncMock()),
+            patch.object(relay.asyncio, "sleep", AsyncMock()) as retry_sleep,
+        ):
+            guest = await self.manager.replace()
+            attempts = 0
+
+            def flaky_set_timeout(seconds):
+                nonlocal attempts
+                attempts += 1
+                if attempts < 3:
+                    raise ConnectionError("transient control-plane failure")
+                guest.sandbox.timeout_calls.append(seconds)
+
+            guest.sandbox.set_timeout = flaky_set_timeout
+            self.manager.touch()
+
+            self.assertTrue(await self.manager._heartbeat_once())
+            self.assertFalse(await self.manager._heartbeat_once())
+
+        self.assertEqual(attempts, 3)
+        self.assertEqual(guest.sandbox.timeout_calls, [relay.SANDBOX_TIMEOUT_S])
+        self.assertEqual(retry_sleep.await_count, 2)
+        self.assertTrue(
+            all(0 <= call.args[0] <= 4 for call in retry_sleep.await_args_list)
+        )
+
+    async def test_heartbeat_final_failure_keeps_activity_pending_for_later_retry(self):
+        with (
+            patch.object(relay, "Sandbox", FakeSandbox),
+            patch.object(self.manager, "_wait_ready", AsyncMock()),
+            patch.object(relay.asyncio, "sleep", AsyncMock()) as retry_sleep,
+        ):
+            guest = await self.manager.replace()
+            attempts = 0
+
+            def failed_set_timeout(_seconds):
+                nonlocal attempts
+                attempts += 1
+                raise ConnectionError("control plane unavailable")
+
+            guest.sandbox.set_timeout = failed_set_timeout
+            self.manager.touch()
+            refresh_before_failure = self.manager._last_refresh
+
+            self.assertFalse(await self.manager._heartbeat_once())
+            self.assertEqual(self.manager._last_refresh, refresh_before_failure)
+            self.assertEqual(attempts, 3)
+            self.assertEqual(retry_sleep.await_count, 2)
+
+            guest.sandbox.set_timeout = guest.sandbox.timeout_calls.append
+            self.assertTrue(await self.manager._heartbeat_once())
+
+        self.assertEqual(guest.sandbox.timeout_calls, [relay.SANDBOX_TIMEOUT_S])
+
     async def test_heartbeat_never_refreshes_after_stop(self):
         with (
             patch.object(relay, "Sandbox", FakeSandbox),
@@ -451,6 +729,19 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
             state = relay._public_state(guest)
         self.assertEqual(state["snapshots"], {"mid_task": snapshot_id})
         self.assertEqual(state["heartbeat_interval_seconds"], relay.HEARTBEAT_INTERVAL_S)
+
+    async def test_stop_kills_guest_but_keeps_snapshot_persistent_without_delete(self):
+        with (
+            patch.object(relay, "Sandbox", FakeSandbox),
+            patch.object(self.manager, "_wait_ready", AsyncMock()),
+        ):
+            guest = await self.manager.replace()
+            snapshot_id = await self.manager.save_snapshot("mid_task")
+            await self.manager.stop()
+
+        self.assertTrue(guest.sandbox.killed)
+        self.assertEqual(self.manager.snapshot_ids(), {"mid_task": snapshot_id})
+        self.assertEqual(FakeSandbox.deleted_snapshots, [])
 
     async def test_stop_endpoint_initiates_shutdown_without_a_guest(self):
         import asyncio

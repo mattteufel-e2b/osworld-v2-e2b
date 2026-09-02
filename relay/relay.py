@@ -15,6 +15,7 @@ import os
 import re
 import signal
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -49,6 +50,12 @@ HEARTBEAT_INTERVAL_S = max(
     30,
     min(int(os.environ.get("SANDBOX_HEARTBEAT_INTERVAL_S", "300")), SANDBOX_TIMEOUT_S // 4),
 )
+# Control-plane retries are deliberately fixed and short. A later scheduled
+# heartbeat remains available if all attempts fail.
+HEARTBEAT_RETRY_ATTEMPTS = 3
+HEARTBEAT_RETRY_DELAY_S = 2.0
+SETUP_UPLOAD_RETRY_ATTEMPTS = 3
+SETUP_UPLOAD_RETRY_DELAY_S = 1.0
 # How long a websocket upgrade retries the upstream connect before giving up.
 # Covers the resume window after create_snapshot (the capture pauses the guest,
 # dropping live CDP sockets): a client that re-dials immediately connects as soon
@@ -260,6 +267,66 @@ def _fleet_hostnames(rules_json: str) -> list[str]:
     return hosts
 
 
+async def _direct_setup_upload(request: web.Request, guest: Guest) -> web.Response:
+    """Stream the OSWorld setup upload through E2B's native file API."""
+    destination: str | None = None
+    staged_path: Path | None = None
+    seen_fields: set[str] = set()
+    try:
+        try:
+            reader = await request.multipart()
+            while part := await reader.next():
+                if part.name not in {"file_path", "file_data"}:
+                    continue
+                if part.name in seen_fields:
+                    raise ValueError(f"duplicate multipart field: {part.name}")
+                seen_fields.add(part.name)
+                if part.name == "file_path":
+                    destination = await part.text()
+                    continue
+                with tempfile.NamedTemporaryFile(
+                    prefix="osworld-upload-", delete=False
+                ) as staged:
+                    staged_path = Path(staged.name)
+                    while chunk := await part.read_chunk(size=1024 * 1024):
+                        staged.write(chunk)
+        except Exception as exc:
+            raise web.HTTPBadRequest(text="invalid multipart upload") from exc
+
+        if (
+            destination is None
+            or not Path(destination).is_absolute()
+            or staged_path is None
+        ):
+            raise web.HTTPBadRequest(
+                text="absolute file_path and file_data are required"
+            )
+
+        for attempt in range(1, SETUP_UPLOAD_RETRY_ATTEMPTS + 1):
+            try:
+                with staged_path.open("rb") as payload:
+                    await asyncio.to_thread(
+                        guest.sandbox.files.write,
+                        destination,
+                        payload,
+                        user="user",
+                        request_timeout=RELAY_HTTP_TIMEOUT_S,
+                        use_octet_stream=True,
+                    )
+                size = staged_path.stat().st_size
+                return web.Response(text=f"File Uploaded: {size} bytes")
+            except Exception as exc:
+                if attempt == SETUP_UPLOAD_RETRY_ATTEMPTS:
+                    raise web.HTTPBadGateway(
+                        text="native E2B setup upload failed"
+                    ) from exc
+                await asyncio.sleep(SETUP_UPLOAD_RETRY_DELAY_S * attempt)
+        raise AssertionError("unreachable")
+    finally:
+        if staged_path is not None:
+            staged_path.unlink(missing_ok=True)
+
+
 class GuestManager:
     def __init__(self) -> None:
         self._guest: Guest | None = None
@@ -297,16 +364,19 @@ class GuestManager:
             guest = self._guest
             if self._stopped or guest is None or self._last_activity <= self._last_refresh:
                 return False
-        try:
-            await asyncio.to_thread(guest.sandbox.set_timeout, SANDBOX_TIMEOUT_S)
-        except Exception as exc:
-            # The guest can be replaced/killed between the check and the call;
-            # the next beat operates on whatever guest is current then.
-            print(
-                f"[relay] warning: timeout refresh failed for {guest.sandbox_id}: {exc}",
-                file=sys.stderr,
-            )
-            return False
+        for attempt in range(1, HEARTBEAT_RETRY_ATTEMPTS + 1):
+            try:
+                await asyncio.to_thread(guest.sandbox.set_timeout, SANDBOX_TIMEOUT_S)
+                break
+            except Exception as exc:
+                print(
+                    f"[relay] warning: timeout refresh attempt {attempt}/"
+                    f"{HEARTBEAT_RETRY_ATTEMPTS} failed for {guest.sandbox_id}: {exc}",
+                    file=sys.stderr,
+                )
+                if attempt == HEARTBEAT_RETRY_ATTEMPTS:
+                    return False
+                await asyncio.sleep(HEARTBEAT_RETRY_DELAY_S * attempt)
         self._last_refresh = asyncio.get_running_loop().time()
         return True
 
@@ -574,6 +644,13 @@ def make_proxy_handler(local_port: int):
         manager.touch()
         target = f"https://{guest.hosts[remote_port]}{request.rel_url}"
         headers = _upstream_headers(request, guest)
+
+        if (
+            local_port == SERVER_LOCAL
+            and request.method == "POST"
+            and request.path == "/setup/upload"
+        ):
+            return await _direct_setup_upload(request, guest)
 
         if request.headers.get("Upgrade", "").lower() == "websocket":
             downstream = web.WebSocketResponse(max_msg_size=0)
