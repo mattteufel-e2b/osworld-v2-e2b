@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from e2b_policy import sandbox_network_policy  # noqa: E402
 
 SERVICES_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SERVICES_DIR.parents[1]
+REPO_ROOT = SERVICES_DIR.parent
 RECEIPT = REPO_ROOT / "out" / "osworld-v2-evidence" / "fleet-template-build.json"
 
 TEMPLATE_NAME = os.environ.get("FLEET_TEMPLATE_NAME", "osworld-v2-fleet-base")

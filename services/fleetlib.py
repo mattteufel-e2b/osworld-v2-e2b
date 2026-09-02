@@ -35,7 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from e2b_policy import require_immutable_template_ref, sandbox_network_policy  # noqa: E402
 
 SERVICES_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SERVICES_DIR.parents[1]
+REPO_ROOT = SERVICES_DIR.parent
 RUNTIME_FILE = SERVICES_DIR / ".runtime.json"
 PROXY_SCRIPT = SERVICES_DIR / "hostmap_proxy.py"
 PROXY_PIDFILE = SERVICES_DIR / ".hostmap_proxy.pid"

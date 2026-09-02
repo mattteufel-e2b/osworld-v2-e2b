@@ -29,6 +29,28 @@ def load_gitlab_launcher():
     return launcher
 
 
+def load_websites_launcher():
+    launcher_spec = importlib.util.spec_from_file_location(
+        "websites_launcher_under_test", V2_ROOT / "services" / "websites" / "launch.py"
+    )
+    launcher = importlib.util.module_from_spec(launcher_spec)
+    assert launcher_spec.loader is not None
+    with patch.dict(sys.modules, {"fleetlib": fleetlib}):
+        launcher_spec.loader.exec_module(launcher)
+    return launcher
+
+
+def load_fleet_template_builder():
+    builder_spec = importlib.util.spec_from_file_location(
+        "fleet_template_builder_under_test",
+        V2_ROOT / "services" / "build_fleet_template.py",
+    )
+    builder = importlib.util.module_from_spec(builder_spec)
+    assert builder_spec.loader is not None
+    builder_spec.loader.exec_module(builder)
+    return builder
+
+
 IMMUTABLE_FLEET = "osworld-v2-fleet-base:11111111-2222-3333-4444-555555555555"
 PROTECTED_EGRESS_CIDRS = [
     "10.0.0.0/8",
@@ -63,6 +85,30 @@ class FakeFleetSandbox:
 
 
 class FleetRuntimePolicyTests(unittest.TestCase):
+    def test_service_artifact_paths_are_anchored_to_candidate_root(self):
+        gitlab = load_gitlab_launcher()
+        websites = load_websites_launcher()
+        builder = load_fleet_template_builder()
+
+        self.assertEqual(fleetlib.REPO_ROOT, V2_ROOT)
+        self.assertEqual(
+            gitlab.LOCKFILE,
+            V2_ROOT / "examples" / "osworld-v2" / "upstream.lock.json",
+        )
+        self.assertTrue(gitlab.LOCKFILE.is_file())
+        self.assertEqual(
+            gitlab.RECEIPT,
+            V2_ROOT / "out" / "osworld-v2-evidence" / "services-gitlab.json",
+        )
+        self.assertEqual(
+            websites.RECEIPT,
+            V2_ROOT / "out" / "osworld-v2-evidence" / "services-websites.json",
+        )
+        self.assertEqual(
+            builder.RECEIPT,
+            V2_ROOT / "out" / "osworld-v2-evidence" / "fleet-template-build.json",
+        )
+
     def test_runtime_write_atomically_replaces_complete_owner_only_file(self):
         with tempfile.TemporaryDirectory() as directory:
             runtime_file = Path(directory) / ".runtime.json"
