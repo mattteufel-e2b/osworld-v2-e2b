@@ -134,9 +134,14 @@ def _install_guest_proxy(sandbox: Sandbox) -> None:
     if not (GUEST_PROXY_SCRIPT and GUEST_FLEET_RULES):
         return
     script = Path(GUEST_PROXY_SCRIPT).read_text()
-    rules = Path(GUEST_FLEET_RULES).read_text()
+    rules = _guest_proxy_runtime_json(Path(GUEST_FLEET_RULES).read_text())
     sandbox.files.write("/opt/hostmap_proxy.py", script)
     sandbox.files.write("/opt/fleet_runtime.json", rules)
+    sandbox.commands.run(
+        "chmod 0700 /opt/hostmap_proxy.py && chmod 0600 /opt/fleet_runtime.json",
+        user="root",
+        timeout=15,
+    )
     # nip.io resolves site hosts to 127.0.0.1 from inside E2B sandboxes; if a
     # guest's DNS blocks it, fall back to enumerated /etc/hosts entries (the site
     # list is enumerable from the uploaded runtime file). Strip any :port from the
@@ -164,6 +169,79 @@ def _install_guest_proxy(sandbox: Sandbox) -> None:
         timeout=0,
     )
     print(f"[relay] guest Host-mapping proxy installed on :{GUEST_PROXY_PORTS}", file=sys.stderr)
+
+
+def _guest_proxy_runtime_json(rules_json: str) -> str:
+    """Return the minimum fleet routing document safe to place in a guest."""
+    runtime = json.loads(rules_json)
+    websites = runtime.get("websites") or {}
+    gitlab = runtime.get("gitlab") or {}
+    safe = {
+        "websites": {
+            key: websites[key]
+            for key in ("host_suffix", "public_host_suffix")
+            if key in websites
+        }
+        | {
+            "sites": {
+                str(name): {
+                    key: info[key] for key in ("ingress_host", "port") if key in info
+                }
+                for name, info in (websites.get("sites") or {}).items()
+                if isinstance(info, dict)
+            }
+        },
+        "gitlab": {
+            key: gitlab[key]
+            for key in ("host", "url", "ingress_host", "port")
+            if key in gitlab
+        },
+    }
+    return json.dumps(safe, separators=(",", ":"))
+
+
+def _service_network_rules(rules_json: str) -> dict[str, list[dict[str, object]]]:
+    """Build exact-ingress-host E2B rules for fleet traffic credentials."""
+    runtime = json.loads(rules_json)
+    rules: dict[str, list[dict[str, object]]] = {}
+
+    def add_rule(ingress_host: object, token: object, label: str) -> None:
+        if not isinstance(ingress_host, str) or not ingress_host:
+            raise ValueError(f"{label} ingress_host is required")
+        if not isinstance(token, str) or not token:
+            raise ValueError(f"{label} traffic_token is required")
+        rule = {
+            "transform": {
+                "headers": {"e2b-traffic-access-token": token},
+            }
+        }
+        existing = rules.get(ingress_host)
+        if existing is not None and existing != [rule]:
+            raise ValueError(
+                f"conflicting traffic tokens for ingress host {ingress_host!r}"
+            )
+        rules[ingress_host] = [rule]
+
+    websites = runtime.get("websites") or {}
+    website_token = websites.get("traffic_token")
+    for site, info in (websites.get("sites") or {}).items():
+        if not isinstance(info, dict):
+            raise TypeError(f"website {site!r} route must be an object")
+        add_rule(info.get("ingress_host"), website_token, f"website {site!r}")
+
+    gitlab = runtime.get("gitlab") or {}
+    if gitlab:
+        add_rule(
+            gitlab.get("ingress_host"), gitlab.get("traffic_token"), "gitlab route"
+        )
+    return rules
+
+
+def _guest_network_policy() -> dict[str, object]:
+    policy = sandbox_network_policy()
+    if GUEST_FLEET_RULES:
+        policy["rules"] = _service_network_rules(Path(GUEST_FLEET_RULES).read_text())
+    return policy
 
 
 def _fleet_hostnames(rules_json: str) -> list[str]:
@@ -253,7 +331,7 @@ class GuestManager:
                 template_or_snapshot,
                 timeout=SANDBOX_TIMEOUT_S,
                 secure=True,
-                network=sandbox_network_policy(),
+                network=_guest_network_policy(),
                 metadata={"workload": "osworld", "generation": str(generation)},
             )
             # The awaiting task can be cancelled while this thread runs (client

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import secrets
+import shlex
 import sys
 import time
 from datetime import UTC, datetime
@@ -109,9 +110,9 @@ def write_fanout(sbx) -> None:
 
 
 def compose_up(sbx, token: str) -> None:
-    envs = f"GITLAB_URL={gitlab_url()} GITLAB_PRIVATE_TOKEN={token}"
+    envs = {"GITLAB_URL": gitlab_url(), "GITLAB_PRIVATE_TOKEN": token}
     cmd = (
-        f"cd {REPO_DIR} && {envs} "
+        f"cd {REPO_DIR} && "
         f"docker compose -f docker-compose.yml -f docker-compose.fanout.yml up -d "
         f"&& echo COMPOSE_OK || echo COMPOSE_FAIL"
     )
@@ -120,10 +121,11 @@ def compose_up(sbx, token: str) -> None:
     already = fl.poll_cmd(sbx, "grep -qs COMPOSE_OK /var/log/compose.log && echo done || echo no")
     if "done" not in (already or ""):
         sbx.commands.run(
-            f"sh -c '{cmd}' > /var/log/compose.log 2>&1",
+            f"sh -c {shlex.quote(cmd)} > /var/log/compose.log 2>&1",
             user="root",
             background=True,
             timeout=0,
+            envs=envs,
         )
     deadline = time.time() + 900  # image pull + container create
     while time.time() < deadline:
@@ -149,7 +151,9 @@ def wait_api_ready(sbx, token: str) -> float:
             fl.poll_cmd(
                 sbx,
                 f"curl -s -o /dev/null -w '%{{http_code}}' "
-                f"-H 'PRIVATE-TOKEN: {token}' http://localhost:{GITLAB_PORT}/api/v4/user",
+                f'-H "PRIVATE-TOKEN: $GITLAB_PRIVATE_TOKEN" '
+                f"http://localhost:{GITLAB_PORT}/api/v4/user",
+                envs={"GITLAB_PRIVATE_TOKEN": token},
             )
             or ""
         ).strip()

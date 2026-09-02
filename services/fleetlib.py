@@ -25,6 +25,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -103,7 +104,26 @@ def read_runtime() -> dict:
 def write_runtime_section(section: str, data: dict) -> dict:
     runtime = read_runtime()
     runtime[section] = data
-    RUNTIME_FILE.write_text(json.dumps(runtime, indent=2, sort_keys=True) + "\n")
+    payload = json.dumps(runtime, indent=2, sort_keys=True) + "\n"
+    RUNTIME_FILE.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=RUNTIME_FILE.parent,
+            prefix=f".{RUNTIME_FILE.name}.",
+            delete=False,
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+            temporary.write(payload)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        temporary_path.chmod(0o600)
+        os.replace(temporary_path, RUNTIME_FILE)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
     return runtime
 
 
@@ -189,14 +209,28 @@ def ensure_swap(sbx: Sandbox, gb: int = 8) -> None:
     )
 
 
-def poll_cmd(sbx: Sandbox, cmd: str, *, timeout: int = 30, retries: int = 6) -> str | None:
+def poll_cmd(
+    sbx: Sandbox,
+    cmd: str,
+    *,
+    timeout: int = 30,
+    retries: int = 6,
+    envs: dict[str, str] | None = None,
+) -> str | None:
     """Run a short command tolerating transient envd unresponsiveness (the
     command daemon can stall while a 23-image docker build saturates the box).
     Returns stdout, or None if every attempt timed out."""
     for _ in range(retries):
         try:
             return (
-                sbx.commands.run(cmd, user="root", timeout=timeout, request_timeout=90).stdout or ""
+                sbx.commands.run(
+                    cmd,
+                    user="root",
+                    timeout=timeout,
+                    request_timeout=90,
+                    envs=envs,
+                ).stdout
+                or ""
             )
         except Exception:  # noqa: BLE001
             time.sleep(15)

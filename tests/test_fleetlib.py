@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import stat
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -13,6 +16,18 @@ spec = importlib.util.spec_from_file_location(
 fleetlib = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
 spec.loader.exec_module(fleetlib)
+
+
+def load_gitlab_launcher():
+    launcher_spec = importlib.util.spec_from_file_location(
+        "gitlab_launcher_under_test", V2_ROOT / "services" / "gitlab" / "launch.py"
+    )
+    launcher = importlib.util.module_from_spec(launcher_spec)
+    assert launcher_spec.loader is not None
+    with patch.dict(sys.modules, {"fleetlib": fleetlib}):
+        launcher_spec.loader.exec_module(launcher)
+    return launcher
+
 
 IMMUTABLE_FLEET = "osworld-v2-fleet-base:11111111-2222-3333-4444-555555555555"
 PROTECTED_EGRESS_CIDRS = [
@@ -48,6 +63,82 @@ class FakeFleetSandbox:
 
 
 class FleetRuntimePolicyTests(unittest.TestCase):
+    def test_runtime_write_atomically_replaces_complete_owner_only_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime_file = Path(directory) / ".runtime.json"
+            runtime_file.write_text('{"websites": {}}\n')
+            runtime_file.chmod(0o644)
+            real_replace = os.replace
+            replacement_observation = {}
+
+            def observe_replace(source, destination):
+                replacement_observation["old"] = Path(destination).read_text()
+                replacement_observation["new"] = Path(source).read_text()
+                replacement_observation["mode"] = stat.S_IMODE(
+                    Path(source).stat().st_mode
+                )
+                real_replace(source, destination)
+
+            with (
+                patch.object(fleetlib, "RUNTIME_FILE", runtime_file),
+                patch.object(fleetlib.os, "replace", side_effect=observe_replace),
+            ):
+                fleetlib.write_runtime_section("gitlab", {"private_token": "secret"})
+
+            self.assertEqual(replacement_observation["old"], '{"websites": {}}\n')
+            self.assertEqual(replacement_observation["mode"], 0o600)
+            self.assertIn('"private_token": "secret"', replacement_observation["new"])
+            self.assertEqual(stat.S_IMODE(runtime_file.stat().st_mode), 0o600)
+            self.assertEqual(
+                runtime_file.read_text(),
+                '{\n  "gitlab": {\n    "private_token": "secret"\n  },\n'
+                '  "websites": {}\n}\n',
+            )
+
+    def test_gitlab_compose_passes_private_token_via_command_environment(self):
+        launcher = load_gitlab_launcher()
+        secret = "glpat-command-secret"
+
+        class Commands:
+            def __init__(self):
+                self.calls = []
+
+            def run(self, command, **kwargs):
+                self.calls.append((command, kwargs))
+                return object()
+
+        commands = Commands()
+        sandbox = type("Sandbox", (), {"commands": commands})()
+        with (
+            patch.object(launcher.fl, "poll_cmd", side_effect=["no", "COMPOSE_OK"]),
+            patch.object(launcher.time, "sleep"),
+        ):
+            launcher.compose_up(sandbox, secret)
+
+        command, kwargs = commands.calls[0]
+        self.assertNotIn(secret, command)
+        self.assertEqual(
+            kwargs["envs"],
+            {"GITLAB_URL": launcher.gitlab_url(), "GITLAB_PRIVATE_TOKEN": secret},
+        )
+
+    def test_gitlab_health_check_passes_private_token_via_command_environment(self):
+        launcher = load_gitlab_launcher()
+        secret = "glpat-health-secret"
+        calls = []
+
+        def poll_command(_sandbox, command, **kwargs):
+            calls.append((command, kwargs))
+            return "200"
+
+        with patch.object(launcher.fl, "poll_cmd", side_effect=poll_command):
+            launcher.wait_api_ready(object(), secret)
+
+        command, kwargs = calls[0]
+        self.assertNotIn(secret, command)
+        self.assertIn("$GITLAB_PRIVATE_TOKEN", command)
+        self.assertEqual(kwargs["envs"], {"GITLAB_PRIVATE_TOKEN": secret})
+
     def test_ensure_fleet_template_only_validates_prebuilt_immutable_reference(self):
         self.assertFalse(hasattr(fleetlib, "Template"))
         with patch.dict(os.environ, {"FLEET_TEMPLATE": IMMUTABLE_FLEET}, clear=True):

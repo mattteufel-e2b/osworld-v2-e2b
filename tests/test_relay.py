@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import importlib
+import json
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -93,6 +95,200 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
         relay.TEMPLATE = IMMUTABLE_TEMPLATE
         self.manager = relay.GuestManager()
 
+    async def test_guest_proxy_install_omits_host_credentials_and_paths(self):
+        runtime = {
+            "websites": {
+                "sandbox_id": "websites-sandbox",
+                "template": "fleet:build-id",
+                "traffic_token": "websites-traffic-token",
+                "host_suffix": "127.0.0.1.nip.io",
+                "public_host_suffix": "127.0.0.1.nip.io:8090",
+                "caddy_ingress_host": "80-websites.e2b.app",
+                "mode": "per-port-fanout",
+                "sites": {
+                    "mailhub": {
+                        "ingress_host": "13001-websites.e2b.app",
+                        "port": 13001,
+                    }
+                },
+            },
+            "gitlab": {
+                "sandbox_id": "gitlab-sandbox",
+                "template": "fleet:build-id",
+                "traffic_token": "gitlab-traffic-token",
+                "host": "gitlab.127.0.0.1.nip.io",
+                "ingress_host": "8929-gitlab.e2b.app",
+                "port": 8929,
+                "url": "http://gitlab.127.0.0.1.nip.io:8090",
+                "external_url": "http://gitlab.127.0.0.1.nip.io",
+                "private_token": "gitlab-private-token",
+                "token_file": "/host/services/.gitlab-token",
+            },
+        }
+
+        class Files:
+            def __init__(self):
+                self.writes = {}
+
+            def write(self, path, content):
+                self.writes[path] = content
+
+        class Commands:
+            def __init__(self):
+                self.calls = []
+
+            def run(self, command, **kwargs):
+                self.calls.append((command, kwargs))
+                return type("Result", (), {"stdout": "ok\n"})()
+
+        sandbox = type("Sandbox", (), {"files": Files(), "commands": Commands()})()
+        with tempfile.TemporaryDirectory() as directory:
+            script_file = Path(directory) / "hostmap_proxy.py"
+            runtime_file = Path(directory) / "runtime.json"
+            script_file.write_text("# guest proxy")
+            runtime_file.write_text(json.dumps(runtime))
+            with (
+                patch.object(relay, "GUEST_PROXY_SCRIPT", str(script_file)),
+                patch.object(relay, "GUEST_FLEET_RULES", str(runtime_file)),
+            ):
+                relay._install_guest_proxy(sandbox)
+
+        guest_runtime = json.loads(sandbox.files.writes["/opt/fleet_runtime.json"])
+
+        self.assertEqual(
+            guest_runtime,
+            {
+                "websites": {
+                    "host_suffix": "127.0.0.1.nip.io",
+                    "public_host_suffix": "127.0.0.1.nip.io:8090",
+                    "sites": {
+                        "mailhub": {
+                            "ingress_host": "13001-websites.e2b.app",
+                            "port": 13001,
+                        }
+                    },
+                },
+                "gitlab": {
+                    "host": "gitlab.127.0.0.1.nip.io",
+                    "url": "http://gitlab.127.0.0.1.nip.io:8090",
+                    "ingress_host": "8929-gitlab.e2b.app",
+                    "port": 8929,
+                },
+            },
+        )
+        serialized = json.dumps(guest_runtime)
+        self.assertNotIn("token", serialized.lower())
+        self.assertNotIn("/host/", serialized)
+        self.assertIn(
+            "chmod 0700 /opt/hostmap_proxy.py && chmod 0600 /opt/fleet_runtime.json",
+            [command for command, _kwargs in sandbox.commands.calls],
+        )
+
+    async def test_service_tokens_are_injected_only_for_exact_fleet_ingress_domains(
+        self,
+    ):
+        runtime = {
+            "websites": {
+                "traffic_token": "websites-traffic-token",
+                "sites": {
+                    "mailhub": {
+                        "ingress_host": "13001-websites.e2b.app",
+                        "port": 13001,
+                    },
+                    "teamchat": {
+                        "ingress_host": "13002-websites.e2b.app",
+                        "port": 13002,
+                    },
+                },
+            },
+            "gitlab": {
+                "ingress_host": "8929-gitlab.e2b.app",
+                "traffic_token": "gitlab-traffic-token",
+            },
+        }
+
+        rules = relay._service_network_rules(json.dumps(runtime))
+
+        self.assertEqual(
+            rules,
+            {
+                "13001-websites.e2b.app": [
+                    {
+                        "transform": {
+                            "headers": {
+                                "e2b-traffic-access-token": "websites-traffic-token"
+                            }
+                        }
+                    }
+                ],
+                "13002-websites.e2b.app": [
+                    {
+                        "transform": {
+                            "headers": {
+                                "e2b-traffic-access-token": "websites-traffic-token"
+                            }
+                        }
+                    }
+                ],
+                "8929-gitlab.e2b.app": [
+                    {
+                        "transform": {
+                            "headers": {
+                                "e2b-traffic-access-token": "gitlab-traffic-token"
+                            }
+                        }
+                    }
+                ],
+            },
+        )
+
+    async def test_replace_applies_fleet_token_rules_to_guest_network_policy(self):
+        runtime = {
+            "websites": {
+                "traffic_token": "websites-traffic-token",
+                "sites": {
+                    "mailhub": {"ingress_host": "13001-websites.e2b.app", "port": 13001}
+                },
+            },
+            "gitlab": {
+                "ingress_host": "8929-gitlab.e2b.app",
+                "traffic_token": "gitlab-traffic-token",
+            },
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            runtime_file = Path(directory) / "runtime.json"
+            runtime_file.write_text(json.dumps(runtime))
+            with (
+                patch.object(relay, "GUEST_FLEET_RULES", str(runtime_file)),
+                patch.object(relay, "Sandbox", FakeSandbox),
+                patch.object(self.manager, "_wait_ready", AsyncMock()),
+            ):
+                await self.manager.replace()
+
+        self.assertEqual(
+            FakeSandbox.created[0].create_kwargs["network"]["rules"],
+            {
+                "13001-websites.e2b.app": [
+                    {
+                        "transform": {
+                            "headers": {
+                                "e2b-traffic-access-token": "websites-traffic-token"
+                            }
+                        }
+                    }
+                ],
+                "8929-gitlab.e2b.app": [
+                    {
+                        "transform": {
+                            "headers": {
+                                "e2b-traffic-access-token": "gitlab-traffic-token"
+                            }
+                        }
+                    }
+                ],
+            },
+        )
+
     async def test_replace_uses_restricted_ingress_and_kills_previous_guest(self):
         with (
             patch.object(relay, "Sandbox", FakeSandbox),
@@ -178,6 +374,7 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Host", headers)
         self.assertEqual(headers["X-Test"], "yes")
         self.assertNotIn("traffic_token", relay._public_state(guest))
+        self.assertNotIn("top-secret", json.dumps(relay._public_state(guest)))
 
     async def test_saved_snapshot_reverts_to_running_state_source(self):
         with (
