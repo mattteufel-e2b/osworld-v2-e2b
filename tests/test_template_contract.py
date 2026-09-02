@@ -358,3 +358,17 @@ def test_template_build_smoke_covers_ipv4_and_ipv6_protected_ranges():
 
     for cidr in ("169.254.0.0/16", "::1/128", "fc00::/7", "fe80::/10", "ff00::/8"):
         assert cidr in build
+
+
+def test_guest_server_dependency_contract_excludes_broken_anyio_release():
+    requirements = {
+        name.lower(): version
+        for line in (ROOT / "template" / "files" / "server" / "requirements.txt")
+        .read_text()
+        .splitlines()
+        if line and not line.startswith("#")
+        for name, separator, version in [line.partition("==")]
+        if separator
+    }
+
+    assert requirements.get("anyio") == "4.14.2"
