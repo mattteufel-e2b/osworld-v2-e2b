@@ -350,6 +350,8 @@ def main() -> int:
     host_evidence = probe_host_ingress(sbx, ports, token)
 
     proxy_status = fl.restart_host_proxy()
+    if not proxy_status.get("running"):
+        raise RuntimeError("host proxy failed to start")
     # WEBSITE_HOST_SUFFIX must carry the host-proxy port: V2's build_website_url
     # does host = f"{path}.{HOST_SUFFIX}" with NO port, so a bare suffix yields a
     # :80 URL that is refused here. The port rides in the suffix so the f-string

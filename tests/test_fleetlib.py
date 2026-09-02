@@ -118,6 +118,55 @@ class FleetRuntimePolicyTests(unittest.TestCase):
                 {"status": None, "error": "checkout could not be imported"}
             )
 
+    def test_websites_main_rejects_non_running_host_proxy_without_success_receipt(self):
+        websites = load_websites_launcher()
+        sandbox = type(
+            "Sandbox",
+            (),
+            {
+                "sandbox_id": "website-sandbox",
+                "traffic_access_token": "runtime-only-token",
+                "get_host": lambda _self, port: f"{port}-website.example.test",
+            },
+        )()
+
+        with tempfile.TemporaryDirectory() as directory:
+            receipt = Path(directory) / "services-websites.json"
+            with (
+                patch.object(websites, "RECEIPT", receipt),
+                patch.object(websites.fl, "load_e2b_key"),
+                patch.object(
+                    websites.fl,
+                    "ensure_fleet_template",
+                    return_value=IMMUTABLE_FLEET,
+                ),
+                patch.object(
+                    websites.fl,
+                    "reuse_or_create",
+                    return_value=(sandbox, True),
+                ),
+                patch.object(websites.fl, "ensure_docker", return_value=0.0),
+                patch.object(websites.fl, "ensure_swap"),
+                patch.object(websites, "clone_repo"),
+                patch.object(websites, "enumerate_sites", return_value={"mailhub": 13001}),
+                patch.object(websites, "write_fanout"),
+                patch.object(websites, "compose_up", return_value=0.0),
+                patch.object(websites, "recreate_fanout"),
+                patch.object(websites, "wait_ready", return_value={"mailhub": 0.1}),
+                patch.object(websites, "probe_host_ingress", return_value={}),
+                patch.object(
+                    websites.fl,
+                    "restart_host_proxy",
+                    return_value={"running": False, "port": 8090},
+                ),
+                patch.object(websites.fl, "write_runtime_section") as write_runtime,
+                self.assertRaisesRegex(RuntimeError, "host proxy failed to start"),
+            ):
+                websites.main()
+
+            self.assertFalse(receipt.exists())
+            write_runtime.assert_not_called()
+
     def test_runtime_write_atomically_replaces_complete_owner_only_file(self):
         with tempfile.TemporaryDirectory() as directory:
             runtime_file = Path(directory) / ".runtime.json"
