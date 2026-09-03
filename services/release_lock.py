@@ -9,11 +9,14 @@ import sys
 from pathlib import Path
 
 GITLAB_REPOSITORY = "Task-Web/gitlab"
-REQUIRED_SERVICE_IMAGES = frozenset(
-    {"fanout", "gitlab", "gitlab_init", "gitlab_runner"}
-)
+SERVICE_IMAGE_REPOSITORIES = {
+    "fanout": "nginx",
+    "gitlab": "gitlab/gitlab-ce",
+    "gitlab_init": "docker",
+    "gitlab_runner": "gitlab/gitlab-runner",
+}
+REQUIRED_SERVICE_IMAGES = frozenset(SERVICE_IMAGE_REPOSITORIES)
 COMMIT_RE = re.compile(r"[0-9a-f]{40}")
-IMAGE_RE = re.compile(r"[^@\s]+@sha256:[0-9a-f]{64}")
 
 
 def validate_release_lock(path: Path) -> dict:
@@ -48,10 +51,12 @@ def validate_release_lock(path: Path) -> dict:
         )
     for name in sorted(REQUIRED_SERVICE_IMAGES):
         image = images[name]
-        if not isinstance(image, str) or IMAGE_RE.fullmatch(image) is None:
+        repository = SERVICE_IMAGE_REPOSITORIES[name]
+        expected = re.compile(rf"{re.escape(repository)}@sha256:[0-9a-f]{{64}}")
+        if not isinstance(image, str) or expected.fullmatch(image) is None:
             raise ValueError(
-                f"release lock invalid: service image {name!r} must use an "
-                "immutable sha256 digest"
+                f"release lock invalid: service image {name!r} must be "
+                f"{repository!r} at an immutable lowercase sha256 digest"
             )
     return lock
 

@@ -249,6 +249,44 @@ def test_release_lock_validator_rejects_missing_or_mutable_gitlab_pins(tmp_path)
         assert "release lock invalid" in result.stderr, name
 
 
+def test_release_lock_validator_rejects_malformed_or_wrong_image_names(tmp_path):
+    valid = json.loads(
+        (ROOT / "examples" / "osworld-v2" / "upstream.lock.json").read_text()
+    )
+    digest = "a" * 64
+    malformed = {
+        "colon-only": ("fanout", f":@sha256:{digest}"),
+        "url-prefix": ("gitlab", f"https://registry.example/gitlab/gitlab-ce@sha256:{digest}"),
+        "uppercase-name": ("gitlab_init", f"DOCKER@sha256:{digest}"),
+        "uppercase-digest": ("fanout", f"nginx@sha256:{'A' * 64}"),
+        "bracketed-name": ("gitlab_runner", f"[gitlab/gitlab-runner]@sha256:{digest}"),
+        "wrong-fanout-name": ("fanout", f"library/nginx@sha256:{digest}"),
+        "wrong-gitlab-name": ("gitlab", f"gitlab/gitlab-ee@sha256:{digest}"),
+        "wrong-init-name": ("gitlab_init", f"library/docker@sha256:{digest}"),
+        "wrong-runner-name": ("gitlab_runner", f"gitlab/runner@sha256:{digest}"),
+    }
+
+    for case, (image_name, image) in malformed.items():
+        candidate = tmp_path / f"{case}.json"
+        candidate.write_text(
+            json.dumps(
+                {
+                    **valid,
+                    "service_images": {**valid["service_images"], image_name: image},
+                }
+            )
+        )
+        result = subprocess.run(
+            ["python3", str(ROOT / "services" / "release_lock.py"), str(candidate)],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode != 0, case
+        assert "release lock invalid" in result.stderr, case
+
+
 def test_setup_preflight_runs_release_lock_validation_before_any_git_operation():
     setup = (ROOT / "runner" / "setup.sh").read_text()
 
