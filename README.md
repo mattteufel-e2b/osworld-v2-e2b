@@ -49,10 +49,10 @@ VALIDATION_MANIFEST="$RUN_ROOT/full-manifest.json" VALIDATION_RUNS=1 \
     runner/validate_parallel.sh                # all 108 tasks, zero external model calls
 ```
 
-The no-model receipt distinguishes a complete evaluator path (`PATH_PASS`) from an evaluator that
-reached the intentional disabled-model sentinel
-(`MODEL_BOUNDARY_PASS`). Both are validated no-model outcomes; the full-model sample must exercise
-any model-boundary-only task before release.
+The no-model receipt distinguishes an evaluator path that returned normally (`PATH_PASS`) from one
+that propagated the intentional disabled-model sentinel (`MODEL_BOUNDARY_PASS`). Both are validated
+no-model outcomes. The full-model sample must exercise every task that either propagated that
+sentinel or attempted an evaluator-model call that an upstream metric converted into a zero score.
 
 The validation coordinator stops both service fleets on exit. Set
 `TEARDOWN_FLEETS_ON_EXIT=0` only when deliberately retaining a campaign, and stop it later with
