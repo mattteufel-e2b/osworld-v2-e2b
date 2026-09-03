@@ -35,7 +35,7 @@ def test_parallel_validator_owns_proxy_and_namespaces_task_service_ports():
     assert 'if [ "$PARALLEL_CONCURRENCY" -gt 80 ]' in coordinator
     assert 'HOSTMAP_PORT="8090"' in coordinator
     assert 'task_id" = "082"' in coordinator
-    assert 'task_service_ports="60082:3000"' in coordinator
+    assert 'task_service_ports="3000:3000"' in coordinator
     assert 'OSWORLD_TASK_SERVICE_PORTS="$task_service_ports"' in coordinator
     assert 'OSWORLD_TASK_082_HOST_PORT="$task_082_host_port"' in coordinator
 
@@ -513,6 +513,7 @@ def test_full_agent_coordinator_bounds_sandboxes_and_namespaces_task_service_por
     assert 'HOSTMAP_PORT="8090"' in coordinator
     assert 'task_id" = "082"' in coordinator
     assert 'task_service_ports="$task_082_host_port:3000"' in coordinator
+    assert "task_082_host_port=3000" in coordinator
     assert 'OSWORLD_TASK_082_HOST_PORT="$task_082_host_port"' in coordinator
     assert 'task_service_ports=""' in coordinator
     assert 'AGENT_RETRY_ATTEMPTS="${AGENT_RETRY_ATTEMPTS:-0}"' in coordinator
@@ -551,6 +552,18 @@ def test_agent_coordinator_can_opt_literal_port_task_into_a_sample_wave():
     assert 'task_service_ports="$task_082_host_port:3000"' in coordinator
     assert 'if [ "$RUN_TASK_082_CONCURRENT" != "1" ]' in coordinator
     assert '"task_082_concurrent": task_082_concurrent' in aggregator
+
+
+def test_no_model_aggregate_distinguishes_full_paths_from_model_boundaries():
+    parallel = (ROOT / "runner" / "validate_parallel.sh").read_text()
+    sequential = (ROOT / "runner" / "validate.sh").read_text()
+
+    assert "MODEL_BOUNDARY_PASS" in parallel
+    assert '"model_boundary_passes"' in parallel
+    assert '"validated_tasks"' in parallel
+    assert "MODEL_BOUNDARY_PASS" in sequential
+    assert "model_boundary_passes=" in sequential
+    assert "validated_tasks=" in sequential
 
 
 def test_task_082_separates_host_relay_port_from_guest_browser_port():

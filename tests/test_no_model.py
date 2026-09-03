@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runner"))
-from no_model import NoModelGuard  # noqa: E402
+from no_model import NoModelGuard, model_boundary_result  # noqa: E402
 
 
 def test_no_model_guard_returns_deterministic_negative_without_backend_creation():
@@ -30,3 +30,17 @@ def test_no_model_guard_returns_deterministic_negative_without_backend_creation(
     assert guard.call_attempts == 3
     with pytest.raises(RuntimeError, match="disabled"):
         model_client.create_backend(object())
+
+
+def test_model_boundary_result_is_explicit_and_only_applies_during_evaluation():
+    error = RuntimeError("structured evaluator rejected the deterministic stub")
+
+    assert model_boundary_result("evaluate", error, call_attempts=1) == {
+        "path_status": "MODEL_BOUNDARY_PASS",
+        "stage": "model-boundary",
+        "evaluator_ran": True,
+        "score": 0.0,
+        "error_type": "RuntimeError",
+    }
+    assert model_boundary_result("reset", error, call_attempts=1) is None
+    assert model_boundary_result("evaluate", error, call_attempts=0) is None

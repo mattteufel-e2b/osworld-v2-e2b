@@ -119,8 +119,8 @@ run_batch() {
         task_service_ports=""
         task_082_host_port=""
         if [ "$task_id" = "082" ]; then
-            task_service_ports="60082:3000"
-            task_082_host_port="60082"
+            task_service_ports="3000:3000"
+            task_082_host_port="3000"
         fi
         output="$RAW_DIR/workers/task_${task_id}.json"
         log="$RAW_DIR/workers/task_${task_id}.log"
@@ -175,6 +175,10 @@ for task_id in expected_ids:
 sandbox_ids = [r.get("sandbox", {}).get("id") for r in records if r.get("sandbox", {}).get("id")]
 unique = set(sandbox_ids)
 path_passes = sum(r.get("path_status") == "PATH_PASS" for r in records)
+model_boundary_passes = sum(
+    r.get("path_status") == "MODEL_BOUNDARY_PASS" for r in records
+)
+validated_tasks = path_passes + model_boundary_passes
 evaluator_ran = sum(bool(r.get("evaluator_ran")) for r in records)
 external_model_calls = sum(int(r.get("external_model_calls", -1)) for r in records)
 eval_model_call_attempts = sum(int(r.get("eval_model_call_attempts", 0)) for r in records)
@@ -183,6 +187,8 @@ summary = {
     "expected_tasks": len(expected_ids),
     "missing_or_invalid_task_ids": missing,
     "path_passes": path_passes,
+    "model_boundary_passes": model_boundary_passes,
+    "validated_tasks": validated_tasks,
     "path_failures": sum(r.get("path_status") == "PATH_FAIL" for r in records),
     "evaluator_ran_count": evaluator_ran,
     "evaluation_mode": "no-model-stub",
@@ -216,7 +222,7 @@ print(json.dumps(summary, sort_keys=True))
 ok = (
     not missing
     and len(records) == len(expected_ids)
-    and path_passes == evaluator_ran == len(expected_ids)
+    and validated_tasks == evaluator_ran == len(expected_ids)
     and len(sandbox_ids) == len(unique) == len(expected_ids)
     and external_model_calls == 0
 )

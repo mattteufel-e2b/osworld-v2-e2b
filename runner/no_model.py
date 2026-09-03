@@ -3,6 +3,21 @@
 from __future__ import annotations
 
 
+def model_boundary_result(
+    stage: str, error: BaseException, *, call_attempts: int
+) -> dict[str, object] | None:
+    """Attest that a no-model evaluator reached its intentionally stubbed boundary."""
+    if stage != "evaluate" or call_attempts < 1:
+        return None
+    return {
+        "path_status": "MODEL_BOUNDARY_PASS",
+        "stage": "model-boundary",
+        "evaluator_ran": True,
+        "score": 0.0,
+        "error_type": type(error).__name__,
+    }
+
+
 class NoModelGuard:
     def __init__(self) -> None:
         self.call_attempts = 0

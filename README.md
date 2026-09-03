@@ -49,6 +49,11 @@ VALIDATION_MANIFEST="$RUN_ROOT/full-manifest.json" VALIDATION_RUNS=1 \
     runner/validate_parallel.sh                # all 108 tasks, zero external model calls
 ```
 
+The no-model receipt distinguishes a complete evaluator path (`PATH_PASS`) from an evaluator that
+reached the intentional model stub but could not parse its deterministic negative response
+(`MODEL_BOUNDARY_PASS`). Both are validated no-model outcomes; the full-model sample must exercise
+any model-boundary-only task before release.
+
 The validation coordinator stops both service fleets on exit. Set
 `TEARDOWN_FLEETS_ON_EXIT=0` only when deliberately retaining a campaign, and stop it later with
 `uv run --env-file .env.local --locked python services/stop.py --campaign-id "$OSWORLD_CAMPAIGN_ID"`.

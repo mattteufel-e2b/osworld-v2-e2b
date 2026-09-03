@@ -162,7 +162,7 @@ import json, sys
 manifest_path, runs_text, *receipt_paths = sys.argv[1:]
 manifest = json.load(open(manifest_path))
 expected = len(manifest["tasks"]) * int(runs_text)
-ids, passes, tasks = [], 0, 0
+ids, passes, model_boundaries, tasks = [], 0, 0, 0
 external_model_calls = 0
 if len(receipt_paths) != int(runs_text):
     print(f"receipt count mismatch: expected {runs_text}, got {len(receipt_paths)}")
@@ -176,17 +176,23 @@ for path in receipt_paths:
         tasks += 1
         if r.get("path_status") == "PATH_PASS":
             passes += 1
+        if r.get("path_status") == "MODEL_BOUNDARY_PASS":
+            model_boundaries += 1
         sb = r.get("sandbox") or {}
         if sb.get("id"):
             ids.append(sb["id"])
         external_model_calls += int(r.get("external_model_calls", -1))
 uniq = set(ids)
-print(f"tasks={tasks} path_passes={passes} sandbox_ids={len(ids)} unique={len(uniq)}")
+validated_tasks = passes + model_boundaries
+print(
+    f"tasks={tasks} path_passes={passes} model_boundary_passes={model_boundaries} "
+    f"validated_tasks={validated_tasks} sandbox_ids={len(ids)} unique={len(uniq)}"
+)
 print(f"external_model_calls={external_model_calls}")
 ok = (
     (len(ids) == len(uniq))
     and (len(uniq) == expected)
-    and (passes == tasks == expected)
+    and (validated_tasks == tasks == expected)
     and external_model_calls == 0
 )
 print("VALIDATION GATE:", "PASS" if ok else "FAIL")

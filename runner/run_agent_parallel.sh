@@ -2,8 +2,8 @@
 # Run the complete OSWorld-V2 agent benchmark with bounded E2B concurrency.
 # Strict reset can briefly own two guests per worker, so 80 workers peak near
 # 160 guest sandboxes and leave room for the two fleet guests and retries under
-# a 200-concurrent-sandbox account ceiling. Task 082's host-side service dial is
-# mapped from a unique high relay port to guest port 3000.
+# a 200-concurrent-sandbox account ceiling. Task 082 alone owns host port 3000,
+# matching the canonical gated task without rewriting its task module.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -152,9 +152,9 @@ run_batch() {
         task_service_ports=""
         task_082_host_port=""
         if [ "$task_id" = "082" ]; then
-            # Host-side task code reaches this worker's high relay port, which
-            # maps to the unchanged guest-side AWS mock service on :3000.
-            task_082_host_port=60082
+            # Canonical task 082 dials localhost:3000 from the host; this is the
+            # only task-service listener in the release, so it can stay literal.
+            task_082_host_port=3000
             task_service_ports="$task_082_host_port:3000"
         fi
         receipt="$RAW_DIR/workers/task_${task_id}.json"
@@ -198,7 +198,7 @@ if [ "${#batch[@]}" -gt 0 ]; then run_batch "${batch[@]}" || overall=1; fi
 if [ -n "$task_082_row" ]; then
     read -r task_id domain <<<"$task_082_row"
     echo "running agent task 082 solo with namespaced task-service port"
-    OSWORLD_TASK_SERVICE_PORTS="60082:3000" OSWORLD_TASK_082_HOST_PORT="60082" \
+    OSWORLD_TASK_SERVICE_PORTS="3000:3000" OSWORLD_TASK_082_HOST_PORT="3000" \
         TASK_ID="$task_id" DOMAIN="$domain" \
         PORT_BASE="0" OUTPUT="$RAW_DIR/workers/task_082.json" \
         RESULT_DIR="$RAW_DIR/workers/task_082" RAW_DIR="$RAW_DIR" \
@@ -256,7 +256,7 @@ PY
     if [ "${#retry_batch[@]}" -gt 0 ]; then run_batch "${retry_batch[@]}" || overall=1; fi
     if [ -n "$retry_082_row" ]; then
         read -r task_id domain <<<"$retry_082_row"
-        OSWORLD_TASK_SERVICE_PORTS="60082:3000" OSWORLD_TASK_082_HOST_PORT="60082" \
+        OSWORLD_TASK_SERVICE_PORTS="3000:3000" OSWORLD_TASK_082_HOST_PORT="3000" \
             TASK_ID="$task_id" DOMAIN="$domain" \
             PORT_BASE="0" OUTPUT="$RAW_DIR/workers/task_082.json" \
             RESULT_DIR="$RAW_DIR/workers/task_082_retry_${attempt}" RAW_DIR="$RAW_DIR" \

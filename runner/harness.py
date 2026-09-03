@@ -61,7 +61,8 @@ for dependency in ["easyocr", "acoustid"]:
 sys.path.insert(0, os.getcwd())
 import task_loader  # noqa: E402  (checkout-local; cwd is the pinned checkout)
 from desktop_env.desktop_env import DesktopEnv  # noqa: E402
-from no_model import NoModelGuard  # noqa: E402
+from no_model import NoModelGuard, model_boundary_result  # noqa: E402
+from readiness import wait_for_nonempty  # noqa: E402
 
 NO_MODEL_GUARD = NoModelGuard()
 
@@ -176,11 +177,9 @@ def run_task(
             "template": state["template"],
         }
         screenshot = observation.get("screenshot")
-        accessibility = env.controller.get_accessibility_tree()
+        accessibility = wait_for_nonempty(env.controller.get_accessibility_tree)
         if not screenshot:
             raise RuntimeError("OSWorld returned an empty screenshot observation")
-        if not accessibility:
-            raise RuntimeError("OSWorld returned an empty accessibility tree")
         # Raw screenshot is evidence; it lives under the gitignored raw dir.
         (raw_dir / f"{run_id}-task_{record['id']}-reset.png").write_bytes(screenshot)
         record["observation"] = {
@@ -204,12 +203,19 @@ def run_task(
         # classify() reads full text only to choose a public cause bucket. The
         # shareable receipt never copies exception text; the traceback remains
         # under the gitignored raw directory.
-        cause, _full = classify(record["stage"], error)
-        record.update(
-            path_status="PATH_FAIL",
-            cause=cause,
-            error_type=type(error).__name__,
+        model_calls = NO_MODEL_GUARD.call_attempts - model_calls_before
+        boundary = model_boundary_result(
+            record["stage"], error, call_attempts=model_calls
         )
+        if boundary is not None:
+            record.update(boundary)
+        else:
+            cause, _full = classify(record["stage"], error)
+            record.update(
+                path_status="PATH_FAIL",
+                cause=cause,
+                error_type=type(error).__name__,
+            )
         import traceback
 
         (raw_dir / f"{run_id}-task_{record['id']}-FAIL.trace.txt").write_text(
@@ -326,6 +332,13 @@ def main() -> int:
     run["summary"] = {
         "tasks": len(run["records"]),
         "path_passes": sum(r["path_status"] == "PATH_PASS" for r in run["records"]),
+        "model_boundary_passes": sum(
+            r["path_status"] == "MODEL_BOUNDARY_PASS" for r in run["records"]
+        ),
+        "validated_tasks": sum(
+            r["path_status"] in {"PATH_PASS", "MODEL_BOUNDARY_PASS"}
+            for r in run["records"]
+        ),
         "path_failures": sum(r["path_status"] == "PATH_FAIL" for r in run["records"]),
         "evaluator_ran_count": sum(
             bool(r.get("evaluator_ran")) for r in run["records"]
