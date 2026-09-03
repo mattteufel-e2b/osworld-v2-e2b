@@ -85,6 +85,21 @@ class FakeFleetSandbox:
 
 
 class FleetRuntimePolicyTests(unittest.TestCase):
+    def test_restricted_ingress_gate_requires_authenticated_200_and_unauthenticated_403(
+        self,
+    ):
+        fleetlib.require_restricted_ingress(
+            "website", authenticated_status=200, unauthenticated_status=403
+        )
+        with self.assertRaisesRegex(RuntimeError, "website authenticated ingress"):
+            fleetlib.require_restricted_ingress(
+                "website", authenticated_status=502, unauthenticated_status=403
+            )
+        with self.assertRaisesRegex(RuntimeError, "website unauthenticated ingress"):
+            fleetlib.require_restricted_ingress(
+                "website", authenticated_status=200, unauthenticated_status=200
+            )
+
     def setUp(self):
         self.campaign_environment = patch.dict(
             os.environ, {"OSWORLD_CAMPAIGN_ID": "test-campaign"}
@@ -168,7 +183,14 @@ class FleetRuntimePolicyTests(unittest.TestCase):
                 patch.object(websites, "compose_up", return_value=0.0),
                 patch.object(websites, "recreate_fanout"),
                 patch.object(websites, "wait_ready", return_value={"mailhub": 0.1}),
-                patch.object(websites, "probe_host_ingress", return_value={}),
+                patch.object(
+                    websites,
+                    "probe_host_ingress",
+                    return_value={
+                        "per_port_probe": {"status": 200},
+                        "unauthenticated_probe": {"status": 403},
+                    },
+                ),
                 patch.object(
                     websites.fl,
                     "restart_host_proxy",
@@ -258,7 +280,14 @@ class FleetRuntimePolicyTests(unittest.TestCase):
                 patch.object(websites, "compose_up", return_value=0.0),
                 patch.object(websites, "recreate_fanout"),
                 patch.object(websites, "wait_ready", return_value={"mailhub": 0.1}),
-                patch.object(websites, "probe_host_ingress", return_value={}),
+                patch.object(
+                    websites,
+                    "probe_host_ingress",
+                    return_value={
+                        "per_port_probe": {"status": 200},
+                        "unauthenticated_probe": {"status": 403},
+                    },
+                ),
                 patch.object(
                     websites.fl,
                     "restart_host_proxy",
@@ -321,9 +350,7 @@ class FleetRuntimePolicyTests(unittest.TestCase):
                     return_value=type("Response", (), {"status_code": 503})(),
                 ),
                 patch.object(gitlab.fl, "delete_runtime_section") as delete_runtime,
-                self.assertRaisesRegex(
-                    RuntimeError, "host ingress GitLab API check failed"
-                ),
+                self.assertRaisesRegex(RuntimeError, "GitLab authenticated ingress"),
             ):
                 gitlab.main()
 

@@ -203,9 +203,20 @@ def main() -> int:
             },
             timeout=30,
         )
+        unauthenticated = requests.get(
+            f"https://{ingress}/api/v4/user",
+            headers={"PRIVATE-TOKEN": token},
+            timeout=30,
+        )
         fl.log(f"host ingress /api/v4/user -> {api.status_code}")
-        if api.status_code != 200:
-            raise RuntimeError("host ingress GitLab API check failed")
+        fl.log(
+            f"unauthenticated host ingress /api/v4/user -> {unauthenticated.status_code}"
+        )
+        fl.require_restricted_ingress(
+            "GitLab",
+            authenticated_status=api.status_code,
+            unauthenticated_status=unauthenticated.status_code,
+        )
 
         proxy_status = fl.restart_host_proxy()
         if not proxy_status.get("running"):
@@ -288,6 +299,7 @@ def main() -> int:
             ),
             "api_ready_seconds": ready_secs,
             "host_ingress_api_status": api.status_code,
+            "unauthenticated_host_ingress_api_status": unauthenticated.status_code,
             "host_proxy": proxy_status,
             "harness_url_api_check": proxy_path_check,
             "token_file": str(TOKEN_FILE),

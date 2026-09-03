@@ -256,6 +256,9 @@ def probe_host_ingress(sbx, ports: dict[str, int], token: str) -> dict:
     ok = requests.get(
         f"https://{ingress}/api/state?cookie=hostprobe", headers=headers, timeout=30
     )
+    unauthenticated = requests.get(
+        f"https://{ingress}/api/state?cookie=unauthenticated", timeout=30
+    )
     passthrough_host = "mailhub." + fl.HOST_SUFFIX
     caddy_host = sbx.get_host(80)
     try:
@@ -276,6 +279,7 @@ def probe_host_ingress(sbx, ports: dict[str, int], token: str) -> dict:
             "status": ok.status_code,
             "body_prefix": ok.text[:120],
         },
+        "unauthenticated_probe": {"status": unauthenticated.status_code},
         "caddy_passthrough_probe": {
             "description": "override HTTP Host to the site name while connecting to the "
             "Caddy ingress host; if ingress forwarded it, single-port routing "
@@ -371,6 +375,11 @@ def main() -> int:
             for sub, port in ports.items()
         }
         host_evidence = probe_host_ingress(sbx, ports, token)
+        fl.require_restricted_ingress(
+            "website",
+            authenticated_status=host_evidence["per_port_probe"]["status"],
+            unauthenticated_status=host_evidence["unauthenticated_probe"]["status"],
+        )
 
         proxy_status = fl.restart_host_proxy()
         if not proxy_status.get("running"):

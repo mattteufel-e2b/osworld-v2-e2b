@@ -71,6 +71,16 @@ def service_image(name: str) -> str:
     return release_lock()["service_images"][name]
 
 
+def require_restricted_ingress(
+    label: str, *, authenticated_status: int, unauthenticated_status: int
+) -> None:
+    """Require a working token-authenticated path and a blocked public path."""
+    if authenticated_status != 200:
+        raise RuntimeError(f"{label} authenticated ingress check failed")
+    if unauthenticated_status != 403:
+        raise RuntimeError(f"{label} unauthenticated ingress check failed")
+
+
 def ensure_fleet_template() -> str:
     """Return the prebuilt immutable fleet reference required by launchers.
 
