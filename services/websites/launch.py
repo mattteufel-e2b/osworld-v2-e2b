@@ -334,44 +334,53 @@ def main() -> int:
     fl.load_e2b_key()
     template_ref = fl.ensure_fleet_template()
     sbx, created = fl.reuse_or_create("websites", template=template_ref)
-    docker_secs = fl.ensure_docker(sbx)
-    fl.ensure_swap(sbx)
-    clone_repo(sbx)
-    ports = enumerate_sites(sbx)
-    write_fanout(sbx, ports)
-    build_secs = compose_up(sbx)
-    recreate_fanout(sbx)
-    timings = wait_ready(sbx, ports)
+    try:
+        docker_secs = fl.ensure_docker(sbx)
+        fl.ensure_swap(sbx)
+        clone_repo(sbx)
+        ports = enumerate_sites(sbx)
+        write_fanout(sbx, ports)
+        build_secs = compose_up(sbx)
+        recreate_fanout(sbx)
+        timings = wait_ready(sbx, ports)
 
-    token = sbx.traffic_access_token
-    site_map = {
-        sub: {"port": port, "ingress_host": sbx.get_host(port)} for sub, port in ports.items()
-    }
-    host_evidence = probe_host_ingress(sbx, ports, token)
+        token = sbx.traffic_access_token
+        site_map = {
+            sub: {"port": port, "ingress_host": sbx.get_host(port)}
+            for sub, port in ports.items()
+        }
+        host_evidence = probe_host_ingress(sbx, ports, token)
 
-    proxy_status = fl.restart_host_proxy()
-    if not proxy_status.get("running"):
-        raise RuntimeError("host proxy failed to start")
-    # WEBSITE_HOST_SUFFIX must carry the host-proxy port: V2's build_website_url
-    # does host = f"{path}.{HOST_SUFFIX}" with NO port, so a bare suffix yields a
-    # :80 URL that is refused here. The port rides in the suffix so the f-string
-    # composes a valid host:port authority.
-    public_port = proxy_status["port"]
-    public_suffix = f"{fl.HOST_SUFFIX}:{public_port}"
+        proxy_status = fl.restart_host_proxy()
+        if not proxy_status.get("running"):
+            raise RuntimeError("host proxy failed to start")
+        # WEBSITE_HOST_SUFFIX must carry the host-proxy port: V2's build_website_url
+        # does host = f"{path}.{HOST_SUFFIX}" with NO port, so a bare suffix yields a
+        # :80 URL that is refused here. The port rides in the suffix so the f-string
+        # composes a valid host:port authority.
+        public_port = proxy_status["port"]
+        public_suffix = f"{fl.HOST_SUFFIX}:{public_port}"
 
-    fl.write_runtime_section(
-        "websites",
-        {
-            "sandbox_id": sbx.sandbox_id,
-            "template": template_ref,
-            "traffic_token": token,
-            "host_suffix": fl.HOST_SUFFIX,  # port-less; used for routing/fanout Host
-            "public_host_suffix": public_suffix,  # port-suffixed; what the harness consumes
-            "caddy_ingress_host": sbx.get_host(80),
-            "mode": "per-port-fanout",
-            "sites": site_map,
-        },
-    )
+        fl.write_runtime_section(
+            "websites",
+            {
+                "sandbox_id": sbx.sandbox_id,
+                "template": template_ref,
+                "traffic_token": token,
+                "host_suffix": fl.HOST_SUFFIX,  # port-less; used for routing/fanout Host
+                "public_host_suffix": public_suffix,
+                "caddy_ingress_host": sbx.get_host(80),
+                "mode": "per-port-fanout",
+                "sites": site_map,
+            },
+        )
+    except BaseException:
+        if created:
+            try:
+                sbx.kill()
+            except Exception as cleanup_error:  # noqa: BLE001
+                fl.log(f"could not kill unrecorded websites sandbox: {cleanup_error}")
+        raise
 
     proxy_path_check = None
     v2_builder_check = None

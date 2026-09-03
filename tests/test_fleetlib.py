@@ -120,6 +120,7 @@ class FleetRuntimePolicyTests(unittest.TestCase):
 
     def test_websites_main_rejects_non_running_host_proxy_without_success_receipt(self):
         websites = load_websites_launcher()
+        kill_calls = []
         sandbox = type(
             "Sandbox",
             (),
@@ -127,6 +128,7 @@ class FleetRuntimePolicyTests(unittest.TestCase):
                 "sandbox_id": "website-sandbox",
                 "traffic_access_token": "runtime-only-token",
                 "get_host": lambda _self, port: f"{port}-website.example.test",
+                "kill": lambda _self: kill_calls.append("website-sandbox"),
             },
         )()
 
@@ -148,7 +150,11 @@ class FleetRuntimePolicyTests(unittest.TestCase):
                 patch.object(websites.fl, "ensure_docker", return_value=0.0),
                 patch.object(websites.fl, "ensure_swap"),
                 patch.object(websites, "clone_repo"),
-                patch.object(websites, "enumerate_sites", return_value={"mailhub": 13001}),
+                patch.object(
+                    websites,
+                    "enumerate_sites",
+                    return_value={"mailhub": 13001},
+                ),
                 patch.object(websites, "write_fanout"),
                 patch.object(websites, "compose_up", return_value=0.0),
                 patch.object(websites, "recreate_fanout"),
@@ -166,6 +172,41 @@ class FleetRuntimePolicyTests(unittest.TestCase):
 
             self.assertFalse(receipt.exists())
             write_runtime.assert_not_called()
+            self.assertEqual(kill_calls, ["website-sandbox"])
+
+    def test_websites_main_kills_new_sandbox_on_earlier_setup_failure(self):
+        websites = load_websites_launcher()
+        kill_calls = []
+        sandbox = type(
+            "Sandbox",
+            (),
+            {"kill": lambda _self: kill_calls.append("website-sandbox")},
+        )()
+
+        with (
+            patch.object(websites.fl, "load_e2b_key"),
+            patch.object(
+                websites.fl,
+                "ensure_fleet_template",
+                return_value=IMMUTABLE_FLEET,
+            ),
+            patch.object(
+                websites.fl,
+                "reuse_or_create",
+                return_value=(sandbox, True),
+            ),
+            patch.object(websites.fl, "ensure_docker", return_value=0.0),
+            patch.object(websites.fl, "ensure_swap"),
+            patch.object(
+                websites,
+                "clone_repo",
+                side_effect=RuntimeError("setup failed"),
+            ),
+            self.assertRaisesRegex(RuntimeError, "setup failed"),
+        ):
+            websites.main()
+
+        self.assertEqual(kill_calls, ["website-sandbox"])
 
     def test_runtime_write_atomically_replaces_complete_owner_only_file(self):
         with tempfile.TemporaryDirectory() as directory:
