@@ -33,12 +33,14 @@ from e2b import Sandbox
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from e2b_policy import require_immutable_template_ref, sandbox_network_policy  # noqa: E402
+from services.release_lock import validate_release_lock  # noqa: E402
 
 SERVICES_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SERVICES_DIR.parent
 RUNTIME_FILE = SERVICES_DIR / ".runtime.json"
 PROXY_SCRIPT = SERVICES_DIR / "hostmap_proxy.py"
 PROXY_PIDFILE = SERVICES_DIR / ".hostmap_proxy.pid"
+UPSTREAM_LOCK = REPO_ROOT / "examples" / "osworld-v2" / "upstream.lock.json"
 
 # Wildcard-DNS suffix: <name>.127.0.0.1.nip.io resolves to 127.0.0.1 on both the
 # OSWorld host and inside a guest sandbox (verified in the website receipt), so
@@ -53,6 +55,16 @@ SANDBOX_TIMEOUT_S = int(os.environ.get("FLEET_SANDBOX_TIMEOUT_S", str(6 * 3600))
 FLEET_TEMPLATE_NAME = os.environ.get("FLEET_TEMPLATE_NAME", "osworld-v2-fleet-base")
 FLEET_CPU = 4
 FLEET_MEMORY_MB = 8192
+
+
+def release_lock() -> dict:
+    """Return the validated release lock used by all service launchers."""
+    return validate_release_lock(UPSTREAM_LOCK)
+
+
+def service_image(name: str) -> str:
+    """Return a digest-pinned wrapper image from the validated release lock."""
+    return release_lock()["service_images"][name]
 
 
 def ensure_fleet_template() -> str:

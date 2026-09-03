@@ -267,6 +267,23 @@ class FleetRuntimePolicyTests(unittest.TestCase):
             {"GITLAB_URL": launcher.gitlab_url(), "GITLAB_PRIVATE_TOKEN": secret},
         )
 
+    def test_gitlab_main_validates_release_lock_before_sandbox_creation(self):
+        launcher = load_gitlab_launcher()
+
+        with (
+            patch.object(launcher.fl, "load_e2b_key"),
+            patch.object(
+                launcher,
+                "gitlab_pin",
+                side_effect=ValueError("release lock invalid: mutable GitLab commit"),
+            ),
+            patch.object(launcher.fl, "reuse_or_create") as reuse_or_create,
+            self.assertRaisesRegex(ValueError, "release lock invalid"),
+        ):
+            launcher.main()
+
+        reuse_or_create.assert_not_called()
+
     def test_gitlab_health_check_passes_private_token_via_command_environment(self):
         launcher = load_gitlab_launcher()
         secret = "glpat-health-secret"

@@ -4,5 +4,15 @@
   "code": {
     "repository": "xlang-ai/OSWorld-V2",
     "commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154"
+  },
+  "gitlab_code": {
+    "repository": "Task-Web/gitlab",
+    "commit": "8655d651722f4254e59e813de9f68a6732ea525c"
+  },
+  "service_images": {
+    "fanout": "nginx@sha256:db35bfc6b2951e7f8a72db5db120288c127ffaeeb4a6d4b95a26fead017d5913",
+    "gitlab": "gitlab/gitlab-ce@sha256:9c17686c3cd1b72f52282543d2dcf7c96add29b4698ec367bfb1455be8f13ce0",
+    "gitlab_init": "docker@sha256:000bb62ff495f986c9f5578eb67cc2cb98b91138eda81d7762d5371eb8a497fe",
+    "gitlab_runner": "gitlab/gitlab-runner@sha256:9d3b2b8be462e18176b82eb40a5f54a5ee6eaa2b4f46dcc362c4801aef90030f"
   }
 }

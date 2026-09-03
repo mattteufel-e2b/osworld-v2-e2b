@@ -52,12 +52,11 @@ def gitlab_url() -> str:
 
 
 def gitlab_pin() -> str:
-    """Read the pinned commit straight from the lock file (no hardcoded
-    duplicate here): examples/osworld-v2/upstream.lock.json gitlab_code.commit."""
-    return json.loads(LOCKFILE.read_text())["gitlab_code"]["commit"]
+    """Validate the release lock and return its immutable GitLab commit."""
+    return fl.release_lock()["gitlab_code"]["commit"]
 
 
-def clone_repo(sbx) -> None:
+def clone_repo(sbx, commit: str) -> None:
     check = sbx.commands.run(
         f"test -d {REPO_DIR}/.git && echo yes || echo no", user="root", timeout=15
     )
@@ -65,8 +64,7 @@ def clone_repo(sbx) -> None:
         fl.run(sbx, f"git clone {REPO_URL} {REPO_DIR}", timeout=120)
     else:
         fl.log("gitlab repo already cloned")
-    commit = gitlab_pin()
-    fl.run(sbx, f"git -C {REPO_DIR} checkout {commit}", timeout=30)
+    fl.run(sbx, f"git -C {REPO_DIR} checkout --detach {commit}", timeout=30)
     fl.log(f"gitlab repo pinned to {commit}")
 
 
@@ -96,8 +94,14 @@ def write_fanout(sbx) -> None:
     sbx.files.write(f"{REPO_DIR}/fanout.conf", conf)
     compose = (
         "services:\n"
+        "  gitlab:\n"
+        f"    image: {fl.service_image('gitlab')}\n"
+        "  gitlab-init-token:\n"
+        f"    image: {fl.service_image('gitlab_init')}\n"
+        "  gitlab-runner:\n"
+        f"    image: {fl.service_image('gitlab_runner')}\n"
         "  fleet_fanout:\n"
-        "    image: nginx:alpine\n"
+        f"    image: {fl.service_image('fanout')}\n"
         "    depends_on:\n"
         "      - gitlab\n"
         "    volumes:\n"
@@ -167,6 +171,7 @@ def wait_api_ready(sbx, token: str) -> float:
 
 
 def main() -> int:
+    commit = gitlab_pin()
     fl.load_e2b_key()
     template_ref = fl.ensure_fleet_template()
     sbx, created = fl.reuse_or_create("gitlab", template=template_ref)
@@ -178,7 +183,7 @@ def main() -> int:
     existing = fl.read_runtime().get("gitlab", {})
     token = existing.get("private_token") or ("glpat-" + secrets.token_hex(20))
 
-    clone_repo(sbx)
+    clone_repo(sbx, commit)
     write_fanout(sbx)
     compose_up(sbx, token)
     ready_secs = wait_api_ready(sbx, token)
@@ -267,7 +272,7 @@ def main() -> int:
         "sandbox_memory_mb": fl.FLEET_MEMORY_MB,
         "restricted_ingress": True,
         "repo": {"url": REPO_URL},
-        "gitlab_image": "gitlab/gitlab-ce:18.7.0-ce.0",
+        "gitlab_image": fl.service_image("gitlab"),
         "gitlab_url": public_url,
         "gitlab_external_url": gitlab_url(),
         "gitlab_port": GITLAB_PORT,

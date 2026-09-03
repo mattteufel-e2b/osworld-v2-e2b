@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import subprocess
@@ -187,6 +188,73 @@ def test_setup_preflight_validates_local_inputs_without_calling_git(tmp_path):
     assert "preflight ok" in result.stdout
     assert "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154" in result.stdout
     assert not git_called.exists()
+
+
+def test_release_lock_pins_gitlab_source_and_wrapper_images_by_digest():
+    lock = json.loads(
+        (ROOT / "examples" / "osworld-v2" / "upstream.lock.json").read_text()
+    )
+    launcher = (ROOT / "services" / "gitlab" / "launch.py").read_text()
+
+    assert lock["gitlab_code"] == {
+        "repository": "Task-Web/gitlab",
+        "commit": "8655d651722f4254e59e813de9f68a6732ea525c",
+    }
+    assert set(lock["service_images"]) == {
+        "fanout",
+        "gitlab",
+        "gitlab_init",
+        "gitlab_runner",
+    }
+    for image in lock["service_images"].values():
+        assert re.fullmatch(r"[^@]+@sha256:[0-9a-f]{64}", image)
+    for name in ("fanout", "gitlab", "gitlab_init", "gitlab_runner"):
+        assert f"fl.service_image('{name}')" in launcher
+    assert "nginx:alpine" not in launcher
+    assert "gitlab/gitlab-ce:18.7.0-ce.0" not in launcher
+
+
+def test_release_lock_validator_rejects_missing_or_mutable_gitlab_pins(tmp_path):
+    valid = json.loads(
+        (ROOT / "examples" / "osworld-v2" / "upstream.lock.json").read_text()
+    )
+    cases = {
+        "missing-source": {
+            key: value for key, value in valid.items() if key != "gitlab_code"
+        },
+        "mutable-commit": {
+            **valid,
+            "gitlab_code": {"repository": "Task-Web/gitlab", "commit": "main"},
+        },
+        "mutable-image": {
+            **valid,
+            "service_images": {
+                **valid.get("service_images", {}),
+                "gitlab": "gitlab/gitlab-ce:18.7.0-ce.0",
+            },
+        },
+    }
+
+    for name, payload in cases.items():
+        candidate = tmp_path / f"{name}.json"
+        candidate.write_text(json.dumps(payload))
+        result = subprocess.run(
+            ["python3", str(ROOT / "services" / "release_lock.py"), str(candidate)],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode != 0, name
+        assert "release lock invalid" in result.stderr, name
+
+
+def test_setup_preflight_runs_release_lock_validation_before_any_git_operation():
+    setup = (ROOT / "runner" / "setup.sh").read_text()
+
+    validation = 'python3 "$V2ROOT/services/release_lock.py" "$LOCKFILE"'
+    assert validation in setup
+    assert setup.index(validation) < setup.index('git -C "$DEST" fetch')
 
 
 def test_upstream_lock_is_not_shadowed_by_checkout_ignore_rule():

@@ -66,6 +66,7 @@ if [ ! -f "$LOCKFILE" ]; then
     echo "ERROR: lock file not found at $LOCKFILE (moved/renamed? update setup.sh)" >&2
     exit 1
 fi
+python3 "$V2ROOT/services/release_lock.py" "$LOCKFILE"
 LOCK_PIN="$(python3 - "$LOCKFILE" <<'EOF'
 import json, sys
 print(json.load(open(sys.argv[1]))["code"]["commit"])
