@@ -92,9 +92,10 @@ without a reference to match against, and what is excluded or unexercised outrig
   `unpinnableVersions` + `unpinnableVersionsNote`.
 - **Task-service port mapping**: `OSWORLD_TASK_SERVICE_PORTS` accepts either a literal `port`
   entry for backward compatibility or an explicit `local:guest` mapping. `task_082`, the sole
-  task that host-dials a guest service, uses host port 60082 mapped to guest port 3000. Its
-  browser-visible `localhost:3000` contract is unchanged, while setup and evaluation can run in
-  a concurrent wave without sharing a host listener or routing into another worker's guest.
+  task that host-dials a guest service, uses its canonical host port 3000 mapped to guest port
+  3000. Preflight rejects a run containing `task_082` when host port 3000 is unavailable; because
+  no other release task owns that listener, it can otherwise run in the concurrent wave without
+  routing into another worker's guest.
 - **Audio kernel path**: no `snd-dummy`/`snd-aloop` ALSA kernel module in the Firecracker
   guest kernel (`modprobe: FATAL: Module snd-dummy not found`, `spike-audio.json`). The
   PulseAudio null-sink path was sufficient for every app exercised (REAPER and MuseScore

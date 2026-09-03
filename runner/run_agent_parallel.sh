@@ -18,6 +18,7 @@ AGENT_RETRY_ATTEMPTS="${AGENT_RETRY_ATTEMPTS:-0}"
 AGENT_RETRY_CONCURRENCY="${AGENT_RETRY_CONCURRENCY:-4}"
 AGENT_START_STAGGER_SECONDS="${AGENT_START_STAGGER_SECONDS:-0.25}"
 RUN_TASK_082_CONCURRENT="${RUN_TASK_082_CONCURRENT:-1}"
+REQUIRE_NO_MODEL_COVERAGE="${REQUIRE_NO_MODEL_COVERAGE:-1}"
 MAX_STEPS="${MAX_STEPS:-500}"
 RUN_ID="${RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
 RAW_DIR="${RAW_DIR:-$REPO_ROOT/out/osworld-v2-raw/agent-full/$RUN_ID}"
@@ -48,6 +49,10 @@ if [ "$RUN_TASK_082_CONCURRENT" != "0" ] && [ "$RUN_TASK_082_CONCURRENT" != "1" 
     echo "RUN_TASK_082_CONCURRENT must be 0 or 1" >&2
     exit 2
 fi
+if [ "$REQUIRE_NO_MODEL_COVERAGE" != "0" ] && [ "$REQUIRE_NO_MODEL_COVERAGE" != "1" ]; then
+    echo "REQUIRE_NO_MODEL_COVERAGE must be 0 or 1" >&2
+    exit 2
+fi
 if [[ ! "${GUEST_TEMPLATE:-}" =~ ^[a-z0-9-]+:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
     echo "GUEST_TEMPLATE must be an immutable name:build_id reference" >&2
     exit 2
@@ -64,18 +69,54 @@ if [ "$AGENT_KIND" = "m3" ] && [[ ! "${M3_THINKING_BUDGET:-}" =~ ^[1-9][0-9]*$ ]
     echo "M3_THINKING_BUDGET must be explicit and positive for an M3 benchmark" >&2
     exit 2
 fi
+if [ "$AGENT_KIND" = "m3" ] && [[ ! "${M3_MAX_LLM_RETRIES:-}" =~ ^[0-9]+$ ]]; then
+    echo "M3_MAX_LLM_RETRIES must be explicit and non-negative for an M3 benchmark" >&2
+    exit 2
+fi
 : "${EVAL_MODEL_BASE_URL:?EVAL_MODEL_BASE_URL required for release model judges}"
 : "${EVAL_MODEL:?EVAL_MODEL required for release model judges}"
 EVAL_MODEL_API_KEY="${EVAL_MODEL_API_KEY:-$MODEL_API_KEY}"
+EVAL_MODEL_PROVIDER="openai_compatible"
+USER_SIM_MODEL="${USER_SIM_MODEL:-${EVAL_MODEL:-$MODEL}}"
+USER_SIM_PROVIDER="openai_compatible"
 if [ -z "${OSWORLD_CAMPAIGN_ID:-}" ]; then echo "OSWORLD_CAMPAIGN_ID is required" >&2; exit 2; fi
 export GUEST_TEMPLATE OSWORLD_CAMPAIGN_ID MODEL_API_KEY MODEL_BASE_URL MODEL AGENT_KIND MAX_STEPS
-export M3_THINKING_MODE M3_THINKING_BUDGET
-export EVAL_MODEL_BASE_URL EVAL_MODEL_API_KEY EVAL_MODEL
+export M3_THINKING_MODE M3_THINKING_BUDGET M3_MAX_LLM_RETRIES
+export EVAL_MODEL_BASE_URL EVAL_MODEL_API_KEY EVAL_MODEL EVAL_MODEL_PROVIDER
+export USER_SIM_MODEL USER_SIM_PROVIDER
 
 if [ -z "${E2B_API_KEY:-}" ] && [ -f "$REPO_ROOT/.env.local" ]; then
     export E2B_API_KEY="$(grep '^E2B_API_KEY=' "$REPO_ROOT/.env.local" | cut -d= -f2)"
 fi
 if [ -z "${E2B_API_KEY:-}" ]; then echo "E2B_API_KEY is required" >&2; exit 2; fi
+
+mkdir -p "$RAW_DIR"
+proxy_pid=""
+cleanup_proxy() {
+    local status=$?
+    trap - EXIT INT TERM
+    if [ -n "$proxy_pid" ] && kill -0 "$proxy_pid" 2>/dev/null; then
+        kill "$proxy_pid" 2>/dev/null || true
+        wait "$proxy_pid" 2>/dev/null || true
+    fi
+    if [ "${TEARDOWN_FLEETS_ON_EXIT:-1}" = "1" ]; then
+        if ! $UV python "$SERVICES_DIR/stop.py" --campaign-id "$OSWORLD_CAMPAIGN_ID" \
+            >>"$RAW_DIR/service-teardown.log" 2>&1; then
+            echo "service fleet cleanup failed; recovery state was preserved" >&2
+            status=1
+        fi
+    fi
+    exit "$status"
+}
+trap cleanup_proxy EXIT INT TERM
+
+if [ "$REQUIRE_NO_MODEL_COVERAGE" = "1" ]; then
+    : "${NO_MODEL_RECEIPT:?NO_MODEL_RECEIPT is required for full-agent coverage}"
+    if ! python3 "$HERE/model_coverage.py" \
+        --no-model-receipt "$NO_MODEL_RECEIPT" --agent-manifest "$MANIFEST"; then
+        exit 2
+    fi
+fi
 
 if ! python3 "$HERE/preflight.py" \
     --osworld-root "$OSWORLD_ROOT" --tasks-dir "$TASKS_DIR" \
@@ -84,19 +125,9 @@ if ! python3 "$HERE/preflight.py" \
 fi
 
 mkdir -p "$RAW_DIR/workers" "$(dirname "$OUTPUT")"
-
-proxy_pid=""
-cleanup_proxy() {
-    if [ -n "$proxy_pid" ] && kill -0 "$proxy_pid" 2>/dev/null; then
-        kill "$proxy_pid" 2>/dev/null || true
-        wait "$proxy_pid" 2>/dev/null || true
-    fi
-    if [ "${TEARDOWN_FLEETS_ON_EXIT:-1}" = "1" ]; then
-        $UV python "$SERVICES_DIR/stop.py" --campaign-id "$OSWORLD_CAMPAIGN_ID" \
-            >>"$RAW_DIR/service-teardown.log" 2>&1 || true
-    fi
-}
-trap cleanup_proxy EXIT INT TERM
+RUN_NONCE="$(python3 "$HERE/prepare_agent_run.py" \
+    --manifest "$MANIFEST" --worker-dir "$RAW_DIR/workers")" || exit 2
+export OSWORLD_RUN_NONCE="$RUN_NONCE"
 
 if python3 - <<'PY'
 import socket
@@ -142,7 +173,7 @@ PY
 run_batch() {
     local -a batch=("$@")
     local -a pids=()
-    local row task_id domain slot port_base task_service_ports task_082_host_port receipt result_dir log pid
+    local row task_id domain slot port_base task_service_ports receipt result_dir log pid
     local batch_failed=0
     slot=0
     for row in "${batch[@]}"; do
@@ -150,18 +181,15 @@ run_batch() {
         slot=$((slot + 1))
         port_base=$((slot * 500))
         task_service_ports=""
-        task_082_host_port=""
         if [ "$task_id" = "082" ]; then
             # Canonical task 082 dials localhost:3000 from the host; this is the
             # only task-service listener in the release, so it can stay literal.
-            task_082_host_port=3000
-            task_service_ports="$task_082_host_port:3000"
+            task_service_ports="3000:3000"
         fi
         receipt="$RAW_DIR/workers/task_${task_id}.json"
         result_dir="$RAW_DIR/workers/task_${task_id}${ATTEMPT_SUFFIX:-}"
         log="$RAW_DIR/workers/task_${task_id}${ATTEMPT_SUFFIX:-}.log"
         OSWORLD_TASK_SERVICE_PORTS="$task_service_ports" \
-            OSWORLD_TASK_082_HOST_PORT="$task_082_host_port" \
             TASK_ID="$task_id" DOMAIN="$domain" \
             PORT_BASE="$port_base" OUTPUT="$receipt" RESULT_DIR="$result_dir" \
             RAW_DIR="$RAW_DIR" "$HERE/run_agent.sh" >"$log" 2>&1 &
@@ -197,8 +225,8 @@ if [ "${#batch[@]}" -gt 0 ]; then run_batch "${batch[@]}" || overall=1; fi
 
 if [ -n "$task_082_row" ]; then
     read -r task_id domain <<<"$task_082_row"
-    echo "running agent task 082 solo with namespaced task-service port"
-    OSWORLD_TASK_SERVICE_PORTS="3000:3000" OSWORLD_TASK_082_HOST_PORT="3000" \
+    echo "running agent task 082 solo on canonical host port 3000"
+    OSWORLD_TASK_SERVICE_PORTS="3000:3000" \
         TASK_ID="$task_id" DOMAIN="$domain" \
         PORT_BASE="0" OUTPUT="$RAW_DIR/workers/task_082.json" \
         RESULT_DIR="$RAW_DIR/workers/task_082" RAW_DIR="$RAW_DIR" \
@@ -256,7 +284,7 @@ PY
     if [ "${#retry_batch[@]}" -gt 0 ]; then run_batch "${retry_batch[@]}" || overall=1; fi
     if [ -n "$retry_082_row" ]; then
         read -r task_id domain <<<"$retry_082_row"
-        OSWORLD_TASK_SERVICE_PORTS="3000:3000" OSWORLD_TASK_082_HOST_PORT="3000" \
+        OSWORLD_TASK_SERVICE_PORTS="3000:3000" \
             TASK_ID="$task_id" DOMAIN="$domain" \
             PORT_BASE="0" OUTPUT="$RAW_DIR/workers/task_082.json" \
             RESULT_DIR="$RAW_DIR/workers/task_082_retry_${attempt}" RAW_DIR="$RAW_DIR" \
@@ -274,16 +302,28 @@ aggregate_args=(
     --agent-kind "$AGENT_KIND"
     --model-transport "$MODEL_BASE_URL"
     --eval-model "$EVAL_MODEL"
+    --eval-provider "$EVAL_MODEL_PROVIDER"
     --eval-transport "$EVAL_MODEL_BASE_URL"
+    --user-sim-model "$USER_SIM_MODEL"
+    --user-sim-provider "$USER_SIM_PROVIDER"
+    --user-sim-transport "$EVAL_MODEL_BASE_URL"
     --max-steps "$MAX_STEPS"
     --concurrency "$PARALLEL_CONCURRENCY"
     --thinking-budget "${M3_THINKING_BUDGET:-0}"
+    --run-nonce "$RUN_NONCE"
+    --campaign-id "$OSWORLD_CAMPAIGN_ID"
 )
 if [ -n "${M3_THINKING_MODE:-}" ]; then
     aggregate_args+=(--thinking-mode "$M3_THINKING_MODE")
 fi
+if [ "$AGENT_KIND" = "m3" ]; then
+    aggregate_args+=(--m3-max-llm-retries "$M3_MAX_LLM_RETRIES")
+fi
 if [ "$RUN_TASK_082_CONCURRENT" = "1" ]; then
     aggregate_args+=(--task-082-concurrent)
+fi
+if [ "$REQUIRE_NO_MODEL_COVERAGE" = "1" ]; then
+    aggregate_args+=(--no-model-receipt "$NO_MODEL_RECEIPT")
 fi
 python3 "$HERE/aggregate_agent.py" "${aggregate_args[@]}" || overall=1
 

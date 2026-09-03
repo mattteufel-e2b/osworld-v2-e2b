@@ -22,19 +22,19 @@ Receipts live in `out/osworld-v2-evidence/`.
 
 Prerequisites: `E2B_API_KEY=...` in `.env.local` at the repo root, `uv`, Node >=20.18.1,
 `npm`, `git`, and Hugging Face access to both gated OSWorld V2 datasets. Authenticate once
-with `uvx --from huggingface_hub hf auth login` after accepting their access gates.
+with `uv run --locked hf auth login` after accepting their access gates.
 
 ```bash
 template/fetch_server.sh                    # fetch + patch the pinned guest server
 npm --prefix template ci --ignore-scripts
-uv run --env-file .env.local npm --prefix template run typecheck
-uv run --env-file .env.local npm --prefix template run build   # guest template
+uv run --env-file .env.local --locked npm --prefix template run typecheck
+uv run --env-file .env.local --locked npm --prefix template run build   # guest template
 uv run --env-file .env.local --locked \
     python services/build_fleet_template.py                      # fleet template
 export GUEST_TEMPLATE=<name:build_id>       # from template/results/template-build.json
 export FLEET_TEMPLATE=<name:build_id>       # from out/osworld-v2-raw/builds/fleet-template-build.json
 runner/setup.sh                             # clone pinned OSWorld-V2 + apply e2b patches
-uv run --with huggingface-hub python runner/gated_data.py       # exact gated revisions + hashes
+uv run --locked python runner/gated_data.py                     # exact gated revisions + hashes
 
 export OSWORLD_CAMPAIGN_ID="osworld-v2-$(date -u +%Y%m%dT%H%M%SZ)"
 uv run --env-file .env.local --locked python services/websites/launch.py
@@ -50,7 +50,7 @@ VALIDATION_MANIFEST="$RUN_ROOT/full-manifest.json" VALIDATION_RUNS=1 \
 ```
 
 The no-model receipt distinguishes a complete evaluator path (`PATH_PASS`) from an evaluator that
-reached the intentional model stub but could not parse its deterministic negative response
+reached the intentional disabled-model sentinel
 (`MODEL_BOUNDARY_PASS`). Both are validated no-model outcomes; the full-model sample must exercise
 any model-boundary-only task before release.
 
@@ -63,28 +63,31 @@ evidence is published only after allowlist sanitization.
 ## Full-model validation sample
 
 After the all-task no-model run passes, use one fresh fleet campaign for a three-step canary and
-another for the 24-task representative sample. The sample covers every application family, major
-evaluator paths, multiphase tasks, task 082's local service, and a spread of task complexity. The
-runner does not retry completed model rollouts.
+another for the 24-task representative sample. The sample covers selected model-based evaluator
+paths, multiphase tasks, task 082's local service, and a spread of task complexity. The runner does
+not retry completed model rollouts.
 
 ```bash
 export MODEL_API_KEY="$FIREWORKS_API_KEY"
 export MODEL_BASE_URL="https://api.fireworks.ai/inference"
 export MODEL="accounts/fireworks/models/minimax-m3"
-export AGENT_KIND=m3 M3_THINKING_BUDGET=2048
+export AGENT_KIND=m3 M3_THINKING_BUDGET=2048 M3_MAX_LLM_RETRIES=0
 export EVAL_MODEL_API_KEY="$FIREWORKS_API_KEY"
 export EVAL_MODEL_BASE_URL="https://api.fireworks.ai/inference/v1"
 export EVAL_MODEL="accounts/fireworks/models/minimax-m3"
+export NO_MODEL_RECEIPT="$RUN_ROOT/no-model.json"
 
 export OSWORLD_CAMPAIGN_ID="osworld-v2-canary-$(date -u +%Y%m%dT%H%M%SZ)"
 uv run --env-file .env.local --locked python services/websites/launch.py
 uv run --env-file .env.local --locked python services/gitlab/launch.py
 python3 runner/render_manifest.py --source validation/full-manifest.json \
     --template "$GUEST_TEMPLATE" --output "$RUN_ROOT/canary-manifest.json" --task-id 003
-AGENT_MANIFEST="$RUN_ROOT/canary-manifest.json" PARALLEL_CONCURRENCY=1 MAX_STEPS=3 \
+AGENT_MANIFEST="$RUN_ROOT/canary-manifest.json" REQUIRE_NO_MODEL_COVERAGE=0 \
+    PARALLEL_CONCURRENCY=1 MAX_STEPS=3 AGENT_TASK_TIMEOUT_SECONDS=900 \
     AGENT_RETRY_ATTEMPTS=0 RAW_DIR="$RUN_ROOT/canary-raw" \
     OUTPUT="$RUN_ROOT/canary.json" runner/run_agent_parallel.sh
 
+export M3_MAX_LLM_RETRIES=2
 export OSWORLD_CAMPAIGN_ID="osworld-v2-sample24-$(date -u +%Y%m%dT%H%M%SZ)"
 uv run --env-file .env.local --locked python services/websites/launch.py
 uv run --env-file .env.local --locked python services/gitlab/launch.py

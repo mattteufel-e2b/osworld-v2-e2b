@@ -45,7 +45,9 @@ except ImportError:  # guest copy intentionally has no E2B control-plane SDK
     _E2BSandbox = None
 
 RUNTIME_FILE = Path(
-    os.environ.get("FLEET_RUNTIME_FILE", str(Path(__file__).resolve().parent / ".runtime.json"))
+    os.environ.get(
+        "FLEET_RUNTIME_FILE", str(Path(__file__).resolve().parent / ".runtime.json")
+    )
 )
 HOST_SUFFIX = os.environ.get("WEBSITE_HOST_SUFFIX", "127.0.0.1.nip.io")
 
@@ -145,7 +147,9 @@ def _open_direct(target: dict, method: str, path: str, headers, body: bytes):
     sandbox_id = str(target["sandbox_id"])
     port = int(target["port"])
     request_headers = {
-        str(key): str(value) for key, value in headers.items() if key.lower() not in _HOP
+        str(key): str(value)
+        for key, value in headers.items()
+        if key.lower() not in _HOP
     }
     envelope = {
         "method": method,
@@ -280,7 +284,9 @@ class Handler(BaseHTTPRequestHandler):
                 else _open_upstream(req)
             )
             with response as resp:
-                payload = _rewrite_absolute_site_urls(resp.read(), host, incoming_authority)
+                payload = _rewrite_absolute_site_urls(
+                    resp.read(), host, incoming_authority
+                )
                 self.send_response(resp.status)
                 for key, value in resp.headers.items():
                     if key.lower() in _HOP or key.lower() == "content-length":
@@ -326,7 +332,9 @@ def main() -> int:
     # working from one process. Guest port 8080 is deliberately never in this
     # list: it is reserved by VLC's own baked Lua HTTP interface (see
     # FIDELITY.md), so the hostmap proxy must not double-book it.
-    ports = [int(p) for p in os.environ.get("HOSTMAP_PORT", "80").split(",") if p.strip()]
+    ports = [
+        int(p) for p in os.environ.get("HOSTMAP_PORT", "80").split(",") if p.strip()
+    ]
     servers = []
     for port in ports:
         try:
@@ -345,9 +353,12 @@ def main() -> int:
         return 13
     bound = [s.server_address[1] for s in servers]
     print(
-        f"[hostmap_proxy] listening on 127.0.0.1:{bound}; runtime={RUNTIME_FILE}", file=sys.stderr
+        f"[hostmap_proxy] listening on 127.0.0.1:{bound}; runtime={RUNTIME_FILE}",
+        file=sys.stderr,
     )
-    threads = [threading.Thread(target=s.serve_forever, daemon=True) for s in servers[1:]]
+    threads = [
+        threading.Thread(target=s.serve_forever, daemon=True) for s in servers[1:]
+    ]
     for t in threads:
         t.start()
     with contextlib.suppress(KeyboardInterrupt):

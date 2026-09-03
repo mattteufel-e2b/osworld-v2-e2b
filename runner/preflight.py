@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import socket
 import stat
 import sys
 from pathlib import Path
@@ -130,6 +131,15 @@ def main() -> int:
     ]
     if missing_tasks:
         fail(f"gated task files missing for ids: {', '.join(missing_tasks)}")
+
+    if "082" in selected:
+        probe = socket.socket()
+        try:
+            probe.bind(("127.0.0.1", 3000))
+        except OSError:
+            fail("task 082 requires host port 3000, but it is already in use")
+        finally:
+            probe.close()
 
     print(f"runner preflight ok: {len(selected)} task(s)")
     return 0

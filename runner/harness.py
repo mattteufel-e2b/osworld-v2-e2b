@@ -203,10 +203,7 @@ def run_task(
         # classify() reads full text only to choose a public cause bucket. The
         # shareable receipt never copies exception text; the traceback remains
         # under the gitignored raw directory.
-        model_calls = NO_MODEL_GUARD.call_attempts - model_calls_before
-        boundary = model_boundary_result(
-            record["stage"], error, call_attempts=model_calls
-        )
+        boundary = model_boundary_result(record["stage"], error)
         if boundary is not None:
             record.update(boundary)
         else:

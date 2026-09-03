@@ -40,6 +40,35 @@ if [ -z "${E2B_API_KEY:-}" ] && [ -f "$REPO_ROOT/.env.local" ]; then
 fi
 if [ -z "${E2B_API_KEY:-}" ]; then echo "E2B_API_KEY is required" >&2; exit 2; fi
 
+mkdir -p "$EVIDENCE_DIR" "$RAW_DIR"
+overall=0
+relay_pid=""
+proxy_pid=""
+outputs=()
+cleanup_current() {
+    curl -fsS -X POST http://127.0.0.1:14999/stop >/dev/null 2>&1 || true
+    if [ -n "$relay_pid" ]; then wait "$relay_pid" 2>/dev/null || true; fi
+    relay_pid=""
+}
+cleanup_all() {
+    local status=$?
+    trap - EXIT INT TERM
+    cleanup_current
+    if [ -n "$proxy_pid" ] && kill -0 "$proxy_pid" 2>/dev/null; then
+        kill "$proxy_pid" 2>/dev/null || true
+        wait "$proxy_pid" 2>/dev/null || true
+    fi
+    if [ "${TEARDOWN_FLEETS_ON_EXIT:-1}" = "1" ]; then
+        if ! $UV python "$SERVICES_DIR/stop.py" --campaign-id "$OSWORLD_CAMPAIGN_ID" \
+            >>"$RAW_DIR/service-teardown.log" 2>&1; then
+            echo "service fleet cleanup failed; recovery state was preserved" >&2
+            status=1
+        fi
+    fi
+    exit "$status"
+}
+trap cleanup_all EXIT INT TERM
+
 if ! python3 "$HERE/preflight.py" \
     --osworld-root "$OSWORLD_ROOT" --tasks-dir "$TASKS_DIR" \
     --services-dir "$SERVICES_DIR" --manifest "$MANIFEST"; then
@@ -62,33 +91,10 @@ export OSWORLD_FILE_BASE_URL="$TASKS_DIR/assets"
 export HOSTMAP_PROXY_SCRIPT="$SERVICES_DIR/hostmap_proxy.py"
 export OSWORLD_FLEET_RULES="$SERVICES_DIR/.runtime.json"
 
-mkdir -p "$EVIDENCE_DIR" "$RAW_DIR"
 echo "template=$GUEST_TEMPLATE"
 echo "WEBSITE_HOST_SUFFIX=$WEBSITE_HOST_SUFFIX"
 echo "GITLAB_URL=$GITLAB_URL"
 echo "OSWORLD_FILE_BASE_URL=$OSWORLD_FILE_BASE_URL"
-
-overall=0
-relay_pid=""
-proxy_pid=""
-outputs=()
-cleanup_current() {
-    curl -fsS -X POST http://127.0.0.1:14999/stop >/dev/null 2>&1 || true
-    if [ -n "$relay_pid" ]; then wait "$relay_pid" 2>/dev/null || true; fi
-    relay_pid=""
-}
-cleanup_all() {
-    cleanup_current
-    if [ -n "$proxy_pid" ] && kill -0 "$proxy_pid" 2>/dev/null; then
-        kill "$proxy_pid" 2>/dev/null || true
-        wait "$proxy_pid" 2>/dev/null || true
-    fi
-    if [ "${TEARDOWN_FLEETS_ON_EXIT:-1}" = "1" ]; then
-        $UV python "$SERVICES_DIR/stop.py" --campaign-id "$OSWORLD_CAMPAIGN_ID" \
-            >>"$RAW_DIR/service-teardown.log" 2>&1 || true
-    fi
-}
-trap cleanup_all EXIT INT TERM
 
 # Own the host-side fleet proxy for the full validation campaign. A proxy
 # spawned by a service launcher is tied to that launcher's process/session and

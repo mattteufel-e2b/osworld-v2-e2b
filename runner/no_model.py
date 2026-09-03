@@ -3,11 +3,24 @@
 from __future__ import annotations
 
 
-def model_boundary_result(
-    stage: str, error: BaseException, *, call_attempts: int
-) -> dict[str, object] | None:
+class NoModelEvaluationBoundary(RuntimeError):
+    """Control-flow sentinel proving evaluation reached a disabled model call."""
+
+
+def _contains_boundary(error: BaseException) -> bool:
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        if isinstance(current, NoModelEvaluationBoundary):
+            return True
+        seen.add(id(current))
+        current = current.__cause__ or current.__context__
+    return False
+
+
+def model_boundary_result(stage: str, error: BaseException) -> dict[str, object] | None:
     """Attest that a no-model evaluator reached its intentionally stubbed boundary."""
-    if stage != "evaluate" or call_attempts < 1:
+    if stage != "evaluate" or not _contains_boundary(error):
         return None
     return {
         "path_status": "MODEL_BOUNDARY_PASS",
@@ -24,13 +37,11 @@ class NoModelGuard:
 
     def _negative(self, *_args, **_kwargs) -> str:
         self.call_attempts += 1
-        return "NO"
+        raise NoModelEvaluationBoundary("external evaluation model disabled")
 
-    @staticmethod
-    def _blocked_backend(*_args, **_kwargs):
-        raise RuntimeError(
-            "evaluation-model backend creation is disabled in no-model mode"
-        )
+    def _blocked_backend(self, *_args, **_kwargs):
+        self.call_attempts += 1
+        raise NoModelEvaluationBoundary("evaluation-model backend creation disabled")
 
     def install(self, *, model_client=None, llm_metrics=None) -> None:
         if model_client is None or llm_metrics is None:

@@ -47,6 +47,7 @@ import lib_run_single  # noqa: E402
 import requests  # noqa: E402
 import task_loader  # noqa: E402  (checkout-local; cwd is the pinned checkout)
 from desktop_env.desktop_env import DesktopEnv  # noqa: E402
+from evaluator_model_calls import EvaluatorModelCallTracker  # noqa: E402
 from mm_agents.agent import PromptAgent  # noqa: E402
 from mm_agents.m3 import M3Agent  # noqa: E402
 from receipt_safety import public_error, public_transport  # noqa: E402
@@ -63,6 +64,11 @@ def _port_base() -> int:
 def _positive_int_env(name: str) -> int | None:
     raw = os.environ.get(name, "").strip()
     return int(raw) if raw.isdigit() and int(raw) > 0 else None
+
+
+def _nonnegative_int_env(name: str) -> int | None:
+    raw = os.environ.get(name, "").strip()
+    return int(raw) if raw.isdigit() else None
 
 
 def relay_state() -> dict:
@@ -276,6 +282,11 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    run_nonce = os.environ.get("OSWORLD_RUN_NONCE")
+    if not run_nonce:
+        raise RuntimeError("OSWORLD_RUN_NONCE is required")
+    evaluator_model_calls = EvaluatorModelCallTracker()
+    evaluator_model_calls.install()
     port_base = _port_base()
     result_dir = args.result_dir.resolve()
     result_dir.mkdir(parents=True, exist_ok=True)
@@ -289,12 +300,18 @@ def main() -> int:
     template_ref = os.environ.get("GUEST_TEMPLATE", "")
     receipt = {
         "id": args.task_id,
+        "run_nonce": run_nonce,
         "domain": args.domain,
         "agent_kind": args.agent_kind,
         "model": args.model,
         "model_transport": public_transport(os.environ.get("MODEL_BASE_URL")),
         "thinking_mode": os.environ.get("M3_THINKING_MODE") or None,
         "thinking_budget": _positive_int_env("M3_THINKING_BUDGET"),
+        "m3_max_llm_retries": (
+            _nonnegative_int_env("M3_MAX_LLM_RETRIES")
+            if args.agent_kind == "m3"
+            else None
+        ),
         "eval_model": os.environ.get("OSWORLD_EVAL_MODEL_NAME") or None,
         "eval_provider": os.environ.get("OSWORLD_EVAL_MODEL_PROVIDER") or None,
         "eval_model_transport": public_transport(
@@ -318,6 +335,8 @@ def main() -> int:
         "steps_taken": 0,
         "score": None,
         "judge_used": None,
+        "eval_model_call_attempts": 0,
+        "eval_model_successes": 0,
         "sandbox_id": None,
         "sandbox_generation": None,
         "wall_clock_s": None,
@@ -364,6 +383,7 @@ def main() -> int:
             enable_proxy=False,
             force_disable_recording=True,
         )
+        env.evaluate = evaluator_model_calls.track_evaluation(env.evaluate)
         lib_run_single.run_single_example(
             agent,
             env,
@@ -413,6 +433,8 @@ def main() -> int:
         receipt["transport_ok"] = True
         receipt["evaluator_ran"] = (result_dir / "result.txt").exists() or multiphase
     receipt["judge_used"] = judge_used
+    receipt["eval_model_call_attempts"] = evaluator_model_calls.call_attempts
+    receipt["eval_model_successes"] = evaluator_model_calls.successes
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")

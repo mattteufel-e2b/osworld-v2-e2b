@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -30,19 +29,29 @@ def aggregate(
     agent_kind: str,
     model_transport: str,
     eval_model: str,
+    eval_provider: str,
     eval_transport: str,
+    user_sim_model: str,
+    user_sim_provider: str,
+    user_sim_transport: str,
     max_steps: int,
     concurrency: int,
     thinking_mode: str | None,
     thinking_budget: int | None,
+    m3_max_llm_retries: int | None,
     task_082_concurrent: bool,
+    run_nonce: str,
+    campaign_id: str,
+    required_eval_model_ids: set[str],
 ) -> tuple[dict, bool]:
     manifest = json.loads(manifest_path.read_text())
     expected_ids = [item["id"] for item in manifest["tasks"]]
     expected_model_transport = public_transport(model_transport)
     expected_eval_transport = public_transport(eval_transport)
+    expected_user_sim_transport = public_transport(user_sim_transport)
     records: list[dict] = []
     invalid: dict[str, list[str]] = {}
+    expected_thinking_budget = thinking_budget if thinking_budget else None
 
     for task_id in expected_ids:
         path = worker_dir / f"task_{task_id}.json"
@@ -52,8 +61,23 @@ def aggregate(
             invalid[task_id] = ["missing-or-invalid-receipt"]
             continue
         reasons: list[str] = []
+        eval_attempts = record.get("eval_model_call_attempts")
+        eval_successes = record.get("eval_model_successes")
+        valid_eval_attempts = (
+            isinstance(eval_attempts, int)
+            and not isinstance(eval_attempts, bool)
+            and eval_attempts >= 0
+        )
+        valid_eval_successes = (
+            valid_eval_attempts
+            and isinstance(eval_successes, int)
+            and not isinstance(eval_successes, bool)
+            and 0 <= eval_successes <= eval_attempts
+        )
         checks = (
             (record.get("id") == task_id, "task-id"),
+            (record.get("run_nonce") == run_nonce, "run-nonce"),
+            (record.get("campaign_id") == campaign_id, "campaign-id"),
             (record.get("template") == manifest["template"], "template"),
             (record.get("path_status") == "OK", "path-status"),
             (record.get("evaluator_ran") is True, "evaluator"),
@@ -68,6 +92,26 @@ def aggregate(
             (record.get("model") == model, "model"),
             (record.get("agent_kind") == agent_kind, "agent-kind"),
             (record.get("eval_model") == eval_model, "eval-model"),
+            (record.get("eval_provider") == eval_provider, "eval-provider"),
+            (record.get("user_sim_model") == user_sim_model, "user-sim-model"),
+            (
+                record.get("user_sim_provider") == user_sim_provider,
+                "user-sim-provider",
+            ),
+            (
+                record.get("user_sim_transport") == expected_user_sim_transport,
+                "user-sim-transport",
+            ),
+            (record.get("max_steps") == max_steps, "max-steps"),
+            (record.get("thinking_mode") == thinking_mode, "thinking-mode"),
+            (
+                record.get("thinking_budget") == expected_thinking_budget,
+                "thinking-budget",
+            ),
+            (
+                record.get("m3_max_llm_retries") == m3_max_llm_retries,
+                "m3-max-llm-retries",
+            ),
             (
                 record.get("model_transport") == expected_model_transport,
                 "model-transport",
@@ -76,8 +120,14 @@ def aggregate(
                 record.get("eval_model_transport") == expected_eval_transport,
                 "eval-transport",
             ),
+            (valid_eval_attempts, "eval-model-attempts"),
+            (valid_eval_successes, "eval-model-success-count"),
         )
         reasons.extend(label for passed, label in checks if not passed)
+        if task_id in required_eval_model_ids and not (
+            valid_eval_successes and eval_successes > 0
+        ):
+            reasons.append("eval-model-success")
         if reasons:
             invalid[task_id] = reasons
         records.append(record)
@@ -102,6 +152,18 @@ def aggregate(
         "evaluator_ran_count": sum(
             record.get("evaluator_ran") is True for record in records
         ),
+        "eval_model_call_attempts": sum(
+            record.get("eval_model_call_attempts", 0)
+            for record in records
+            if isinstance(record.get("eval_model_call_attempts"), int)
+            and not isinstance(record.get("eval_model_call_attempts"), bool)
+        ),
+        "eval_model_successes": sum(
+            record.get("eval_model_successes", 0)
+            for record in records
+            if isinstance(record.get("eval_model_successes"), int)
+            and not isinstance(record.get("eval_model_successes"), bool)
+        ),
         "scored_tasks": len(scores),
         "mean_score": (sum(scores) / len(scores)) if scores else None,
         "partial_score": (sum(scores) / len(scores)) if scores else None,
@@ -114,7 +176,8 @@ def aggregate(
     }
     run = {
         "schema_version": 2,
-        "run_id": str(uuid.uuid4()),
+        "run_id": run_nonce,
+        "campaign_id": campaign_id,
         "finished_at": datetime.now(UTC).isoformat(),
         "purpose": "OSWorld-V2 agent benchmark on E2B",
         "release": manifest.get("release"),
@@ -123,11 +186,21 @@ def aggregate(
         "model": model,
         "agent_kind": agent_kind,
         "model_transport": expected_model_transport,
-        "reasoning": {"mode": thinking_mode, "budget_tokens": thinking_budget},
+        "reasoning": {
+            "mode": thinking_mode,
+            "budget_tokens": thinking_budget,
+            "max_llm_retries": m3_max_llm_retries,
+        },
         "evaluator": {
-            "provider": "openai_compatible",
+            "provider": eval_provider,
             "model": eval_model,
             "transport": expected_eval_transport,
+            "required_success_task_ids": sorted(required_eval_model_ids),
+        },
+        "user_simulator": {
+            "provider": user_sim_provider,
+            "model": user_sim_model,
+            "transport": expected_user_sim_transport,
         },
         "max_steps": max_steps,
         "execution": {
@@ -158,17 +231,32 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--agent-kind", required=True)
     parser.add_argument("--model-transport", required=True)
     parser.add_argument("--eval-model", required=True)
+    parser.add_argument("--eval-provider", required=True)
     parser.add_argument("--eval-transport", required=True)
+    parser.add_argument("--user-sim-model", required=True)
+    parser.add_argument("--user-sim-provider", required=True)
+    parser.add_argument("--user-sim-transport", required=True)
     parser.add_argument("--max-steps", type=int, required=True)
     parser.add_argument("--concurrency", type=int, required=True)
     parser.add_argument("--thinking-mode")
     parser.add_argument("--thinking-budget", type=int)
+    parser.add_argument("--m3-max-llm-retries", type=int)
     parser.add_argument("--task-082-concurrent", action="store_true")
+    parser.add_argument("--run-nonce", required=True)
+    parser.add_argument("--campaign-id", required=True)
+    parser.add_argument("--no-model-receipt", type=Path)
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    required_eval_model_ids: set[str] = set()
+    if args.no_model_receipt is not None:
+        from model_coverage import verify_model_coverage
+
+        required_eval_model_ids.update(
+            verify_model_coverage(args.no_model_receipt, args.manifest)
+        )
     run, ok = aggregate(
         args.manifest,
         args.worker_dir,
@@ -176,12 +264,20 @@ def main() -> int:
         agent_kind=args.agent_kind,
         model_transport=args.model_transport,
         eval_model=args.eval_model,
+        eval_provider=args.eval_provider,
         eval_transport=args.eval_transport,
+        user_sim_model=args.user_sim_model,
+        user_sim_provider=args.user_sim_provider,
+        user_sim_transport=args.user_sim_transport,
         max_steps=args.max_steps,
         concurrency=args.concurrency,
         thinking_mode=args.thinking_mode,
         thinking_budget=args.thinking_budget,
+        m3_max_llm_retries=args.m3_max_llm_retries,
         task_082_concurrent=args.task_082_concurrent,
+        run_nonce=args.run_nonce,
+        campaign_id=args.campaign_id,
+        required_eval_model_ids=required_eval_model_ids,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(

@@ -28,13 +28,17 @@ def call(url, payload=None, timeout=600):
     data = None if payload is None else json.dumps(payload).encode()
     headers = {"Content-Type": "application/json"} if data else {}
     method = "POST" if data is not None else "GET"
-    with urlopen(Request(url, data=data, method=method, headers=headers), timeout=timeout) as r:
+    with urlopen(
+        Request(url, data=data, method=method, headers=headers), timeout=timeout
+    ) as r:
         return json.load(r)
 
 
 def execute(command):
     # V2 control server expects a list command; run it through a login shell.
-    return call(f"{GUEST}/execute", {"command": ["bash", "-lc", command], "shell": False})
+    return call(
+        f"{GUEST}/execute", {"command": ["bash", "-lc", command], "shell": False}
+    )
 
 
 def marker_exists():
@@ -49,7 +53,9 @@ def main() -> int:
     report["template"] = state["template"]
     report["sandbox_a"] = state["sandbox_id"]
     report["checks"]["initial guest from template"] = state["source"] == "template"
-    report["checks"]["restricted ingress at start"] = state["restricted_ingress"] is True
+    report["checks"]["restricted ingress at start"] = (
+        state["restricted_ingress"] is True
+    )
 
     execute(f"echo mid-task-state > {MARKER}")
     report["checks"]["marker written in sandbox A"] = marker_exists()
@@ -61,7 +67,9 @@ def main() -> int:
 
     reverted = call(f"{CONTROL}/reset", {"snapshot": "probe_state"})
     report["sandbox_b"] = reverted["sandbox_id"]
-    report["checks"]["revert created a new sandbox"] = reverted["sandbox_id"] != state["sandbox_id"]
+    report["checks"]["revert created a new sandbox"] = (
+        reverted["sandbox_id"] != state["sandbox_id"]
+    )
     report["checks"]["revert source is the snapshot"] = (
         reverted["source"] == f"snapshot:{saved['snapshot_id']}"
     )
@@ -72,7 +80,9 @@ def main() -> int:
 
     base = call(f"{CONTROL}/reset", {"snapshot": "init_state"})
     report["sandbox_c"] = base["sandbox_id"]
-    report["checks"]["unsaved name falls back to template"] = base["source"] == "template"
+    report["checks"]["unsaved name falls back to template"] = (
+        base["source"] == "template"
+    )
     report["checks"]["restricted ingress preserved on template reset"] = (
         base["restricted_ingress"] is True
     )

@@ -37,7 +37,7 @@ def test_parallel_validator_owns_proxy_and_namespaces_task_service_ports():
     assert 'task_id" = "082"' in coordinator
     assert 'task_service_ports="3000:3000"' in coordinator
     assert 'OSWORLD_TASK_SERVICE_PORTS="$task_service_ports"' in coordinator
-    assert 'OSWORLD_TASK_082_HOST_PORT="$task_082_host_port"' in coordinator
+    assert "OSWORLD_TASK_082_HOST_PORT" not in coordinator
 
 
 def test_sequential_validator_owns_host_proxy_for_whole_run():
@@ -512,9 +512,8 @@ def test_full_agent_coordinator_bounds_sandboxes_and_namespaces_task_service_por
     assert 'if [ "$PARALLEL_CONCURRENCY" -gt 80 ]' in coordinator
     assert 'HOSTMAP_PORT="8090"' in coordinator
     assert 'task_id" = "082"' in coordinator
-    assert 'task_service_ports="$task_082_host_port:3000"' in coordinator
-    assert "task_082_host_port=3000" in coordinator
-    assert 'OSWORLD_TASK_082_HOST_PORT="$task_082_host_port"' in coordinator
+    assert 'task_service_ports="3000:3000"' in coordinator
+    assert "OSWORLD_TASK_082_HOST_PORT" not in coordinator
     assert 'task_service_ports=""' in coordinator
     assert 'AGENT_RETRY_ATTEMPTS="${AGENT_RETRY_ATTEMPTS:-0}"' in coordinator
     assert (
@@ -522,6 +521,8 @@ def test_full_agent_coordinator_bounds_sandboxes_and_namespaces_task_service_por
         in coordinator
     )
     assert 'python3 "$HERE/aggregate_agent.py"' in coordinator
+    assert 'python3 "$HERE/model_coverage.py"' in coordinator
+    assert 'REQUIRE_NO_MODEL_COVERAGE="${REQUIRE_NO_MODEL_COVERAGE:-1}"' in coordinator
     assert 'AGENT_RETRY_CONCURRENCY="${AGENT_RETRY_CONCURRENCY:-4}"' in coordinator
     assert (
         'AGENT_START_STAGGER_SECONDS="${AGENT_START_STAGGER_SECONDS:-0.25}"'
@@ -549,7 +550,7 @@ def test_agent_coordinator_can_opt_literal_port_task_into_a_sample_wave():
 
     assert 'RUN_TASK_082_CONCURRENT="${RUN_TASK_082_CONCURRENT:-1}"' in coordinator
     assert 'if [ "$task_id" = "082" ]; then' in coordinator
-    assert 'task_service_ports="$task_082_host_port:3000"' in coordinator
+    assert 'task_service_ports="3000:3000"' in coordinator
     assert 'if [ "$RUN_TASK_082_CONCURRENT" != "1" ]' in coordinator
     assert '"task_082_concurrent": task_082_concurrent' in aggregator
 
@@ -566,16 +567,19 @@ def test_no_model_aggregate_distinguishes_full_paths_from_model_boundaries():
     assert "validated_tasks=" in sequential
 
 
-def test_task_082_separates_host_relay_port_from_guest_browser_port():
-    task_path = ROOT / "tasks" / "task_082.py"
+def test_task_082_uses_the_literal_canonical_port_3000():
+    task_path = (
+        Path(os.environ.get("OSWORLD_TASKS_DIR", ROOT / "tasks")) / "task_082.py"
+    )
     if not task_path.is_file():
         import pytest
 
         pytest.skip("gated task data not downloaded (tasks/); see README prerequisites")
     task = task_path.read_text()
 
-    assert "OSWORLD_TASK_082_HOST_PORT" in task
-    assert 'return f"http://{host}:{_host_aws_port()}"' in task
+    assert "AWS_PORT = 3000" in task
+    assert "OSWORLD_TASK_082_HOST_PORT" not in task
+    assert 'return f"http://{host}:{AWS_PORT}"' in task
     assert 'return f"http://localhost:{AWS_PORT}' in task
 
 

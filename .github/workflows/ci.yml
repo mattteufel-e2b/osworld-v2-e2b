@@ -44,6 +44,9 @@ jobs:
       - name: Lint Python
         run: uv run --locked ruff check .
 
+      - name: Check Python formatting
+        run: uv run --locked ruff format --check .
+
       - name: Install template dependencies
         working-directory: template
         run: npm ci --ignore-scripts

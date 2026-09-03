@@ -42,30 +42,35 @@ if [ -z "${E2B_API_KEY:-}" ] && [ -f "$REPO_ROOT/.env.local" ]; then
 fi
 if [ -z "${E2B_API_KEY:-}" ]; then echo "E2B_API_KEY is required" >&2; exit 2; fi
 
+mkdir -p "$EVIDENCE_DIR" "$RAW_DIR/workers"
+proxy_pid=""
+cleanup_proxy() {
+    local status=$?
+    trap - EXIT INT TERM
+    if [ -n "$proxy_pid" ] && kill -0 "$proxy_pid" 2>/dev/null; then
+        kill "$proxy_pid" 2>/dev/null || true
+        wait "$proxy_pid" 2>/dev/null || true
+    fi
+    if [ "${TEARDOWN_FLEETS_ON_EXIT:-1}" = "1" ]; then
+        if ! $UV python "$SERVICES_DIR/stop.py" --campaign-id "$OSWORLD_CAMPAIGN_ID" \
+            >>"$RAW_DIR/service-teardown.log" 2>&1; then
+            echo "service fleet cleanup failed; recovery state was preserved" >&2
+            status=1
+        fi
+    fi
+    exit "$status"
+}
+trap cleanup_proxy EXIT INT TERM
+
 if ! python3 "$HERE/preflight.py" \
     --osworld-root "$OSWORLD_ROOT" --tasks-dir "$TASKS_DIR" \
     --services-dir "$SERVICES_DIR" --manifest "$MANIFEST"; then
     exit 2
 fi
 
-mkdir -p "$EVIDENCE_DIR" "$RAW_DIR/workers"
-
 # Own the host proxy for the entire campaign. The launchers' best-effort proxy
 # child does not survive every calling shell/PTY lifecycle, which previously
 # produced mid-run connection-refused failures despite healthy service guests.
-proxy_pid=""
-cleanup_proxy() {
-    if [ -n "$proxy_pid" ] && kill -0 "$proxy_pid" 2>/dev/null; then
-        kill "$proxy_pid" 2>/dev/null || true
-        wait "$proxy_pid" 2>/dev/null || true
-    fi
-    if [ "${TEARDOWN_FLEETS_ON_EXIT:-1}" = "1" ]; then
-        $UV python "$SERVICES_DIR/stop.py" --campaign-id "$OSWORLD_CAMPAIGN_ID" \
-            >>"$RAW_DIR/service-teardown.log" 2>&1 || true
-    fi
-}
-trap cleanup_proxy EXIT INT TERM
-
 if python3 - <<'PY'
 import socket
 s = socket.socket()
@@ -110,22 +115,19 @@ PY
 run_batch() {
     local -a batch=("$@")
     local -a pids=()
-    local task_id slot port_base task_service_ports task_082_host_port output log pid
+    local task_id slot port_base task_service_ports output log pid
     local batch_failed=0
     slot=0
     for task_id in "${batch[@]}"; do
         slot=$((slot + 1))
         port_base=$((slot * 500))
         task_service_ports=""
-        task_082_host_port=""
         if [ "$task_id" = "082" ]; then
             task_service_ports="3000:3000"
-            task_082_host_port="3000"
         fi
         output="$RAW_DIR/workers/task_${task_id}.json"
         log="$RAW_DIR/workers/task_${task_id}.log"
         OSWORLD_TASK_SERVICE_PORTS="$task_service_ports" \
-            OSWORLD_TASK_082_HOST_PORT="$task_082_host_port" \
             TASK_ID="$task_id" PORT_BASE="$port_base" \
             OUTPUT="$output" RAW_DIR="$RAW_DIR/workers" \
             "$HERE/run_path_task.sh" >"$log" 2>&1 &

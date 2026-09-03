@@ -35,7 +35,10 @@ def test_upstream_open_retries_transient_transport_failure():
 def test_upstream_redirects_are_returned_to_the_client_for_cookie_fidelity():
     redirect_handler = hostmap_proxy._NoRedirect()
 
-    assert redirect_handler.redirect_request(None, None, 302, "Found", {}, "https://next") is None
+    assert (
+        redirect_handler.redirect_request(None, None, 302, "Found", {}, "https://next")
+        is None
+    )
 
 
 def test_absolute_site_urls_are_rewritten_to_the_incoming_proxy_authority():
