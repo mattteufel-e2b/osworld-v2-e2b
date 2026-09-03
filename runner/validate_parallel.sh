@@ -8,7 +8,9 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 V2ROOT="$(cd "$HERE/.." && pwd)"
 REPO_ROOT="$V2ROOT"
-SERVICES_DIR="$V2ROOT/services"
+SERVICES_DIR="${OSWORLD_SERVICES_DIR:-$V2ROOT/services}"
+OSWORLD_ROOT="${OSWORLD_ROOT:-$V2ROOT/OSWorld-V2}"
+TASKS_DIR="${OSWORLD_TASKS_DIR:-$V2ROOT/tasks}"
 MANIFEST="${VALIDATION_MANIFEST:-$V2ROOT/validation/full-manifest.json}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-$REPO_ROOT/out/osworld-v2-evidence/full-suite}"
 RAW_DIR="${RAW_DIR:-$REPO_ROOT/out/osworld-v2-raw/full-suite}"
@@ -29,11 +31,22 @@ if [[ ! "${GUEST_TEMPLATE:-}" =~ ^[a-z0-9-]+:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a
     exit 2
 fi
 export GUEST_TEMPLATE
+if [ -z "${OSWORLD_CAMPAIGN_ID:-}" ]; then echo "OSWORLD_CAMPAIGN_ID is required" >&2; exit 2; fi
+export OSWORLD_CAMPAIGN_ID
+export OSWORLD_EVAL_MODEL_MODE=stub
+unset OPENAI_API_KEY OPENAI_API_KEY_CUA ANTHROPIC_API_KEY GEMINI_API_KEY MODEL_API_KEY
+unset OSWORLD_EVAL_MODEL_API_KEY OSWORLD_USER_SIM_API_KEY
 
 if [ -z "${E2B_API_KEY:-}" ] && [ -f "$REPO_ROOT/.env.local" ]; then
     export E2B_API_KEY="$(grep '^E2B_API_KEY=' "$REPO_ROOT/.env.local" | cut -d= -f2)"
 fi
 if [ -z "${E2B_API_KEY:-}" ]; then echo "E2B_API_KEY is required" >&2; exit 2; fi
+
+if ! python3 "$HERE/preflight.py" \
+    --osworld-root "$OSWORLD_ROOT" --tasks-dir "$TASKS_DIR" \
+    --services-dir "$SERVICES_DIR" --manifest "$MANIFEST"; then
+    exit 2
+fi
 
 mkdir -p "$EVIDENCE_DIR" "$RAW_DIR/workers"
 
@@ -45,6 +58,10 @@ cleanup_proxy() {
     if [ -n "$proxy_pid" ] && kill -0 "$proxy_pid" 2>/dev/null; then
         kill "$proxy_pid" 2>/dev/null || true
         wait "$proxy_pid" 2>/dev/null || true
+    fi
+    if [ "${TEARDOWN_FLEETS_ON_EXIT:-1}" = "1" ]; then
+        $UV python "$SERVICES_DIR/stop.py" --campaign-id "$OSWORLD_CAMPAIGN_ID" \
+            >>"$RAW_DIR/service-teardown.log" 2>&1 || true
     fi
 }
 trap cleanup_proxy EXIT INT TERM
@@ -159,6 +176,8 @@ sandbox_ids = [r.get("sandbox", {}).get("id") for r in records if r.get("sandbox
 unique = set(sandbox_ids)
 path_passes = sum(r.get("path_status") == "PATH_PASS" for r in records)
 evaluator_ran = sum(bool(r.get("evaluator_ran")) for r in records)
+external_model_calls = sum(int(r.get("external_model_calls", -1)) for r in records)
+eval_model_call_attempts = sum(int(r.get("eval_model_call_attempts", 0)) for r in records)
 summary = {
     "tasks": len(records),
     "expected_tasks": len(expected_ids),
@@ -166,6 +185,9 @@ summary = {
     "path_passes": path_passes,
     "path_failures": sum(r.get("path_status") == "PATH_FAIL" for r in records),
     "evaluator_ran_count": evaluator_ran,
+    "evaluation_mode": "no-model-stub",
+    "eval_model_call_attempts": eval_model_call_attempts,
+    "external_model_calls": external_model_calls,
     "unique_sandboxes": len(unique),
     "all_recorded_sandboxes_unique": len(unique) == len(sandbox_ids),
 }
@@ -196,6 +218,7 @@ ok = (
     and len(records) == len(expected_ids)
     and path_passes == evaluator_ran == len(expected_ids)
     and len(sandbox_ids) == len(unique) == len(expected_ids)
+    and external_model_calls == 0
 )
 print("VALIDATION GATE:", "PASS" if ok else "FAIL")
 raise SystemExit(0 if ok else 1)

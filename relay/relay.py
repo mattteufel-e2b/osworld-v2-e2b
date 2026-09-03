@@ -24,7 +24,11 @@ import aiohttp
 import httpx
 from aiohttp import web
 from e2b import Sandbox, TimeoutException
-from e2b_policy import require_immutable_template_ref, sandbox_network_policy
+from e2b_policy import (
+    require_campaign_id,
+    require_immutable_template_ref,
+    sandbox_network_policy,
+)
 
 TEMPLATE = os.environ.get("GUEST_TEMPLATE", "osworld-v2-gnome")
 
@@ -50,7 +54,10 @@ READY_TIMEOUT_S = int(os.environ.get("GUEST_READY_TIMEOUT_S", "180"))
 # Clamped so the refresh cadence always fits several times inside the ceiling.
 HEARTBEAT_INTERVAL_S = max(
     30,
-    min(int(os.environ.get("SANDBOX_HEARTBEAT_INTERVAL_S", "300")), SANDBOX_TIMEOUT_S // 4),
+    min(
+        int(os.environ.get("SANDBOX_HEARTBEAT_INTERVAL_S", "300")),
+        SANDBOX_TIMEOUT_S // 4,
+    ),
 )
 # Control-plane retries are deliberately fixed and short. A later scheduled
 # heartbeat remains available if all attempts fail.
@@ -88,6 +95,8 @@ CONTROL_PORT = int(os.environ.get("E2B_RELAY_CONTROL_PORT", "14999")) + PORT_BAS
 SERVER_LOCAL = 15000 + PORT_BASE
 CDP_LOCAL = 19222 + PORT_BASE
 VLC_LOCAL = 18080 + PORT_BASE
+
+
 def _task_service_port_map(raw: str) -> dict[int, int]:
     mappings: dict[int, int] = {}
     for entry in raw.split(","):
@@ -102,7 +111,9 @@ def _task_service_port_map(raw: str) -> dict[int, int]:
         else:
             raise ValueError(f"invalid task-service port mapping: {entry!r}")
         if not (1 <= local <= 65535 and 1 <= guest <= 65535):
-            raise ValueError(f"task-service ports must be between 1 and 65535: {entry!r}")
+            raise ValueError(
+                f"task-service ports must be between 1 and 65535: {entry!r}"
+            )
         if local in mappings:
             raise ValueError(f"duplicate local task-service port: {local}")
         mappings[local] = guest
@@ -183,7 +194,10 @@ def _install_guest_proxy(sandbox: Sandbox) -> None:
         background=True,
         timeout=0,
     )
-    print(f"[relay] guest Host-mapping proxy installed on :{GUEST_PROXY_PORTS}", file=sys.stderr)
+    print(
+        f"[relay] guest Host-mapping proxy installed on :{GUEST_PROXY_PORTS}",
+        file=sys.stderr,
+    )
 
 
 def _guest_proxy_runtime_json(rules_json: str) -> str:
@@ -342,10 +356,10 @@ class GuestManager:
         # SANDBOX_TIMEOUT_S with no owner).
         self._stopped = False
         # OSWorld snapshot name -> E2B snapshot id (memory + filesystem state).
-        # Deliberately never deleted: snapshots persist in the E2B account past
-        # the run so consumers can inspect a run's saved states afterwards; the
-        # ids are surfaced via /save responses and the /state "snapshots" map.
+        # Run-owned snapshots are deleted at shutdown by default. Explicit
+        # OSWORLD_RETAIN_SNAPSHOTS=1 keeps them for a debugging session.
         self._snapshots: dict[str, str] = {}
+        self._retain_snapshots = os.environ.get("OSWORLD_RETAIN_SNAPSHOTS") == "1"
         # Activity-based timeout heartbeat state: touch() advances _last_activity
         # on guest-directed traffic; _heartbeat_once() refreshes the sandbox
         # timeout only when activity happened since the last refresh.
@@ -365,7 +379,11 @@ class GuestManager:
         refresh. Returns True when a refresh was issued."""
         async with self._lock:
             guest = self._guest
-            if self._stopped or guest is None or self._last_activity <= self._last_refresh:
+            if (
+                self._stopped
+                or guest is None
+                or self._last_activity <= self._last_refresh
+            ):
                 return False
         for attempt in range(1, HEARTBEAT_RETRY_ATTEMPTS + 1):
             try:
@@ -408,7 +426,13 @@ class GuestManager:
                 timeout=SANDBOX_TIMEOUT_S,
                 secure=True,
                 network=sandbox_network_policy(),
-                metadata={"workload": "osworld", "generation": str(generation)},
+                metadata={
+                    "workload": "osworld",
+                    "generation": str(generation),
+                    "campaign_id": require_campaign_id(
+                        os.environ.get("OSWORLD_CAMPAIGN_ID")
+                    ),
+                },
             )
             # The awaiting task can be cancelled while this thread runs (client
             # disconnect, shutdown); the thread still completes and would leak
@@ -531,7 +555,11 @@ class GuestManager:
         validates the actual restored filesystem rather than attaching a
         persistent Volume or attempting a provider-specific partition resize.
         """
-        if isinstance(requested_gb, bool) or not isinstance(requested_gb, int) or requested_gb <= 0:
+        if (
+            isinstance(requested_gb, bool)
+            or not isinstance(requested_gb, int)
+            or requested_gb <= 0
+        ):
             raise ValueError("requested_gb must be a positive integer")
         guest = await self.current()
         self.touch()
@@ -591,11 +619,26 @@ class GuestManager:
         async with self._lock:
             self._stopped = True
             guest, self._guest = self._guest, None
+            snapshots = dict(self._snapshots)
+            if not self._retain_snapshots:
+                self._snapshots.clear()
         if guest is not None:
             try:
                 await asyncio.to_thread(guest.sandbox.kill)
             except Exception as exc:
-                print(f"[relay] warning: could not kill {guest.sandbox_id}: {exc}", file=sys.stderr)
+                print(
+                    f"[relay] warning: could not kill {guest.sandbox_id}: {exc}",
+                    file=sys.stderr,
+                )
+        if not self._retain_snapshots:
+            for snapshot_id in sorted(set(snapshots.values())):
+                try:
+                    await asyncio.to_thread(Sandbox.delete_snapshot, snapshot_id)
+                except Exception as exc:
+                    print(
+                        f"[relay] warning: could not delete snapshot {snapshot_id}: {exc}",
+                        file=sys.stderr,
+                    )
 
 
 manager = GuestManager()
@@ -613,19 +656,27 @@ def _upstream_headers(request: web.Request, guest: Guest) -> dict[str, str]:
         "sec-websocket-version",
         "sec-websocket-extensions",
     }
-    headers = {key: value for key, value in request.headers.items() if key.lower() not in excluded}
+    headers = {
+        key: value
+        for key, value in request.headers.items()
+        if key.lower() not in excluded
+    }
     headers["e2b-traffic-access-token"] = guest.traffic_token
     return headers
 
 
 def _rewrite_cdp_host(payload: bytes, local_port: int) -> bytes:
     text = payload.decode("utf-8", "replace")
-    text = re.sub(r"ws://[^/\"]+/devtools", f"ws://127.0.0.1:{local_port}/devtools", text)
+    text = re.sub(
+        r"ws://[^/\"]+/devtools", f"ws://127.0.0.1:{local_port}/devtools", text
+    )
     text = re.sub(r"\"host\":\s*\"[^\"]*\"", f'"host": "127.0.0.1:{local_port}"', text)
     return text.encode()
 
 
-async def _ws_connect_with_retry(session: aiohttp.ClientSession, url: str, headers: dict[str, str]):
+async def _ws_connect_with_retry(
+    session: aiohttp.ClientSession, url: str, headers: dict[str, str]
+):
     """ws_connect, retrying for up to WS_CONNECT_RETRY_S before raising.
 
     A guest resuming from a create_snapshot pause (or mid-replace) refuses
@@ -670,8 +721,13 @@ def make_proxy_handler(local_port: int):
                         headers,
                     )
                 except Exception as exc:
-                    print(f"[relay:{local_port}] websocket connect failed: {exc}", file=sys.stderr)
-                    await downstream.close(code=1011, message=b"upstream connect failed")
+                    print(
+                        f"[relay:{local_port}] websocket connect failed: {exc}",
+                        file=sys.stderr,
+                    )
+                    await downstream.close(
+                        code=1011, message=b"upstream connect failed"
+                    )
                     return downstream
 
                 async def upstream_to_downstream() -> None:
@@ -694,7 +750,9 @@ def make_proxy_handler(local_port: int):
                     asyncio.create_task(upstream_to_downstream()),
                     asyncio.create_task(downstream_to_upstream()),
                 ]
-                done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                done, pending = await asyncio.wait(
+                    tasks, return_when=asyncio.FIRST_COMPLETED
+                )
                 for task in pending:
                     task.cancel()
                 await asyncio.gather(*pending, return_exceptions=True)
@@ -722,7 +780,9 @@ def make_proxy_handler(local_port: int):
                 ) as response,
             ):
                 payload = await response.read()
-                if local_port == CDP_LOCAL and "json" in response.headers.get("Content-Type", ""):
+                if local_port == CDP_LOCAL and "json" in response.headers.get(
+                    "Content-Type", ""
+                ):
                     payload = _rewrite_cdp_host(payload, local_port)
                 excluded = {
                     "content-length",
@@ -736,7 +796,9 @@ def make_proxy_handler(local_port: int):
                     for key, value in response.headers.items()
                     if key.lower() not in excluded
                 }
-                return web.Response(status=response.status, body=payload, headers=out_headers)
+                return web.Response(
+                    status=response.status, body=payload, headers=out_headers
+                )
         except TimeoutError as exc:
             raise web.HTTPGatewayTimeout(
                 text=f"upstream exceeded {RELAY_HTTP_TIMEOUT_S}s relay timeout"
@@ -753,6 +815,7 @@ def _public_state(guest: Guest) -> dict[str, object]:
         "sandbox_id": guest.sandbox_id,
         "generation": guest.generation,
         "template": TEMPLATE,
+        "campaign_id": require_campaign_id(os.environ.get("OSWORLD_CAMPAIGN_ID")),
         "source": guest.source,
         "sandbox_timeout_seconds": SANDBOX_TIMEOUT_S,
         "heartbeat_interval_seconds": HEARTBEAT_INTERVAL_S,
@@ -761,9 +824,8 @@ def _public_state(guest: Guest) -> dict[str, object]:
         "task_service_port_map": {
             str(local): guest for local, guest in sorted(TASK_SERVICE_PORT_MAP.items())
         },
-        # Persistent E2B snapshot ids for this run's save_state names. They are
-        # never auto-deleted; consumers record them from here (or the /save
-        # response) to inspect or clean up a run's snapshots afterwards.
+        # E2B snapshot ids remain visible for the run. Shutdown deletes them by
+        # default unless OSWORLD_RETAIN_SNAPSHOTS=1 was set for debugging.
         "snapshots": manager.snapshot_ids(),
     }
 
@@ -803,7 +865,9 @@ async def save(request: web.Request) -> web.Response:
     except Exception:
         name = None
     if not name:
-        raise web.HTTPBadRequest(text='save body must be JSON like {"name": "snapshot-name"}')
+        raise web.HTTPBadRequest(
+            text='save body must be JSON like {"name": "snapshot-name"}'
+        )
     snapshot_id = await manager.save_snapshot(name)
     state = _public_state(await manager.current())
     return web.json_response({"saved": name, "snapshot_id": snapshot_id, **state})
@@ -875,7 +939,9 @@ async def main() -> None:
             with contextlib.suppress(NotImplementedError):
                 loop.add_signal_handler(sig, stop_event.set)
         print(
-            json.dumps({"event": "RELAY_READY", **_public_state(await manager.current())}),
+            json.dumps(
+                {"event": "RELAY_READY", **_public_state(await manager.current())}
+            ),
             file=sys.stderr,
         )
         await stop_event.wait()

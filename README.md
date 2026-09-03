@@ -21,19 +21,78 @@ Receipts live in `out/osworld-v2-evidence/`.
 ## Quick start
 
 Prerequisites: `E2B_API_KEY=...` in `.env.local` at the repo root, `uv`, Node >=20.18.1,
-`npm`, and `git`.
+`npm`, `git`, and Hugging Face access to both gated OSWorld V2 datasets. Authenticate once
+with `uvx --from huggingface_hub hf auth login` after accepting their access gates.
 
 ```bash
 template/fetch_server.sh                    # fetch + patch the pinned guest server
 npm --prefix template ci --ignore-scripts
 uv run --env-file .env.local npm --prefix template run typecheck
 uv run --env-file .env.local npm --prefix template run build   # guest template
-uv run --env-file .env.local --python 3.12 --with e2b==2.34.0 \
+uv run --env-file .env.local --locked \
     python services/build_fleet_template.py                      # fleet template
 export GUEST_TEMPLATE=<name:build_id>       # from template/results/template-build.json
-export FLEET_TEMPLATE=<name:build_id>       # from out/osworld-v2-evidence/fleet-template-build.json
+export FLEET_TEMPLATE=<name:build_id>       # from out/osworld-v2-raw/builds/fleet-template-build.json
 runner/setup.sh                             # clone pinned OSWorld-V2 + apply e2b patches
-runner/validate.sh                          # environment-path validation
+uv run --with huggingface-hub python runner/gated_data.py       # exact gated revisions + hashes
+
+export OSWORLD_CAMPAIGN_ID="osworld-v2-$(date -u +%Y%m%dT%H%M%SZ)"
+uv run --env-file .env.local --locked python services/websites/launch.py
+uv run --env-file .env.local --locked python services/gitlab/launch.py
+
+RUN_ROOT="$(mktemp -d)"
+python3 runner/render_manifest.py --source validation/full-manifest.json \
+    --template "$GUEST_TEMPLATE" --output "$RUN_ROOT/full-manifest.json"
+VALIDATION_MANIFEST="$RUN_ROOT/full-manifest.json" VALIDATION_RUNS=1 \
+    PARALLEL_CONCURRENCY=24 RAW_DIR="$RUN_ROOT/no-model-raw" \
+    EVIDENCE_DIR="$RUN_ROOT/no-model-evidence" OUTPUT="$RUN_ROOT/no-model.json" \
+    runner/validate_parallel.sh                # all 108 tasks, zero external model calls
+```
+
+The validation coordinator stops both service fleets on exit. Set
+`TEARDOWN_FLEETS_ON_EXIT=0` only when deliberately retaining a campaign, and stop it later with
+`uv run --env-file .env.local --locked python services/stop.py --campaign-id "$OSWORLD_CAMPAIGN_ID"`.
+Run-scoped raw trajectories, service receipts, and secrets stay in ignored paths; committed
+evidence is published only after allowlist sanitization.
+
+## Full-model validation sample
+
+After the all-task no-model run passes, use one fresh fleet campaign for a three-step canary and
+another for the 24-task representative sample. The sample covers every application family, major
+evaluator paths, multiphase tasks, task 082's local service, and a spread of task complexity. The
+runner does not retry completed model rollouts.
+
+```bash
+export MODEL_API_KEY="$FIREWORKS_API_KEY"
+export MODEL_BASE_URL="https://api.fireworks.ai/inference"
+export MODEL="accounts/fireworks/models/minimax-m3"
+export AGENT_KIND=m3 M3_THINKING_BUDGET=2048
+export EVAL_MODEL_API_KEY="$FIREWORKS_API_KEY"
+export EVAL_MODEL_BASE_URL="https://api.fireworks.ai/inference/v1"
+export EVAL_MODEL="accounts/fireworks/models/minimax-m3"
+
+export OSWORLD_CAMPAIGN_ID="osworld-v2-canary-$(date -u +%Y%m%dT%H%M%SZ)"
+uv run --env-file .env.local --locked python services/websites/launch.py
+uv run --env-file .env.local --locked python services/gitlab/launch.py
+python3 runner/render_manifest.py --source validation/full-manifest.json \
+    --template "$GUEST_TEMPLATE" --output "$RUN_ROOT/canary-manifest.json" --task-id 003
+AGENT_MANIFEST="$RUN_ROOT/canary-manifest.json" PARALLEL_CONCURRENCY=1 MAX_STEPS=3 \
+    AGENT_RETRY_ATTEMPTS=0 RAW_DIR="$RUN_ROOT/canary-raw" \
+    OUTPUT="$RUN_ROOT/canary.json" runner/run_agent_parallel.sh
+
+export OSWORLD_CAMPAIGN_ID="osworld-v2-sample24-$(date -u +%Y%m%dT%H%M%SZ)"
+uv run --env-file .env.local --locked python services/websites/launch.py
+uv run --env-file .env.local --locked python services/gitlab/launch.py
+sample_args=()
+for task_id in 003 008 011 015 019 026 035 038 046 048 050 053 057 059 067 069 079 082 083 092 093 103 105 107; do
+    sample_args+=(--task-id "$task_id")
+done
+python3 runner/render_manifest.py --source validation/full-manifest.json \
+    --template "$GUEST_TEMPLATE" --output "$RUN_ROOT/sample24-manifest.json" "${sample_args[@]}"
+AGENT_MANIFEST="$RUN_ROOT/sample24-manifest.json" PARALLEL_CONCURRENCY=12 MAX_STEPS=500 \
+    AGENT_TASK_TIMEOUT_SECONDS=14400 AGENT_RETRY_ATTEMPTS=0 AGENT_START_STAGGER_SECONDS=1 \
+    RUN_TASK_082_CONCURRENT=1 RAW_DIR="$RUN_ROOT/sample24-raw" \
+    OUTPUT="$RUN_ROOT/sample24.json" runner/run_agent_parallel.sh
 ```
 
 Only immutable `name:build_id` references are accepted — launchers reject mutable aliases
@@ -128,7 +187,8 @@ An E2B snapshot captures memory + filesystem, persists independently of its sand
 can seed any number of new sandboxes — the same contract as QEMU's named `savevm` states.
 The name→id map lives in relay memory for the relay's lifetime; both revert paths are
 live-probed (`out/osworld-v2-evidence/snapshot-probe.json`, 12/12). Snapshots are
-deliberately never deleted — record ids from `/save` or `/state` to clean up after a run.
+deleted when the relay stops. Set `OSWORLD_RETAIN_SNAPSHOTS=1` only for an intentional debugging
+session, then delete the recorded ids from `/save` or `/state` when finished.
 The capture briefly pauses the guest (dropping CDP sockets), so `/save` re-gates on
 readiness and the relay retries WebSocket connects during the resume window.
 

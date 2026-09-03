@@ -61,6 +61,9 @@ for dependency in ["easyocr", "acoustid"]:
 sys.path.insert(0, os.getcwd())
 import task_loader  # noqa: E402  (checkout-local; cwd is the pinned checkout)
 from desktop_env.desktop_env import DesktopEnv  # noqa: E402
+from no_model import NoModelGuard  # noqa: E402
+
+NO_MODEL_GUARD = NoModelGuard()
 
 
 class TaskTimeout(BaseException):
@@ -86,7 +89,9 @@ def relay_state() -> dict:
 
 
 def osworld_commit(root: Path) -> str:
-    return subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+    return subprocess.check_output(
+        ["git", "-C", str(root), "rev-parse", "HEAD"], text=True
+    ).strip()
 
 
 def classify(stage: str, error: BaseException) -> tuple[str, str]:
@@ -94,13 +99,22 @@ def classify(stage: str, error: BaseException) -> tuple[str, str]:
     low = detail.lower()
     if isinstance(error, TaskTimeout):
         return "task-timeout", detail
-    if any(word in low for word in ("cdp", "playwright", "websocket", "connect_over_cdp")):
+    if any(
+        word in low for word in ("cdp", "playwright", "websocket", "connect_over_cdp")
+    ):
         return "chrome-cdp", detail
     if "environmentsetuperror" in low:
         return "environment-setup", detail
     if any(
         word in low
-        for word in ("connection", "timed out", "max retries", "502", "504", "bad gateway")
+        for word in (
+            "connection",
+            "timed out",
+            "max retries",
+            "502",
+            "504",
+            "bad gateway",
+        )
     ):
         return "transport", detail
     return f"environment/{stage}", detail
@@ -116,18 +130,25 @@ def _score_of(result) -> float:
     return float(result)
 
 
-def load_tasks(tasks_dir: Path, manifest_path: Path) -> tuple[dict, list[tuple[dict, Path]]]:
+def load_tasks(
+    tasks_dir: Path, manifest_path: Path
+) -> tuple[dict, list[tuple[dict, Path]]]:
     manifest = json.loads(manifest_path.read_text())
     tasks = []
     for item in manifest["tasks"]:
         path = tasks_dir / f"task_{item['id']}.py"
         if not path.is_file():
-            raise FileNotFoundError(f"manifest task does not exist in gated snapshot: {path}")
+            raise FileNotFoundError(
+                f"manifest task does not exist in gated snapshot: {path}"
+            )
         tasks.append((item, path))
     return manifest, tasks
 
 
-def run_task(env: DesktopEnv, item: dict, task_path: Path, raw_dir: Path, run_id: str) -> dict:
+def run_task(
+    env: DesktopEnv, item: dict, task_path: Path, raw_dir: Path, run_id: str
+) -> dict:
+    model_calls_before = NO_MODEL_GUARD.call_attempts
     task = task_loader.load_task_from_file(str(task_path))
     phases = getattr(task, "get_phases", None)
     record = {
@@ -141,6 +162,8 @@ def run_task(env: DesktopEnv, item: dict, task_path: Path, raw_dir: Path, run_id
         "path_status": None,
         "evaluator_ran": False,
         "score": None,
+        "evaluation_mode": "no-model-stub",
+        "external_model_calls": 0,
     }
     start = time.monotonic()
     try:
@@ -166,7 +189,10 @@ def run_task(env: DesktopEnv, item: dict, task_path: Path, raw_dir: Path, run_id
         }
 
         record["stage"] = "step"
-        env.step("import pyautogui; pyautogui.moveTo(300, 300); pyautogui.press('esc')", pause=1)
+        env.step(
+            "import pyautogui; pyautogui.moveTo(300, 300); pyautogui.press('esc')",
+            pause=1,
+        )
 
         record["stage"] = "evaluate"
         result = env.evaluate()
@@ -175,20 +201,23 @@ def run_task(env: DesktopEnv, item: dict, task_path: Path, raw_dir: Path, run_id
         record["path_status"] = "PATH_PASS"
         record["stage"] = "complete"
     except BaseException as error:
-        # classify() reads the full error text to pick a cause bucket, but a task
-        # error can quote task content (paths, expected values). So the committed
-        # receipt keeps only an allowlisted, length-capped detail -- the exception
-        # class name + first line of its message, truncated -- and NO traceback.
-        # The full traceback goes to the gitignored raw dir only.
+        # classify() reads full text only to choose a public cause bucket. The
+        # shareable receipt never copies exception text; the traceback remains
+        # under the gitignored raw directory.
         cause, _full = classify(record["stage"], error)
-        first_line = (str(error).splitlines() or [""])[0]
-        detail = f"{type(error).__name__}: {first_line}"[:200]
-        record.update(path_status="PATH_FAIL", cause=cause, detail=detail)
+        record.update(
+            path_status="PATH_FAIL",
+            cause=cause,
+            error_type=type(error).__name__,
+        )
         import traceback
 
         (raw_dir / f"{run_id}-task_{record['id']}-FAIL.trace.txt").write_text(
             traceback.format_exc()
         )
+    record["eval_model_call_attempts"] = (
+        NO_MODEL_GUARD.call_attempts - model_calls_before
+    )
     record["duration_seconds"] = round(time.monotonic() - start, 1)
     record["finished_at"] = utc_now()
     return record
@@ -211,6 +240,9 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    if os.environ.get("OSWORLD_EVAL_MODEL_MODE") != "stub":
+        raise RuntimeError("harness requires OSWORLD_EVAL_MODEL_MODE=stub")
+    NO_MODEL_GUARD.install()
     root = args.osworld_root.resolve()
     tasks_dir = args.tasks_dir.resolve()
     raw_dir = args.raw_dir.resolve()
@@ -242,11 +274,14 @@ def main() -> int:
         "started_at": utc_now(),
         "purpose": "environment-path validation; not an agent benchmark score",
         "release": manifest.get("release"),
+        "campaign_id": os.environ.get("OSWORLD_CAMPAIGN_ID"),
         "template": manifest["template"],
         "osworld_commit": actual_commit,
         "manifest": manifest,
         "host": {"python": platform.python_version(), "platform": platform.platform()},
-        "dependencies": {name: importlib.metadata.version(name) for name in ("e2b", "aiohttp")},
+        "dependencies": {
+            name: importlib.metadata.version(name) for name in ("e2b", "aiohttp")
+        },
         "relay": relay,
         "records": [],
     }
@@ -292,7 +327,9 @@ def main() -> int:
         "tasks": len(run["records"]),
         "path_passes": sum(r["path_status"] == "PATH_PASS" for r in run["records"]),
         "path_failures": sum(r["path_status"] == "PATH_FAIL" for r in run["records"]),
-        "evaluator_ran_count": sum(bool(r.get("evaluator_ran")) for r in run["records"]),
+        "evaluator_ran_count": sum(
+            bool(r.get("evaluator_ran")) for r in run["records"]
+        ),
         "unique_sandboxes": len(
             {r.get("sandbox", {}).get("id") for r in run["records"] if r.get("sandbox")}
         ),
@@ -300,10 +337,12 @@ def main() -> int:
             r.get("sandbox", {}).get("unique_in_run", False) for r in run["records"]
         ),
         "score_min": min(
-            (r["score"] for r in run["records"] if r.get("score") is not None), default=None
+            (r["score"] for r in run["records"] if r.get("score") is not None),
+            default=None,
         ),
         "score_max": max(
-            (r["score"] for r in run["records"] if r.get("score") is not None), default=None
+            (r["score"] for r in run["records"] if r.get("score") is not None),
+            default=None,
         ),
     }
     args.output.write_text(json.dumps(run, indent=2, sort_keys=True) + "\n")

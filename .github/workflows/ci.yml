@@ -35,15 +35,14 @@ jobs:
       - name: Validate standalone inputs
         run: runner/setup.sh --preflight
 
+      - name: Apply E2B provider to pinned OSWorld checkout
+        run: runner/setup.sh
+
       - name: Run Python tests
-        run: >-
-          uv run --python 3.12
-          --with pytest
-          --with pytest-asyncio
-          --with aiohttp==3.14.1
-          --with e2b==2.34.0
-          --with requests
-          pytest -q
+        run: uv run --locked pytest -q
+
+      - name: Lint Python
+        run: uv run --locked ruff check .
 
       - name: Install template dependencies
         working-directory: template

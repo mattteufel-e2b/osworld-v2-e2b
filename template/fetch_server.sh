@@ -11,12 +11,19 @@
 # fetched payload with a fresh pinned copy and re-applies the patch.
 set -euo pipefail
 
-# Must match OSWORLD_SERVER_COMMIT in template/build.ts.
-COMMIT="a3cc3f0c64e463f020d1a44780307e9b46cbcab1"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$HERE/.." && pwd)"
 DEST="$HERE/files/server"
 PATCH_DIR="$REPO_ROOT/patches"
+LOCKFILE="$REPO_ROOT/examples/osworld-v2/upstream.lock.json"
+
+python3 "$REPO_ROOT/services/release_lock.py" "$LOCKFILE"
+COMMIT="$(python3 - "$LOCKFILE" <<'PY'
+import json, sys
+lock = json.load(open(sys.argv[1]))
+print(lock["server_code"]["commit"])
+PY
+)"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT

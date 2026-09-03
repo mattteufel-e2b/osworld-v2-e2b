@@ -49,6 +49,7 @@ import task_loader  # noqa: E402  (checkout-local; cwd is the pinned checkout)
 from desktop_env.desktop_env import DesktopEnv  # noqa: E402
 from mm_agents.agent import PromptAgent  # noqa: E402
 from mm_agents.m3 import M3Agent  # noqa: E402
+from receipt_safety import public_error, public_transport  # noqa: E402
 
 
 def utc_now() -> str:
@@ -81,7 +82,9 @@ class CompatiblePromptAgent(PromptAgent):
     """
 
     def call_llm(self, payload):  # noqa: D401
-        base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+        base_url = os.environ.get(
+            "OPENAI_BASE_URL", "https://api.openai.com/v1"
+        ).rstrip("/")
         api_url = base_url + (
             "/chat/completions" if base_url.endswith("/v1") else "/v1/chat/completions"
         )
@@ -92,9 +95,14 @@ class CompatiblePromptAgent(PromptAgent):
         last_status = None
         for attempt in range(8):
             try:
-                response = requests.post(api_url, headers=headers, json=payload, timeout=180)
+                response = requests.post(
+                    api_url, headers=headers, json=payload, timeout=180
+                )
             except requests.RequestException as exc:
-                print(f"[agent] LLM transport error (attempt {attempt}): {exc}", file=sys.stderr)
+                print(
+                    f"[agent] LLM transport error (attempt {attempt}): {exc}",
+                    file=sys.stderr,
+                )
                 time.sleep(min(30, 5 * (attempt + 1)))
                 continue
             last_status = response.status_code
@@ -103,15 +111,20 @@ class CompatiblePromptAgent(PromptAgent):
             if response.status_code == 400:
                 body = (
                     response.json()
-                    if response.headers.get("content-type", "").startswith("application/json")
+                    if response.headers.get("content-type", "").startswith(
+                        "application/json"
+                    )
                     else {}
                 )
                 code = (body.get("error") or {}).get("code")
                 if code == "context_length_exceeded":
-                    payload["messages"] = [payload["messages"][0]] + payload["messages"][-1:]
+                    payload["messages"] = [payload["messages"][0]] + payload[
+                        "messages"
+                    ][-1:]
                     continue
                 print(
-                    f"[agent] LLM 400 (non-retryable): {str(response.text)[:200]}", file=sys.stderr
+                    f"[agent] LLM 400 (non-retryable): {str(response.text)[:200]}",
+                    file=sys.stderr,
                 )
                 return ""
             # 429 / 5xx: back off and retry.
@@ -120,7 +133,10 @@ class CompatiblePromptAgent(PromptAgent):
                 file=sys.stderr,
             )
             time.sleep(min(45, 8 * (attempt + 1)))
-        print(f"[agent] LLM exhausted retries (last status {last_status})", file=sys.stderr)
+        print(
+            f"[agent] LLM exhausted retries (last status {last_status})",
+            file=sys.stderr,
+        )
         return ""
 
 
@@ -162,7 +178,9 @@ def _classify_stage_and_cause(
         )
     ):
         cause = "transport"
-    elif any(w in detail for w in ("cdp", "playwright", "websocket", "connect_over_cdp")):
+    elif any(
+        w in detail for w in ("cdp", "playwright", "websocket", "connect_over_cdp")
+    ):
         cause = "chrome-cdp"
     elif "environmentsetuperror" in detail:
         cause = "environment-setup"
@@ -243,7 +261,10 @@ def parse_args() -> argparse.Namespace:
         "--result-dir", type=Path, required=True, help="raw trajectory dir (gitignored)"
     )
     parser.add_argument(
-        "--output", type=Path, required=True, help="per-task receipt json (gitignored raw)"
+        "--output",
+        type=Path,
+        required=True,
+        help="per-task receipt json (gitignored raw)",
     )
     parser.add_argument("--agent-kind", choices=("prompt", "m3"), default="prompt")
     parser.add_argument("--model", default="openai/gpt-4o")
@@ -271,18 +292,23 @@ def main() -> int:
         "domain": args.domain,
         "agent_kind": args.agent_kind,
         "model": args.model,
-        "model_transport": os.environ.get("MODEL_BASE_URL") or None,
+        "model_transport": public_transport(os.environ.get("MODEL_BASE_URL")),
         "thinking_mode": os.environ.get("M3_THINKING_MODE") or None,
         "thinking_budget": _positive_int_env("M3_THINKING_BUDGET"),
         "eval_model": os.environ.get("OSWORLD_EVAL_MODEL_NAME") or None,
         "eval_provider": os.environ.get("OSWORLD_EVAL_MODEL_PROVIDER") or None,
-        "eval_model_transport": os.environ.get("OSWORLD_EVAL_MODEL_BASE_URL") or None,
+        "eval_model_transport": public_transport(
+            os.environ.get("OSWORLD_EVAL_MODEL_BASE_URL")
+        ),
         "user_sim_model": os.environ.get("OSWORLD_USER_SIM_MODEL") or None,
         "user_sim_provider": os.environ.get("OSWORLD_USER_SIM_PROVIDER") or None,
-        "user_sim_transport": os.environ.get("OSWORLD_USER_SIM_BASE_URL") or None,
+        "user_sim_transport": public_transport(
+            os.environ.get("OSWORLD_USER_SIM_BASE_URL")
+        ),
         "port_base": port_base,
         "control_port": 14999 + port_base,
         "template": template_ref,
+        "campaign_id": os.environ.get("OSWORLD_CAMPAIGN_ID"),
         "multiphase": multiphase,
         "max_steps": args.max_steps,
         "started_at": utc_now(),
@@ -350,12 +376,12 @@ def main() -> int:
         )
         receipt["path_status"] = "OK"
     except BaseException as error:  # noqa: BLE001 -- record and classify, never leak text
-        stage, cause, transport_ok, evaluator_ran = _classify_stage_and_cause(result_dir, error)
+        stage, cause, transport_ok, evaluator_ran = _classify_stage_and_cause(
+            result_dir, error
+        )
         receipt["path_status"] = "ERROR"
         receipt["error_cause"] = cause
-        receipt["error_detail"] = (
-            f"{type(error).__name__}: {str(error).splitlines()[0] if str(error) else ''}"[:180]
-        )
+        receipt.update(public_error(error))
         receipt["transport_ok"] = transport_ok
         receipt["evaluator_ran"] = evaluator_ran
         import traceback

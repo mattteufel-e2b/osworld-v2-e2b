@@ -13,7 +13,7 @@ V2ROOT="$(cd "$HERE/.." && pwd)"            # repo root
 REPO_ROOT="$V2ROOT"
 OSWORLD_ROOT="${OSWORLD_ROOT:-$V2ROOT/OSWorld-V2}"
 TASKS_DIR="${OSWORLD_TASKS_DIR:-$V2ROOT/tasks}"
-SERVICES_DIR="$V2ROOT/services"
+SERVICES_DIR="${OSWORLD_SERVICES_DIR:-$V2ROOT/services}"
 MANIFEST="${VALIDATION_MANIFEST:-$V2ROOT/validation/manifest.json}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-$REPO_ROOT/out/osworld-v2-evidence}"
 RAW_DIR="${RAW_DIR:-$REPO_ROOT/out/osworld-v2-raw}"
@@ -28,12 +28,23 @@ if [[ ! "${GUEST_TEMPLATE:-}" =~ ^[a-z0-9-]+:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a
     exit 2
 fi
 export GUEST_TEMPLATE
+if [ -z "${OSWORLD_CAMPAIGN_ID:-}" ]; then echo "OSWORLD_CAMPAIGN_ID is required" >&2; exit 2; fi
+export OSWORLD_CAMPAIGN_ID
+export OSWORLD_EVAL_MODEL_MODE=stub
+unset OPENAI_API_KEY OPENAI_API_KEY_CUA ANTHROPIC_API_KEY GEMINI_API_KEY MODEL_API_KEY
+unset OSWORLD_EVAL_MODEL_API_KEY OSWORLD_USER_SIM_API_KEY
 
 # ---- E2B key ---------------------------------------------------------------
 if [ -z "${E2B_API_KEY:-}" ] && [ -f "$REPO_ROOT/.env.local" ]; then
     export E2B_API_KEY="$(grep '^E2B_API_KEY=' "$REPO_ROOT/.env.local" | cut -d= -f2)"
 fi
 if [ -z "${E2B_API_KEY:-}" ]; then echo "E2B_API_KEY is required" >&2; exit 2; fi
+
+if ! python3 "$HERE/preflight.py" \
+    --osworld-root "$OSWORLD_ROOT" --tasks-dir "$TASKS_DIR" \
+    --services-dir "$SERVICES_DIR" --manifest "$MANIFEST"; then
+    exit 2
+fi
 
 # ---- fleet + asset wiring (consumed by relay and harness) ------------------
 # Read the fleet interface from the gitignored runtime file the launchers wrote.
@@ -71,6 +82,10 @@ cleanup_all() {
     if [ -n "$proxy_pid" ] && kill -0 "$proxy_pid" 2>/dev/null; then
         kill "$proxy_pid" 2>/dev/null || true
         wait "$proxy_pid" 2>/dev/null || true
+    fi
+    if [ "${TEARDOWN_FLEETS_ON_EXIT:-1}" = "1" ]; then
+        $UV python "$SERVICES_DIR/stop.py" --campaign-id "$OSWORLD_CAMPAIGN_ID" \
+            >>"$RAW_DIR/service-teardown.log" 2>&1 || true
     fi
 }
 trap cleanup_all EXIT INT TERM
@@ -148,6 +163,7 @@ manifest_path, runs_text, *receipt_paths = sys.argv[1:]
 manifest = json.load(open(manifest_path))
 expected = len(manifest["tasks"]) * int(runs_text)
 ids, passes, tasks = [], 0, 0
+external_model_calls = 0
 if len(receipt_paths) != int(runs_text):
     print(f"receipt count mismatch: expected {runs_text}, got {len(receipt_paths)}")
     sys.exit(1)
@@ -163,9 +179,16 @@ for path in receipt_paths:
         sb = r.get("sandbox") or {}
         if sb.get("id"):
             ids.append(sb["id"])
+        external_model_calls += int(r.get("external_model_calls", -1))
 uniq = set(ids)
 print(f"tasks={tasks} path_passes={passes} sandbox_ids={len(ids)} unique={len(uniq)}")
-ok = (len(ids) == len(uniq)) and (len(uniq) == expected) and (passes == tasks == expected)
+print(f"external_model_calls={external_model_calls}")
+ok = (
+    (len(ids) == len(uniq))
+    and (len(uniq) == expected)
+    and (passes == tasks == expected)
+    and external_model_calls == 0
+)
 print("VALIDATION GATE:", "PASS" if ok else "FAIL")
 sys.exit(0 if ok else 1)
 PY

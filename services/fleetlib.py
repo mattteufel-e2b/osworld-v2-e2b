@@ -32,7 +32,11 @@ from pathlib import Path
 from e2b import Sandbox
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from e2b_policy import require_immutable_template_ref, sandbox_network_policy  # noqa: E402
+from e2b_policy import (  # noqa: E402
+    require_campaign_id,
+    require_immutable_template_ref,
+    sandbox_network_policy,
+)
 from services.release_lock import validate_release_lock  # noqa: E402
 
 SERVICES_DIR = Path(__file__).resolve().parent
@@ -47,7 +51,7 @@ UPSTREAM_LOCK = REPO_ROOT / "examples" / "osworld-v2" / "upstream.lock.json"
 # site URLs land on the loopback Host-mapping proxy without any /etc/hosts edits.
 HOST_SUFFIX = "127.0.0.1.nip.io"
 
-SANDBOX_TIMEOUT_S = int(os.environ.get("FLEET_SANDBOX_TIMEOUT_S", str(6 * 3600)))
+SANDBOX_TIMEOUT_S = int(os.environ.get("FLEET_SANDBOX_TIMEOUT_S", str(12 * 3600)))
 
 # The E2B SDK sets vCPU/RAM at template-build time (not per-create), so the
 # fleet's 4 vCPU / 8192 MB sizing lives in this reusable base template. Docker is
@@ -101,6 +105,10 @@ def log(msg: str) -> None:
     print(f"[fleet] {msg}", file=sys.stderr, flush=True)
 
 
+def campaign_id() -> str:
+    return require_campaign_id(os.environ.get("OSWORLD_CAMPAIGN_ID"))
+
+
 # --- runtime file -----------------------------------------------------------
 
 
@@ -113,18 +121,16 @@ def read_runtime() -> dict:
     return {}
 
 
-def write_runtime_section(section: str, data: dict) -> dict:
-    runtime = read_runtime()
-    runtime[section] = data
-    payload = json.dumps(runtime, indent=2, sort_keys=True) + "\n"
-    RUNTIME_FILE.parent.mkdir(parents=True, exist_ok=True)
+def write_private_text(path: Path, payload: str) -> None:
+    """Atomically publish a local secret-bearing file with mode 0600."""
+    path.parent.mkdir(parents=True, exist_ok=True)
     temporary_path: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
             mode="w",
             encoding="utf-8",
-            dir=RUNTIME_FILE.parent,
-            prefix=f".{RUNTIME_FILE.name}.",
+            dir=path.parent,
+            prefix=f".{path.name}.",
             delete=False,
         ) as temporary:
             temporary_path = Path(temporary.name)
@@ -132,11 +138,35 @@ def write_runtime_section(section: str, data: dict) -> dict:
             temporary.flush()
             os.fsync(temporary.fileno())
         temporary_path.chmod(0o600)
-        os.replace(temporary_path, RUNTIME_FILE)
+        os.replace(temporary_path, path)
     finally:
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)
+
+
+def write_runtime_section(section: str, data: dict) -> dict:
+    runtime = read_runtime()
+    runtime[section] = data
+    write_private_text(
+        RUNTIME_FILE, json.dumps(runtime, indent=2, sort_keys=True) + "\n"
+    )
     return runtime
+
+
+def delete_runtime_section(section: str, sandbox_id: str) -> bool:
+    """Remove only the runtime entry that still names the failed sandbox."""
+    runtime = read_runtime()
+    current = runtime.get(section)
+    if not isinstance(current, dict) or current.get("sandbox_id") != sandbox_id:
+        return False
+    del runtime[section]
+    if runtime:
+        write_private_text(
+            RUNTIME_FILE, json.dumps(runtime, indent=2, sort_keys=True) + "\n"
+        )
+    else:
+        RUNTIME_FILE.unlink(missing_ok=True)
+    return True
 
 
 # --- sandbox lifecycle ------------------------------------------------------
@@ -154,7 +184,9 @@ def _connect(sandbox_id: str) -> Sandbox | None:
         return None
 
 
-def reuse_or_create(section: str, *, template: str | None = None) -> tuple[Sandbox, bool]:
+def reuse_or_create(
+    section: str, *, template: str | None = None
+) -> tuple[Sandbox, bool]:
     """Return (sandbox, created). Reuse the sandbox recorded for `section` in the
     runtime file if it is still alive, otherwise create a fresh restricted-ingress
     sandbox from the sized fleet template and extend its timeout. vCPU/RAM come
@@ -163,10 +195,15 @@ def reuse_or_create(section: str, *, template: str | None = None) -> tuple[Sandb
         template or os.environ.get("FLEET_TEMPLATE"),
         "FLEET_TEMPLATE",
     )
+    campaign = campaign_id()
     existing = read_runtime().get(section, {})
     sid = existing.get("sandbox_id")
     existing_template = existing.get("template")
-    if sid and existing_template == template:
+    if (
+        sid
+        and existing_template == template
+        and existing.get("campaign_id") == campaign
+    ):
         sbx = _connect(sid)
         if sbx is not None:
             with contextlib.suppress(Exception):
@@ -178,6 +215,14 @@ def reuse_or_create(section: str, *, template: str | None = None) -> tuple[Sandb
             f"not reusing {section} sandbox {sid}: runtime template "
             f"{existing_template!r} does not match {template!r}"
         )
+        stale = _connect(sid)
+        if stale is not None:
+            try:
+                stale.kill()
+                log(f"killed stale {section} sandbox {sid}")
+            except Exception as exc:  # noqa: BLE001
+                log(f"could not kill stale {section} sandbox {sid}: {exc}")
+        delete_runtime_section(section, sid)
 
     log(f"creating {section} sandbox from {template}")
     sbx = Sandbox.create(
@@ -185,16 +230,29 @@ def reuse_or_create(section: str, *, template: str | None = None) -> tuple[Sandb
         timeout=SANDBOX_TIMEOUT_S,
         secure=True,
         network=sandbox_network_policy(),
-        metadata={"workload": "osworld-v2-services", "section": section},
+        metadata={
+            "workload": "osworld-v2-services",
+            "section": section,
+            "campaign_id": campaign,
+        },
     )
     if not getattr(sbx, "traffic_access_token", None):
         sbx.kill()
-        raise RuntimeError("E2B did not return a traffic access token for the fleet sandbox")
+        raise RuntimeError(
+            "E2B did not return a traffic access token for the fleet sandbox"
+        )
     log(f"created {section} sandbox {sbx.sandbox_id}")
     return sbx, True
 
 
-def run(sbx: Sandbox, cmd: str, *, timeout: int = 120, check: bool = True, quiet: bool = False):
+def run(
+    sbx: Sandbox,
+    cmd: str,
+    *,
+    timeout: int = 120,
+    check: bool = True,
+    quiet: bool = False,
+):
     if not quiet:
         log(f"$ {cmd if len(cmd) < 160 else cmd[:157] + '...'}")
     res = sbx.commands.run(cmd, user="root", timeout=timeout)
@@ -209,7 +267,9 @@ def run(sbx: Sandbox, cmd: str, *, timeout: int = 120, check: bool = True, quiet
 def ensure_swap(sbx: Sandbox, gb: int = 8) -> None:
     """Add a swap file so a heavy parallel docker build can't OOM-kill the box
     (23 web images in 8 GB RAM otherwise wedges envd). Idempotent."""
-    have = sbx.commands.run("swapon --show=NAME --noheadings | head -1", user="root", timeout=20)
+    have = sbx.commands.run(
+        "swapon --show=NAME --noheadings | head -1", user="root", timeout=20
+    )
     if (have.stdout or "").strip():
         return
     log(f"adding {gb}G swap")
@@ -275,18 +335,29 @@ def ensure_docker(sbx: Sandbox) -> float:
     )
     if "up" not in (up.stdout or ""):
         log("starting dockerd")
-        run(sbx, "nohup dockerd >/var/log/dockerd.log 2>&1 & disown", timeout=30, check=False)
+        run(
+            sbx,
+            "nohup dockerd >/var/log/dockerd.log 2>&1 & disown",
+            timeout=30,
+            check=False,
+        )
         deadline = time.time() + 90
         while time.time() < deadline:
             chk = sbx.commands.run(
-                "docker info >/dev/null 2>&1 && echo up || echo down", user="root", timeout=30
+                "docker info >/dev/null 2>&1 && echo up || echo down",
+                user="root",
+                timeout=30,
             )
             if "up" in (chk.stdout or ""):
                 break
             time.sleep(3)
         else:
-            tail = sbx.commands.run("tail -30 /var/log/dockerd.log", user="root", timeout=15)
-            raise RuntimeError(f"dockerd did not come up:\n{tail.stdout}\n{tail.stderr}")
+            tail = sbx.commands.run(
+                "tail -30 /var/log/dockerd.log", user="root", timeout=15
+            )
+            raise RuntimeError(
+                f"dockerd did not come up:\n{tail.stdout}\n{tail.stderr}"
+            )
     log(f"docker ready in {time.time() - t0:.0f}s")
     return time.time() - t0
 
@@ -300,13 +371,7 @@ def restart_host_proxy() -> dict:
     PermissionError is reported (not fatal) — the functional guest-side proxy is
     installed as root inside the guest by the relay at session start."""
     # Stop any previous instance.
-    if PROXY_PIDFILE.is_file():
-        try:
-            old = int(PROXY_PIDFILE.read_text().strip())
-            os.kill(old, 15)
-        except (ProcessLookupError, ValueError):
-            pass
-        PROXY_PIDFILE.unlink(missing_ok=True)
+    stop_host_proxy()
 
     ports_env = os.environ.get("HOSTMAP_PORT", "8090")
     ports = [int(p) for p in ports_env.split(",") if p.strip()]
@@ -345,6 +410,19 @@ def restart_host_proxy() -> dict:
             time.sleep(0.3)
     PROXY_PIDFILE.write_text(str(proc.pid))
     return {"running": bound, "port": advertised, "ports": ports, "pid": proc.pid}
+
+
+def stop_host_proxy() -> None:
+    """Stop only the launcher-owned proxy recorded by its exact pid file."""
+    if not PROXY_PIDFILE.is_file():
+        return
+    try:
+        old = int(PROXY_PIDFILE.read_text().strip())
+        os.kill(old, 15)
+    except (ProcessLookupError, ValueError):
+        pass
+    finally:
+        PROXY_PIDFILE.unlink(missing_ok=True)
 
 
 def verify_host_proxy_path(sample_host: str, path: str, port: int) -> dict:

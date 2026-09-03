@@ -28,9 +28,6 @@ PROVIDER_DIR="$V2ROOT/provider"
 POLICY_FILE="$V2ROOT/e2b_policy.py"
 LOCKFILE="$V2ROOT/examples/osworld-v2/upstream.lock.json"
 
-# Pin: xlang-ai/OSWorld-V2 @ upstream.lock.json code.commit.
-PIN=d578d2d4e0dc82b43e270fdaa7fa89d9708cd154
-
 RESTORE=0
 PREFLIGHT=0
 if [ "${1:-}" = "--restore" ]; then
@@ -67,15 +64,11 @@ if [ ! -f "$LOCKFILE" ]; then
     exit 1
 fi
 python3 "$V2ROOT/services/release_lock.py" "$LOCKFILE"
-LOCK_PIN="$(python3 - "$LOCKFILE" <<'EOF'
+PIN="$(python3 - "$LOCKFILE" <<'EOF'
 import json, sys
 print(json.load(open(sys.argv[1]))["code"]["commit"])
 EOF
 )"
-if [ "$LOCK_PIN" != "$PIN" ]; then
-    echo "ERROR: setup.sh PIN ($PIN) != upstream.lock.json commit ($LOCK_PIN)" >&2
-    exit 1
-fi
 
 for required_file in \
     "$RELAY_DIR/relay.py" \

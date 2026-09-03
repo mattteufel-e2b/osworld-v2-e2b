@@ -16,7 +16,7 @@ from e2b_policy import sandbox_network_policy  # noqa: E402
 
 SERVICES_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SERVICES_DIR.parent
-RECEIPT = REPO_ROOT / "out" / "osworld-v2-evidence" / "fleet-template-build.json"
+RECEIPT = REPO_ROOT / "out" / "osworld-v2-raw" / "builds" / "fleet-template-build.json"
 
 TEMPLATE_NAME = os.environ.get("FLEET_TEMPLATE_NAME", "osworld-v2-fleet-base")
 CPU_COUNT = 4
@@ -25,10 +25,10 @@ MEMORY_MB = 8192
 # instead operational headroom for cloning/building the website and GitLab
 # service images after Docker itself has been installed.
 MIN_ROOT_FREE_GB = 80
-DEBIAN_IMAGE = (
-    "debian:bookworm@sha256:6ebd97fa83deb272194a2cf015b3d26a4d538e9ad3a7a79d544c8af5b0a01443"
+DEBIAN_IMAGE = "debian:bookworm@sha256:6ebd97fa83deb272194a2cf015b3d26a4d538e9ad3a7a79d544c8af5b0a01443"
+DOCKER_INSTALL_SHA256 = (
+    "2df5f9e0f201a967f454191726d9254625f0f08030af3812c9edcdedc78e9693"
 )
-DOCKER_INSTALL_SHA256 = "2df5f9e0f201a967f454191726d9254625f0f08030af3812c9edcdedc78e9693"
 
 
 def log(message: str) -> None:
@@ -66,14 +66,18 @@ def main() -> int:
         applied_network_policy = sandbox.get_info().network
         expected_network_policy = sandbox_network_policy()
         if applied_network_policy != expected_network_policy:
-            raise RuntimeError(f"fleet sandbox network policy mismatch: {applied_network_policy!r}")
+            raise RuntimeError(
+                f"fleet sandbox network policy mismatch: {applied_network_policy!r}"
+            )
         result = sandbox.commands.run(
             "df -B1 --output=size,avail / | tail -n 1",
             user="root",
             timeout=30,
         )
         if result.exit_code != 0:
-            raise RuntimeError(f"root capacity probe failed: {result.stderr or result.stdout}")
+            raise RuntimeError(
+                f"root capacity probe failed: {result.stderr or result.stdout}"
+            )
         root_capacity_bytes, root_free_bytes = map(int, (result.stdout or "").split())
         if root_free_bytes < MIN_ROOT_FREE_GB * 1_000_000_000:
             raise RuntimeError(

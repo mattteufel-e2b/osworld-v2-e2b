@@ -101,10 +101,17 @@ class FakeSandbox:
 
 class RelayTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        self.campaign_environment = patch.dict(
+            os.environ, {"OSWORLD_CAMPAIGN_ID": "test-campaign"}
+        )
+        self.campaign_environment.start()
         FakeSandbox.created.clear()
         FakeSandbox.deleted_snapshots.clear()
         relay.TEMPLATE = IMMUTABLE_TEMPLATE
         self.manager = relay.GuestManager()
+
+    async def asyncTearDown(self):
+        self.campaign_environment.stop()
 
     @staticmethod
     def _upload_request(
@@ -447,7 +454,9 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(writes), 1)
         guest_staging_path = writes[0][0]
         self.assertEqual(Path(guest_staging_path).parent, Path("/home/user/Desktop"))
-        self.assertTrue(Path(guest_staging_path).name.startswith(".input.bin.osworld-upload-"))
+        self.assertTrue(
+            Path(guest_staging_path).name.startswith(".input.bin.osworld-upload-")
+        )
         self.assertEqual(writes[0][1], b"file-payload")
         self.assertEqual(
             writes[0][2],
@@ -470,7 +479,9 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
                 )
             ],
         )
-        self.assertEqual(files.entries, {"/home/user/Desktop/input.bin": b"file-payload"})
+        self.assertEqual(
+            files.entries, {"/home/user/Desktop/input.bin": b"file-payload"}
+        )
         self.assertEqual(proxy_requests, [])
         self.assertEqual(len(host_staged_paths), 1)
         self.assertFalse(host_staged_paths[0].exists())
@@ -585,7 +596,9 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(attempts, 3)
         self.assertEqual(retry_sleep.await_count, 2)
         self.assertEqual(len(renames), 1)
-        self.assertEqual(files.entries, {"/home/user/Desktop/input.bin": b"file-payload"})
+        self.assertEqual(
+            files.entries, {"/home/user/Desktop/input.bin": b"file-payload"}
+        )
 
     async def test_setup_upload_permanent_sdk_failure_is_not_retried_and_cleans_staging(
         self,
@@ -824,9 +837,11 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
             snapshot_id = await self.manager.save_snapshot("mid_task")
             state = relay._public_state(guest)
         self.assertEqual(state["snapshots"], {"mid_task": snapshot_id})
-        self.assertEqual(state["heartbeat_interval_seconds"], relay.HEARTBEAT_INTERVAL_S)
+        self.assertEqual(
+            state["heartbeat_interval_seconds"], relay.HEARTBEAT_INTERVAL_S
+        )
 
-    async def test_stop_kills_guest_but_keeps_snapshot_persistent_without_delete(self):
+    async def test_stop_kills_guest_and_deletes_run_owned_snapshots_by_default(self):
         with (
             patch.object(relay, "Sandbox", FakeSandbox),
             patch.object(self.manager, "_wait_ready", AsyncMock()),
@@ -836,7 +851,21 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
             await self.manager.stop()
 
         self.assertTrue(guest.sandbox.killed)
-        self.assertEqual(self.manager.snapshot_ids(), {"mid_task": snapshot_id})
+        self.assertEqual(self.manager.snapshot_ids(), {})
+        self.assertEqual(FakeSandbox.deleted_snapshots, [snapshot_id])
+
+    async def test_stop_can_retain_snapshots_for_explicit_debugging(self):
+        with (
+            patch.dict(os.environ, {"OSWORLD_RETAIN_SNAPSHOTS": "1"}),
+            patch.object(relay, "Sandbox", FakeSandbox),
+        ):
+            manager = relay.GuestManager()
+            with patch.object(manager, "_wait_ready", AsyncMock()):
+                await manager.replace()
+                snapshot_id = await manager.save_snapshot("mid_task")
+                await manager.stop()
+
+        self.assertEqual(manager.snapshot_ids(), {"mid_task": snapshot_id})
         self.assertEqual(FakeSandbox.deleted_snapshots, [])
 
     async def test_stop_endpoint_initiates_shutdown_without_a_guest(self):
@@ -850,7 +879,9 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
         ):
             response = await relay.stop(make_mocked_request("POST", "/stop"))
         self.assertTrue(event.is_set())
-        self.assertEqual(json.loads(response.text), {"stopping": True, "sandbox_id": None})
+        self.assertEqual(
+            json.loads(response.text), {"stopping": True, "sandbox_id": None}
+        )
 
     async def test_ws_connect_retries_until_upstream_resumes(self):
         class FlakySession:
@@ -866,7 +897,9 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
             patch.object(relay, "WS_CONNECT_RETRY_S", 30),
             patch.object(relay.asyncio, "sleep", AsyncMock()),
         ):
-            result = await relay._ws_connect_with_retry(FlakySession(), "wss://guest", {})
+            result = await relay._ws_connect_with_retry(
+                FlakySession(), "wss://guest", {}
+            )
         self.assertEqual(result, "upstream-ws")
         self.assertEqual(FlakySession.attempts, 3)
 
@@ -1034,7 +1067,9 @@ class PortNamespacingTests(unittest.TestCase):
         self.assertEqual(set(mod.PORT_MAP.values()), {5000, 9222, 8080})
 
     def test_two_distinct_bases_produce_disjoint_port_blocks(self):
-        worker0 = set(self._reload_with_base(0).PORT_MAP) | {self._reload_with_base(0).CONTROL_PORT}
+        worker0 = set(self._reload_with_base(0).PORT_MAP) | {
+            self._reload_with_base(0).CONTROL_PORT
+        }
         remapped0 = {p for p in worker0 if p not in (3000, 8000)}
         worker50 = set(self._reload_with_base(50).PORT_MAP) | {
             self._reload_with_base(50).CONTROL_PORT

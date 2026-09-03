@@ -9,7 +9,7 @@ V2ROOT="$(cd "$HERE/.." && pwd)"
 REPO_ROOT="$V2ROOT"
 OSWORLD_ROOT="${OSWORLD_ROOT:-$V2ROOT/OSWorld-V2}"
 TASKS_DIR="${OSWORLD_TASKS_DIR:-$V2ROOT/tasks}"
-SERVICES_DIR="$V2ROOT/services"
+SERVICES_DIR="${OSWORLD_SERVICES_DIR:-$V2ROOT/services}"
 FULL_MANIFEST="${VALIDATION_MANIFEST:-$V2ROOT/validation/full-manifest.json}"
 RAW_DIR="${RAW_DIR:-$REPO_ROOT/out/osworld-v2-raw/full-suite}"
 UV="uv run --python 3.12 --with e2b==2.34.0 --with aiohttp==3.14.1"
@@ -31,11 +31,19 @@ if [[ ! "${GUEST_TEMPLATE:-}" =~ ^[a-z0-9-]+:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a
     exit 2
 fi
 export GUEST_TEMPLATE
+if [ -z "${OSWORLD_CAMPAIGN_ID:-}" ]; then echo "OSWORLD_CAMPAIGN_ID is required" >&2; exit 2; fi
+export OSWORLD_CAMPAIGN_ID
 
 if [ -z "${E2B_API_KEY:-}" ] && [ -f "$REPO_ROOT/.env.local" ]; then
     export E2B_API_KEY="$(grep '^E2B_API_KEY=' "$REPO_ROOT/.env.local" | cut -d= -f2)"
 fi
 if [ -z "${E2B_API_KEY:-}" ]; then echo "E2B_API_KEY is required" >&2; exit 2; fi
+
+if ! python3 "$HERE/preflight.py" \
+    --osworld-root "$OSWORLD_ROOT" --tasks-dir "$TASKS_DIR" \
+    --services-dir "$SERVICES_DIR" --manifest "$FULL_MANIFEST" --task-id "$TASK_ID"; then
+    exit 2
+fi
 
 export OSWORLD_RELAY_PORT_BASE="$PORT_BASE"
 CONTROL_PORT=$((14999 + PORT_BASE))

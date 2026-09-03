@@ -19,25 +19,39 @@ V2ROOT="$(cd "$HERE/.." && pwd)"
 REPO_ROOT="$V2ROOT"
 OSWORLD_ROOT="${OSWORLD_ROOT:-$V2ROOT/OSWorld-V2}"
 TASKS_DIR="${OSWORLD_TASKS_DIR:-$V2ROOT/tasks}"
-SERVICES_DIR="$V2ROOT/services"
+SERVICES_DIR="${OSWORLD_SERVICES_DIR:-$V2ROOT/services}"
 RAW_DIR="${RAW_DIR:-$REPO_ROOT/out/osworld-v2-raw}"
 MAX_STEPS="${MAX_STEPS:-75}"
+AGENT_TASK_TIMEOUT_SECONDS="${AGENT_TASK_TIMEOUT_SECONDS:-14400}"
 UV="uv run --python 3.12 --with e2b==2.34.0 --with aiohttp==3.14.1"
 
 : "${TASK_ID:?TASK_ID required}"
 : "${DOMAIN:?DOMAIN required}"
 : "${PORT_BASE:?PORT_BASE required}"
+if [[ ! "$AGENT_TASK_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+    echo "AGENT_TASK_TIMEOUT_SECONDS must be a positive integer" >&2
+    exit 2
+fi
 
 if [[ ! "${GUEST_TEMPLATE:-}" =~ ^[a-z0-9-]+:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
     echo "GUEST_TEMPLATE must be an immutable name:build_id reference (got: '${GUEST_TEMPLATE:-<unset>}')" >&2
     exit 2
 fi
 export GUEST_TEMPLATE
+if [ -z "${OSWORLD_CAMPAIGN_ID:-}" ]; then echo "OSWORLD_CAMPAIGN_ID is required" >&2; exit 2; fi
+export OSWORLD_CAMPAIGN_ID
 
 if [ -z "${E2B_API_KEY:-}" ] && [ -f "$REPO_ROOT/.env.local" ]; then
     export E2B_API_KEY="$(grep '^E2B_API_KEY=' "$REPO_ROOT/.env.local" | cut -d= -f2)"
 fi
 if [ -z "${E2B_API_KEY:-}" ]; then echo "E2B_API_KEY is required" >&2; exit 2; fi
+
+if ! python3 "$HERE/preflight.py" \
+    --osworld-root "$OSWORLD_ROOT" --tasks-dir "$TASKS_DIR" \
+    --services-dir "$SERVICES_DIR" --manifest "${AGENT_MANIFEST:-$V2ROOT/validation/full-manifest.json}" \
+    --task-id "$TASK_ID"; then
+    exit 2
+fi
 
 # ---- namespacing + agent model wiring -------------------------------------
 export OSWORLD_RELAY_PORT_BASE="$PORT_BASE"
@@ -133,8 +147,27 @@ fi
     --agent-kind "$AGENT_KIND" \
     --model "$MODEL" \
     --max-steps "$MAX_STEPS" \
-    --client-password "osworld-public-evaluation" )
+    --client-password "osworld-public-evaluation" ) &
+agent_pid=$!
+timed_out=0
+started_at=$SECONDS
+while kill -0 "$agent_pid" 2>/dev/null; do
+    if [ $((SECONDS - started_at)) -ge "$AGENT_TASK_TIMEOUT_SECONDS" ]; then
+        timed_out=1
+        echo "[task ${TASK_ID}] exceeded ${AGENT_TASK_TIMEOUT_SECONDS}s deadline" >&2
+        kill "$agent_pid" 2>/dev/null || true
+        for _ in $(seq 1 10); do
+            if ! kill -0 "$agent_pid" 2>/dev/null; then break; fi
+            sleep 1
+        done
+        if kill -0 "$agent_pid" 2>/dev/null; then kill -KILL "$agent_pid" 2>/dev/null || true; fi
+        break
+    fi
+    sleep 15
+done
+wait "$agent_pid"
 status=$?
+if [ "$timed_out" -eq 1 ]; then status=124; fi
 
 echo "[task ${TASK_ID}] agent_runner exit=${status}"
 exit "$status"

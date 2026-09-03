@@ -16,7 +16,7 @@ build/
 dist/
 *.egg-info/
 
-# Guest template build-local receipt (canonical copy: out/osworld-v2-evidence/).
+# Build-local receipt; run-scoped build receipts also live under ignored raw output.
 template/results/
 
 # Fetched upstream osworld-server payload. Upstream publishes no license, so it

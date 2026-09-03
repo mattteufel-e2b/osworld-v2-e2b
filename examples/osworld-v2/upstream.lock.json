@@ -5,9 +5,28 @@
     "repository": "xlang-ai/OSWorld-V2",
     "commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154"
   },
+  "server_code": {
+    "repository": "xlang-ai/osworld-server",
+    "commit": "a3cc3f0c64e463f020d1a44780307e9b46cbcab1"
+  },
   "gitlab_code": {
     "repository": "Task-Web/gitlab",
     "commit": "8655d651722f4254e59e813de9f68a6732ea525c"
+  },
+  "websites_code": {
+    "repository": "Task-Web/OSWorld-web",
+    "commit": "90ec2218f7747b15fe5117cdbe59b8978446ab9c"
+  },
+  "tasks_data": {
+    "repository": "xlangai/osworld_v2_tasks",
+    "revision": "0ec2aa30344a28103a33c89c6588c3437bfcdca1",
+    "hash_manifest": "examples/osworld-v2/task-hashes.json",
+    "manifest_sha256": "42f8f6f8939b8712997d5891456a575f8a2a5f53465e9e3e6747af5d6efd0915",
+    "task_count": 108
+  },
+  "assets_data": {
+    "repository": "xlangai/osworld_v2_assets_gated",
+    "revision": "402754cc7bd74690168c46ef0c58c375542c4afe"
   },
   "service_images": {
     "fanout": "nginx@sha256:db35bfc6b2951e7f8a72db5db120288c127ffaeeb4a6d4b95a26fead017d5913",

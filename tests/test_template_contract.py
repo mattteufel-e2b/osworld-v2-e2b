@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import re
@@ -74,11 +75,19 @@ def test_absolute_chrome_launches_get_software_webgl_flags():
 def test_fetch_server_applies_every_committed_patch_to_the_pinned_checkout():
     fetch = (ROOT / "template" / "fetch_server.sh").read_text()
     build = (ROOT / "template" / "build.ts").read_text()
+    lock = json.loads(
+        (ROOT / "examples" / "osworld-v2" / "upstream.lock.json").read_text()
+    )
     patches = sorted((ROOT / "patches").glob("*.patch"))
 
     server_commit = "a3cc3f0c64e463f020d1a44780307e9b46cbcab1"
-    assert f'COMMIT="{server_commit}"' in fetch
-    assert f"const OSWORLD_SERVER_COMMIT = '{server_commit}'" in build
+    assert lock["server_code"] == {
+        "repository": "xlang-ai/osworld-server",
+        "commit": server_commit,
+    }
+    assert 'lock["server_code"]["commit"]' in fetch
+    assert "lock.server_code.commit" in build
+    assert "lock.release" in build
     assert [patch.name for patch in patches] == [
         "osworld-server-atspi-guards.patch",
         "osworld-server-runtime-reliability.patch",
@@ -160,8 +169,9 @@ def test_runner_scripts_do_not_swallow_assignments_at_line_boundaries():
             ):
                 violations.append(f"{script.relative_to(ROOT)}:{line_number}")
 
-    assert not violations, "comment-swallowed or concatenated assignments: " + ", ".join(
-        sorted(set(violations))
+    assert not violations, (
+        "comment-swallowed or concatenated assignments: "
+        + ", ".join(sorted(set(violations)))
     )
 
 
@@ -171,6 +181,8 @@ def test_ci_guards_clean_clone_quick_start_contracts():
     assert "find runner services template -type f -name '*.sh'" in workflow
     assert "bash -n" in workflow
     assert "runner/setup.sh --preflight" in workflow
+    assert "runner/setup.sh\n" in workflow
+    assert "uv run --locked pytest -q" in workflow
     assert "pytest -q" in workflow
     assert "npm ci --ignore-scripts" in workflow
     assert "npm run typecheck" in workflow
@@ -201,7 +213,7 @@ def test_setup_preflight_validates_local_inputs_without_calling_git(tmp_path):
     assert not git_called.exists()
 
 
-def test_release_lock_pins_gitlab_source_and_wrapper_images_by_digest():
+def test_release_lock_pins_service_sources_and_wrapper_images_by_digest():
     lock = json.loads(
         (ROOT / "examples" / "osworld-v2" / "upstream.lock.json").read_text()
     )
@@ -211,6 +223,27 @@ def test_release_lock_pins_gitlab_source_and_wrapper_images_by_digest():
         "repository": "Task-Web/gitlab",
         "commit": "8655d651722f4254e59e813de9f68a6732ea525c",
     }
+    assert lock["websites_code"] == {
+        "repository": "Task-Web/OSWorld-web",
+        "commit": "90ec2218f7747b15fe5117cdbe59b8978446ab9c",
+    }
+    assert lock["code"]["repository"] == "xlang-ai/OSWorld-V2"
+    assert re.fullmatch(r"[0-9a-f]{40}", lock["code"]["commit"])
+    assert lock["server_code"]["repository"] == "xlang-ai/osworld-server"
+    assert re.fullmatch(r"[0-9a-f]{40}", lock["server_code"]["commit"])
+    assert lock["tasks_data"]["repository"] == "xlangai/osworld_v2_tasks"
+    assert re.fullmatch(r"[0-9a-f]{40}", lock["tasks_data"]["revision"])
+    assert lock["tasks_data"]["hash_manifest"] == "examples/osworld-v2/task-hashes.json"
+    task_hashes = ROOT / lock["tasks_data"]["hash_manifest"]
+    assert task_hashes.is_file()
+    assert (
+        hashlib.sha256(task_hashes.read_bytes()).hexdigest()
+        == (lock["tasks_data"]["manifest_sha256"])
+    )
+    assert re.fullmatch(r"[0-9a-f]{64}", lock["tasks_data"]["manifest_sha256"])
+    assert lock["tasks_data"]["task_count"] == 108
+    assert lock["assets_data"]["repository"] == "xlangai/osworld_v2_assets_gated"
+    assert re.fullmatch(r"[0-9a-f]{40}", lock["assets_data"]["revision"])
     assert set(lock["service_images"]) == {
         "fanout",
         "gitlab",
@@ -260,6 +293,83 @@ def test_release_lock_validator_rejects_missing_or_mutable_gitlab_pins(tmp_path)
         assert "release lock invalid" in result.stderr, name
 
 
+def test_release_lock_validator_rejects_missing_or_mutable_website_pins(tmp_path):
+    valid = json.loads(
+        (ROOT / "examples" / "osworld-v2" / "upstream.lock.json").read_text()
+    )
+    cases = {
+        "missing-source": {
+            key: value for key, value in valid.items() if key != "websites_code"
+        },
+        "mutable-commit": {
+            **valid,
+            "websites_code": {
+                "repository": "Task-Web/OSWorld-web",
+                "commit": "v2026.08.08",
+            },
+        },
+        "wrong-repository": {
+            **valid,
+            "websites_code": {
+                "repository": "somewhere/else",
+                "commit": "a" * 40,
+            },
+        },
+    }
+
+    for name, payload in cases.items():
+        candidate = tmp_path / f"websites-{name}.json"
+        candidate.write_text(json.dumps(payload))
+        result = subprocess.run(
+            ["python3", str(ROOT / "services" / "release_lock.py"), str(candidate)],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode != 0, name
+        assert "release lock invalid" in result.stderr, name
+
+
+def test_release_lock_validator_rejects_invalid_primary_contract_fields(tmp_path):
+    valid = json.loads(
+        (ROOT / "examples" / "osworld-v2" / "upstream.lock.json").read_text()
+    )
+    cases = {
+        "wrong-suite": {**valid, "suite": "osworld"},
+        "mutable-release": {**valid, "release": "latest"},
+        "mutable-code": {**valid, "code": {**valid["code"], "commit": "main"}},
+        "missing-server": {
+            key: value for key, value in valid.items() if key != "server_code"
+        },
+        "mutable-tasks": {
+            **valid,
+            "tasks_data": {**valid["tasks_data"], "revision": "v2026.08.08"},
+        },
+        "bad-task-manifest": {
+            **valid,
+            "tasks_data": {**valid["tasks_data"], "manifest_sha256": "not-a-digest"},
+        },
+        "mutable-assets": {
+            **valid,
+            "assets_data": {**valid["assets_data"], "revision": "main"},
+        },
+    }
+
+    for name, payload in cases.items():
+        candidate = tmp_path / f"primary-{name}.json"
+        candidate.write_text(json.dumps(payload))
+        result = subprocess.run(
+            ["python3", str(ROOT / "services" / "release_lock.py"), str(candidate)],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode != 0, name
+        assert "release lock invalid" in result.stderr, name
+
+
 def test_release_lock_validator_rejects_malformed_or_wrong_image_names(tmp_path):
     valid = json.loads(
         (ROOT / "examples" / "osworld-v2" / "upstream.lock.json").read_text()
@@ -267,7 +377,10 @@ def test_release_lock_validator_rejects_malformed_or_wrong_image_names(tmp_path)
     digest = "a" * 64
     malformed = {
         "colon-only": ("fanout", f":@sha256:{digest}"),
-        "url-prefix": ("gitlab", f"https://registry.example/gitlab/gitlab-ce@sha256:{digest}"),
+        "url-prefix": (
+            "gitlab",
+            f"https://registry.example/gitlab/gitlab-ce@sha256:{digest}",
+        ),
         "uppercase-name": ("gitlab_init", f"DOCKER@sha256:{digest}"),
         "uppercase-digest": ("fanout", f"nginx@sha256:{'A' * 64}"),
         "bracketed-name": ("gitlab_runner", f"[gitlab/gitlab-runner]@sha256:{digest}"),
@@ -330,8 +443,13 @@ def test_xt_owner_rule_is_translated_to_native_nft_skuid():
 def test_nested_docker_uses_checksum_pinned_compose_v2_plugin():
     template = (ROOT / "template" / "template.ts").read_text()
 
-    assert "docker/compose/releases/download/v2.40.3/docker-compose-linux-x86_64" in template
-    assert "dba9d98e1ba5bfe11d88c99b9bd32fc4a0624a30fafe68eea34d61a3e42fd372" in template
+    assert (
+        "docker/compose/releases/download/v2.40.3/docker-compose-linux-x86_64"
+        in template
+    )
+    assert (
+        "dba9d98e1ba5bfe11d88c99b9bd32fc4a0624a30fafe68eea34d61a3e42fd372" in template
+    )
     assert "/usr/local/lib/docker/cli-plugins/docker-compose" in template
 
 
@@ -388,6 +506,7 @@ def test_agent_runner_can_use_the_release_m3_scaffold_and_anthropic_transport():
 
 def test_full_agent_coordinator_bounds_sandboxes_and_namespaces_task_service_ports():
     coordinator = (ROOT / "runner" / "run_agent_parallel.sh").read_text()
+    aggregator = (ROOT / "runner" / "aggregate_agent.py").read_text()
 
     assert 'PARALLEL_CONCURRENCY="${PARALLEL_CONCURRENCY:-80}"' in coordinator
     assert 'if [ "$PARALLEL_CONCURRENCY" -gt 80 ]' in coordinator
@@ -396,31 +515,42 @@ def test_full_agent_coordinator_bounds_sandboxes_and_namespaces_task_service_por
     assert 'task_service_ports="$task_082_host_port:3000"' in coordinator
     assert 'OSWORLD_TASK_082_HOST_PORT="$task_082_host_port"' in coordinator
     assert 'task_service_ports=""' in coordinator
-    assert 'AGENT_RETRY_ATTEMPTS="${AGENT_RETRY_ATTEMPTS:-2}"' in coordinator
+    assert 'AGENT_RETRY_ATTEMPTS="${AGENT_RETRY_ATTEMPTS:-0}"' in coordinator
+    assert (
+        'retryable_causes = {"transport", "chrome-cdp", "environment-setup", "reset-or-observation"}'
+        in coordinator
+    )
+    assert 'python3 "$HERE/aggregate_agent.py"' in coordinator
     assert 'AGENT_RETRY_CONCURRENCY="${AGENT_RETRY_CONCURRENCY:-4}"' in coordinator
-    assert 'AGENT_START_STAGGER_SECONDS="${AGENT_START_STAGGER_SECONDS:-0.25}"' in coordinator
-    assert "for ((attempt=1; attempt <= AGENT_RETRY_ATTEMPTS; attempt++))" in coordinator
+    assert (
+        'AGENT_START_STAGGER_SECONDS="${AGENT_START_STAGGER_SECONDS:-0.25}"'
+        in coordinator
+    )
+    assert (
+        "for ((attempt=1; attempt <= AGENT_RETRY_ATTEMPTS; attempt++))" in coordinator
+    )
     assert 'record.get("path_status") != "OK"' in coordinator
-    assert 'summary["path_ok"] == len(expected_ids)' in coordinator
-    assert 'summary["evaluator_ran_count"] == len(expected_ids)' in coordinator
-    assert 'summary["scored_tasks"] == len(expected_ids)' in coordinator
-    assert '"binary_successes": sum(score == 1.0 for score in scores)' in coordinator
-    assert '"binary_accuracy": (' in coordinator
-    assert '"partial_score": (' in coordinator
-    assert '"agent_kind": agent_kind' in coordinator
-    assert '"model_transport": model_base_url' in coordinator
-    assert '"reasoning": {' in coordinator
-    assert '"evaluator": {' in coordinator
+    assert '"path_ok": sum(record.get("path_status") == "OK"' in aggregator
+    assert '"evaluator_ran_count": sum(' in aggregator
+    assert '"scored_tasks": len(scores)' in aggregator
+    assert '"binary_successes": sum(score == 1.0 for score in scores)' in aggregator
+    assert '"binary_accuracy": (' in aggregator
+    assert '"partial_score": (' in aggregator
+    assert '"agent_kind": agent_kind' in aggregator
+    assert '"model_transport": expected_model_transport' in aggregator
+    assert '"reasoning": {' in aggregator
+    assert '"evaluator": {' in aggregator
 
 
 def test_agent_coordinator_can_opt_literal_port_task_into_a_sample_wave():
     coordinator = (ROOT / "runner" / "run_agent_parallel.sh").read_text()
+    aggregator = (ROOT / "runner" / "aggregate_agent.py").read_text()
 
     assert 'RUN_TASK_082_CONCURRENT="${RUN_TASK_082_CONCURRENT:-1}"' in coordinator
     assert 'if [ "$task_id" = "082" ]; then' in coordinator
     assert 'task_service_ports="$task_082_host_port:3000"' in coordinator
     assert 'if [ "$RUN_TASK_082_CONCURRENT" != "1" ]' in coordinator
-    assert '"task_082_concurrent": task_082_concurrent' in coordinator
+    assert '"task_082_concurrent": task_082_concurrent' in aggregator
 
 
 def test_task_082_separates_host_relay_port_from_guest_browser_port():
@@ -431,7 +561,7 @@ def test_task_082_separates_host_relay_port_from_guest_browser_port():
         pytest.skip("gated task data not downloaded (tasks/); see README prerequisites")
     task = task_path.read_text()
 
-    assert 'OSWORLD_TASK_082_HOST_PORT' in task
+    assert "OSWORLD_TASK_082_HOST_PORT" in task
     assert 'return f"http://{host}:{_host_aws_port()}"' in task
     assert 'return f"http://localhost:{AWS_PORT}' in task
 
@@ -442,14 +572,23 @@ def test_agent_receipt_records_reasoning_and_evaluator_provenance_without_keys()
     assert '"thinking_mode": os.environ.get("M3_THINKING_MODE") or None' in agent
     assert '"thinking_budget": _positive_int_env("M3_THINKING_BUDGET")' in agent
     assert '"eval_model": os.environ.get("OSWORLD_EVAL_MODEL_NAME") or None' in agent
-    assert '"eval_provider": os.environ.get("OSWORLD_EVAL_MODEL_PROVIDER") or None' in agent
-    assert '"api_key"' not in agent.split('receipt = {', 1)[1].split('\n    }', 1)[0].lower()
+    assert (
+        '"eval_provider": os.environ.get("OSWORLD_EVAL_MODEL_PROVIDER") or None'
+        in agent
+    )
+    assert (
+        '"api_key"'
+        not in agent.split("receipt = {", 1)[1].split("\n    }", 1)[0].lower()
+    )
 
 
 def test_agent_worker_creates_custom_relay_log_parent_before_redirection():
     runner = (ROOT / "runner" / "run_agent.sh").read_text()
 
-    assert 'mkdir -p "$RESULT_DIR" "$(dirname "$OUTPUT")" "$(dirname "$RELAY_LOG")"' in runner
+    assert (
+        'mkdir -p "$RESULT_DIR" "$(dirname "$OUTPUT")" "$(dirname "$RELAY_LOG")"'
+        in runner
+    )
 
 
 def test_agent_worker_canonicalizes_output_paths_before_entering_upstream_checkout():
@@ -465,9 +604,9 @@ def test_setup_patches_terminal_none_screenshot_before_agent_runs():
     setup = (ROOT / "runner" / "setup.sh").read_text()
 
     assert "lib_run_single.py" in setup
-    assert 'terminal observation returned screenshot=None' in setup
-    assert 'if screenshot_bytes is not None:' in setup
-    assert 'desktop_env/providers/__init__.py lib_run_single.py' in setup
+    assert "terminal observation returned screenshot=None" in setup
+    assert "if screenshot_bytes is not None:" in setup
+    assert "desktop_env/providers/__init__.py lib_run_single.py" in setup
 
 
 def test_agent_worker_routes_user_simulator_to_explicit_compatible_model():
@@ -476,7 +615,10 @@ def test_agent_worker_routes_user_simulator_to_explicit_compatible_model():
 
     assert 'export OSWORLD_USER_SIM_PROVIDER="openai_compatible"' in runner
     assert 'export OSWORLD_USER_SIM_BASE_URL="$EVAL_MODEL_BASE_URL"' in runner
-    assert 'export OSWORLD_USER_SIM_MODEL="${USER_SIM_MODEL:-${EVAL_MODEL:-$MODEL}}"' in runner
+    assert (
+        'export OSWORLD_USER_SIM_MODEL="${USER_SIM_MODEL:-${EVAL_MODEL:-$MODEL}}"'
+        in runner
+    )
     assert '"user_sim_model": os.environ.get("OSWORLD_USER_SIM_MODEL") or None' in agent
 
 

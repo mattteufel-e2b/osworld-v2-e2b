@@ -85,6 +85,15 @@ class FakeFleetSandbox:
 
 
 class FleetRuntimePolicyTests(unittest.TestCase):
+    def setUp(self):
+        self.campaign_environment = patch.dict(
+            os.environ, {"OSWORLD_CAMPAIGN_ID": "test-campaign"}
+        )
+        self.campaign_environment.start()
+
+    def tearDown(self):
+        self.campaign_environment.stop()
+
     def test_service_artifact_paths_are_anchored_to_candidate_root(self):
         gitlab = load_gitlab_launcher()
         websites = load_websites_launcher()
@@ -98,16 +107,16 @@ class FleetRuntimePolicyTests(unittest.TestCase):
         self.assertTrue(gitlab.LOCKFILE.is_file())
         self.assertEqual(
             gitlab.RECEIPT,
-            V2_ROOT / "out" / "osworld-v2-evidence" / "services-gitlab.json",
+            V2_ROOT / "out" / "osworld-v2-raw" / "services" / "gitlab.json",
         )
         self.assertEqual(
             websites.RECEIPT,
-            V2_ROOT / "out" / "osworld-v2-evidence" / "services-websites.json",
+            V2_ROOT / "out" / "osworld-v2-raw" / "services" / "websites.json",
         )
         self.assertEqual(websites.V2_CHECKOUT, V2_ROOT / "OSWorld-V2")
         self.assertEqual(
             builder.RECEIPT,
-            V2_ROOT / "out" / "osworld-v2-evidence" / "fleet-template-build.json",
+            V2_ROOT / "out" / "osworld-v2-raw" / "builds" / "fleet-template-build.json",
         )
 
     def test_failed_v2_website_builder_check_is_release_blocking(self):
@@ -180,7 +189,10 @@ class FleetRuntimePolicyTests(unittest.TestCase):
         sandbox = type(
             "Sandbox",
             (),
-            {"kill": lambda _self: kill_calls.append("website-sandbox")},
+            {
+                "sandbox_id": "website-sandbox",
+                "kill": lambda _self: kill_calls.append("website-sandbox"),
+            },
         )()
 
         with (
@@ -207,6 +219,118 @@ class FleetRuntimePolicyTests(unittest.TestCase):
             websites.main()
 
         self.assertEqual(kill_calls, ["website-sandbox"])
+
+    def test_websites_main_rolls_back_runtime_and_kills_new_sandbox_on_final_gate_failure(
+        self,
+    ):
+        websites = load_websites_launcher()
+        kill_calls = []
+        sandbox = type(
+            "Sandbox",
+            (),
+            {
+                "sandbox_id": "website-sandbox",
+                "traffic_access_token": "runtime-only-token",
+                "get_host": lambda _self, port: f"{port}-website.example.test",
+                "kill": lambda _self: kill_calls.append("website-sandbox"),
+            },
+        )()
+
+        with tempfile.TemporaryDirectory() as directory:
+            receipt = Path(directory) / "services-websites.json"
+            with (
+                patch.object(websites, "RECEIPT", receipt),
+                patch.object(websites, "websites_pin", return_value="a" * 40),
+                patch.object(websites.fl, "load_e2b_key"),
+                patch.object(
+                    websites.fl, "ensure_fleet_template", return_value=IMMUTABLE_FLEET
+                ),
+                patch.object(
+                    websites.fl, "reuse_or_create", return_value=(sandbox, True)
+                ),
+                patch.object(websites.fl, "ensure_docker", return_value=0.0),
+                patch.object(websites.fl, "ensure_swap"),
+                patch.object(websites, "clone_repo"),
+                patch.object(
+                    websites, "enumerate_sites", return_value={"mailhub": 13001}
+                ),
+                patch.object(websites, "write_fanout"),
+                patch.object(websites, "compose_up", return_value=0.0),
+                patch.object(websites, "recreate_fanout"),
+                patch.object(websites, "wait_ready", return_value={"mailhub": 0.1}),
+                patch.object(websites, "probe_host_ingress", return_value={}),
+                patch.object(
+                    websites.fl,
+                    "restart_host_proxy",
+                    return_value={"running": True, "port": 8090},
+                ),
+                patch.object(
+                    websites.fl, "verify_host_proxy_path", return_value={"status": 200}
+                ),
+                patch.object(
+                    websites, "verify_via_v2_builder", return_value={"status": 500}
+                ),
+                patch.object(websites.fl, "write_runtime_section"),
+                patch.object(websites.fl, "delete_runtime_section") as delete_runtime,
+                self.assertRaisesRegex(RuntimeError, "V2 website routing check failed"),
+            ):
+                websites.main()
+
+            self.assertFalse(receipt.exists())
+            delete_runtime.assert_called_once_with("websites", "website-sandbox")
+            self.assertEqual(kill_calls, ["website-sandbox"])
+
+    def test_gitlab_main_requires_all_paths_and_cleans_up_new_sandbox_on_failure(self):
+        gitlab = load_gitlab_launcher()
+        kill_calls = []
+        sandbox = type(
+            "Sandbox",
+            (),
+            {
+                "sandbox_id": "gitlab-sandbox",
+                "traffic_access_token": "runtime-only-token",
+                "get_host": lambda _self, port: f"{port}-gitlab.example.test",
+                "kill": lambda _self: kill_calls.append("gitlab-sandbox"),
+            },
+        )()
+
+        with tempfile.TemporaryDirectory() as directory:
+            token_file = Path(directory) / ".gitlab-token"
+            receipt = Path(directory) / "services-gitlab.json"
+            with (
+                patch.object(gitlab, "TOKEN_FILE", token_file),
+                patch.object(gitlab, "RECEIPT", receipt),
+                patch.object(gitlab, "gitlab_pin", return_value="a" * 40),
+                patch.object(gitlab.fl, "load_e2b_key"),
+                patch.object(
+                    gitlab.fl, "ensure_fleet_template", return_value=IMMUTABLE_FLEET
+                ),
+                patch.object(
+                    gitlab.fl, "reuse_or_create", return_value=(sandbox, True)
+                ),
+                patch.object(gitlab.fl, "ensure_docker"),
+                patch.object(gitlab.fl, "ensure_swap"),
+                patch.object(gitlab.fl, "read_runtime", return_value={}),
+                patch.object(gitlab, "clone_repo"),
+                patch.object(gitlab, "write_fanout"),
+                patch.object(gitlab, "compose_up"),
+                patch.object(gitlab, "wait_api_ready", return_value=0.1),
+                patch.object(
+                    gitlab.requests,
+                    "get",
+                    return_value=type("Response", (), {"status_code": 503})(),
+                ),
+                patch.object(gitlab.fl, "delete_runtime_section") as delete_runtime,
+                self.assertRaisesRegex(
+                    RuntimeError, "host ingress GitLab API check failed"
+                ),
+            ):
+                gitlab.main()
+
+            self.assertFalse(token_file.exists())
+            self.assertFalse(receipt.exists())
+            delete_runtime.assert_called_once_with("gitlab", "gitlab-sandbox")
+            self.assertEqual(kill_calls, ["gitlab-sandbox"])
 
     def test_runtime_write_atomically_replaces_complete_owner_only_file(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -284,6 +408,41 @@ class FleetRuntimePolicyTests(unittest.TestCase):
 
         reuse_or_create.assert_not_called()
 
+    def test_website_fanout_uses_the_release_locked_image(self):
+        websites = load_websites_launcher()
+        writes = {}
+
+        class Files:
+            def write(self, path, content):
+                writes[path] = content
+
+        sandbox = type("Sandbox", (), {"files": Files()})()
+        digest = "nginx@sha256:" + ("a" * 64)
+
+        with patch.object(websites.fl, "service_image", return_value=digest):
+            websites.write_fanout(sandbox, {"mailhub": 13001})
+
+        compose = writes[f"{websites.REPO_DIR}/docker-compose.fanout.yml"]
+        self.assertIn(f"image: {digest}", compose)
+        self.assertNotIn("nginx:alpine", compose)
+
+    def test_websites_main_validates_source_pin_before_sandbox_creation(self):
+        websites = load_websites_launcher()
+
+        with (
+            patch.object(websites.fl, "load_e2b_key"),
+            patch.object(
+                websites,
+                "websites_pin",
+                side_effect=ValueError("release lock invalid: mutable websites commit"),
+            ),
+            patch.object(websites.fl, "reuse_or_create") as reuse_or_create,
+            self.assertRaisesRegex(ValueError, "release lock invalid"),
+        ):
+            websites.main()
+
+        reuse_or_create.assert_not_called()
+
     def test_gitlab_health_check_passes_private_token_via_command_environment(self):
         launcher = load_gitlab_launcher()
         secret = "glpat-health-secret"
@@ -327,7 +486,9 @@ class FleetRuntimePolicyTests(unittest.TestCase):
             patch.object(fleetlib, "read_runtime", return_value={}),
             patch.object(fleetlib, "Sandbox", FakeFleetSandbox),
         ):
-            sandbox, created = fleetlib.reuse_or_create("websites", template=IMMUTABLE_FLEET)
+            sandbox, created = fleetlib.reuse_or_create(
+                "websites", template=IMMUTABLE_FLEET
+            )
 
         self.assertTrue(created)
         self.assertEqual(sandbox.template, IMMUTABLE_FLEET)
@@ -347,13 +508,16 @@ class FleetRuntimePolicyTests(unittest.TestCase):
                 "template": "osworld-v2-fleet-base:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
             }
         }
+        stale_kills = []
+        stale_sandbox = type(
+            "Sandbox",
+            (),
+            {"kill": lambda _self: stale_kills.append("old-sandbox")},
+        )()
         with (
             patch.object(fleetlib, "read_runtime", return_value=stale),
-            patch.object(
-                fleetlib,
-                "_connect",
-                side_effect=AssertionError("stale immutable build must not be reconnected"),
-            ),
+            patch.object(fleetlib, "_connect", return_value=stale_sandbox),
+            patch.object(fleetlib, "delete_runtime_section") as delete_runtime,
             patch.object(fleetlib, "Sandbox", FakeFleetSandbox),
         ):
             sandbox, created = fleetlib.reuse_or_create(
@@ -363,6 +527,8 @@ class FleetRuntimePolicyTests(unittest.TestCase):
 
         self.assertTrue(created)
         self.assertEqual(sandbox.template, IMMUTABLE_FLEET)
+        self.assertEqual(stale_kills, ["old-sandbox"])
+        delete_runtime.assert_called_once_with("websites", "old-sandbox")
 
 
 if __name__ == "__main__":
