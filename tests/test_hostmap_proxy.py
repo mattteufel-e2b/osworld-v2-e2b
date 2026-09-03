@@ -56,12 +56,13 @@ def test_absolute_site_urls_are_rewritten_to_the_incoming_proxy_authority():
     assert location == "http://overleaf.127.0.0.1.nip.io:8090/project"
 
 
-def test_guest_routes_work_without_traffic_tokens_in_runtime_file(tmp_path):
+def test_guest_routes_load_traffic_tokens_for_authenticated_ingress(tmp_path):
     runtime_file = tmp_path / "runtime.json"
     runtime_file.write_text(
         json.dumps(
             {
                 "websites": {
+                    "traffic_token": "websites-traffic-token",
                     "host_suffix": "127.0.0.1.nip.io",
                     "sites": {
                         "mailhub": {
@@ -71,6 +72,7 @@ def test_guest_routes_work_without_traffic_tokens_in_runtime_file(tmp_path):
                     },
                 },
                 "gitlab": {
+                    "traffic_token": "gitlab-traffic-token",
                     "host": "gitlab.127.0.0.1.nip.io",
                     "ingress_host": "8929-gitlab.e2b.app",
                     "port": 8929,
@@ -84,13 +86,13 @@ def test_guest_routes_work_without_traffic_tokens_in_runtime_file(tmp_path):
 
     assert rules["mailhub.127.0.0.1.nip.io"] == {
         "ingress_host": "13001-websites.e2b.app",
-        "traffic_token": None,
+        "traffic_token": "websites-traffic-token",
         "sandbox_id": None,
         "port": 13001,
     }
     assert rules["gitlab.127.0.0.1.nip.io"] == {
         "ingress_host": "8929-gitlab.e2b.app",
-        "traffic_token": None,
+        "traffic_token": "gitlab-traffic-token",
         "sandbox_id": None,
         "port": 8929,
     }

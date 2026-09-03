@@ -165,6 +165,17 @@ def test_runner_scripts_do_not_swallow_assignments_at_line_boundaries():
     )
 
 
+def test_ci_guards_clean_clone_quick_start_contracts():
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+
+    assert "find runner services template -type f -name '*.sh'" in workflow
+    assert "bash -n" in workflow
+    assert "runner/setup.sh --preflight" in workflow
+    assert "pytest -q" in workflow
+    assert "npm ci --ignore-scripts" in workflow
+    assert "npm run typecheck" in workflow
+
+
 def test_setup_preflight_validates_local_inputs_without_calling_git(tmp_path):
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
@@ -322,6 +333,16 @@ def test_nested_docker_uses_checksum_pinned_compose_v2_plugin():
     assert "docker/compose/releases/download/v2.40.3/docker-compose-linux-x86_64" in template
     assert "dba9d98e1ba5bfe11d88c99b9bd32fc4a0624a30fafe68eea34d61a3e42fd372" in template
     assert "/usr/local/lib/docker/cli-plugins/docker-compose" in template
+
+
+def test_runtime_apt_installs_preserve_image_managed_configuration():
+    template = (ROOT / "template" / "template.ts").read_text()
+    apt_compat = (ROOT / "template" / "files" / "apt-get-noninteractive.sh").read_text()
+
+    assert ".copy('apt-get-noninteractive.sh', '/usr/local/sbin/apt-get'" in template
+    assert "DEBIAN_FRONTEND=noninteractive" in apt_compat
+    assert "UCF_FORCE_CONFFOLD=1" in apt_compat
+    assert 'exec /usr/bin/apt-get "$@"' in apt_compat
 
 
 def test_openboard_snap_contract_maps_to_ubuntu_package_without_snapd():

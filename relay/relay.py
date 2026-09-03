@@ -187,14 +187,18 @@ def _install_guest_proxy(sandbox: Sandbox) -> None:
 
 
 def _guest_proxy_runtime_json(rules_json: str) -> str:
-    """Return the minimum fleet routing document safe to place in a guest."""
+    """Return the minimum routing data and fleet bearers the guest proxy needs.
+
+    The guest is trusted with the fleet traffic tokens in this compatibility
+    path, but it must never receive the GitLab PAT or host-local token paths.
+    """
     runtime = json.loads(rules_json)
     websites = runtime.get("websites") or {}
     gitlab = runtime.get("gitlab") or {}
     safe = {
         "websites": {
             key: websites[key]
-            for key in ("host_suffix", "public_host_suffix")
+            for key in ("traffic_token", "host_suffix", "public_host_suffix")
             if key in websites
         }
         | {
@@ -208,55 +212,11 @@ def _guest_proxy_runtime_json(rules_json: str) -> str:
         },
         "gitlab": {
             key: gitlab[key]
-            for key in ("host", "url", "ingress_host", "port")
+            for key in ("traffic_token", "host", "url", "ingress_host", "port")
             if key in gitlab
         },
     }
     return json.dumps(safe, separators=(",", ":"))
-
-
-def _service_network_rules(rules_json: str) -> dict[str, list[dict[str, object]]]:
-    """Build exact-ingress-host E2B rules for fleet traffic credentials."""
-    runtime = json.loads(rules_json)
-    rules: dict[str, list[dict[str, object]]] = {}
-
-    def add_rule(ingress_host: object, token: object, label: str) -> None:
-        if not isinstance(ingress_host, str) or not ingress_host:
-            raise ValueError(f"{label} ingress_host is required")
-        if not isinstance(token, str) or not token:
-            raise ValueError(f"{label} traffic_token is required")
-        rule = {
-            "transform": {
-                "headers": {"e2b-traffic-access-token": token},
-            }
-        }
-        existing = rules.get(ingress_host)
-        if existing is not None and existing != [rule]:
-            raise ValueError(
-                f"conflicting traffic tokens for ingress host {ingress_host!r}"
-            )
-        rules[ingress_host] = [rule]
-
-    websites = runtime.get("websites") or {}
-    website_token = websites.get("traffic_token")
-    for site, info in (websites.get("sites") or {}).items():
-        if not isinstance(info, dict):
-            raise TypeError(f"website {site!r} route must be an object")
-        add_rule(info.get("ingress_host"), website_token, f"website {site!r}")
-
-    gitlab = runtime.get("gitlab") or {}
-    if gitlab:
-        add_rule(
-            gitlab.get("ingress_host"), gitlab.get("traffic_token"), "gitlab route"
-        )
-    return rules
-
-
-def _guest_network_policy() -> dict[str, object]:
-    policy = sandbox_network_policy()
-    if GUEST_FLEET_RULES:
-        policy["rules"] = _service_network_rules(Path(GUEST_FLEET_RULES).read_text())
-    return policy
 
 
 def _fleet_hostnames(rules_json: str) -> list[str]:
@@ -447,7 +407,7 @@ class GuestManager:
                 template_or_snapshot,
                 timeout=SANDBOX_TIMEOUT_S,
                 secure=True,
-                network=_guest_network_policy(),
+                network=sandbox_network_policy(),
                 metadata={"workload": "osworld", "generation": str(generation)},
             )
             # The awaiting task can be cancelled while this thread runs (client

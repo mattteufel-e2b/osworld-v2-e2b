@@ -181,7 +181,7 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
 
         return Session
 
-    async def test_guest_proxy_install_omits_host_credentials_and_paths(self):
+    async def test_guest_proxy_install_keeps_only_required_fleet_credentials(self):
         runtime = {
             "websites": {
                 "sandbox_id": "websites-sandbox",
@@ -245,6 +245,7 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
             guest_runtime,
             {
                 "websites": {
+                    "traffic_token": "websites-traffic-token",
                     "host_suffix": "127.0.0.1.nip.io",
                     "public_host_suffix": "127.0.0.1.nip.io:8090",
                     "sites": {
@@ -255,6 +256,7 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
                     },
                 },
                 "gitlab": {
+                    "traffic_token": "gitlab-traffic-token",
                     "host": "gitlab.127.0.0.1.nip.io",
                     "url": "http://gitlab.127.0.0.1.nip.io:8090",
                     "ingress_host": "8929-gitlab.e2b.app",
@@ -263,77 +265,24 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
             },
         )
         serialized = json.dumps(guest_runtime)
-        self.assertNotIn("token", serialized.lower())
+        self.assertNotIn("private_token", serialized)
+        self.assertNotIn("token_file", serialized)
         self.assertNotIn("/host/", serialized)
         self.assertIn(
             "chmod 0700 /opt/hostmap_proxy.py && chmod 0600 /opt/fleet_runtime.json",
             [command for command, _kwargs in sandbox.commands.calls],
         )
 
-    async def test_service_tokens_are_injected_only_for_exact_fleet_ingress_domains(
-        self,
-    ):
+    async def test_replace_does_not_expand_fleet_routes_into_guest_network_rules(self):
         runtime = {
             "websites": {
                 "traffic_token": "websites-traffic-token",
                 "sites": {
-                    "mailhub": {
-                        "ingress_host": "13001-websites.e2b.app",
-                        "port": 13001,
-                    },
-                    "teamchat": {
-                        "ingress_host": "13002-websites.e2b.app",
-                        "port": 13002,
-                    },
-                },
-            },
-            "gitlab": {
-                "ingress_host": "8929-gitlab.e2b.app",
-                "traffic_token": "gitlab-traffic-token",
-            },
-        }
-
-        rules = relay._service_network_rules(json.dumps(runtime))
-
-        self.assertEqual(
-            rules,
-            {
-                "13001-websites.e2b.app": [
-                    {
-                        "transform": {
-                            "headers": {
-                                "e2b-traffic-access-token": "websites-traffic-token"
-                            }
-                        }
+                    f"site-{index}": {
+                        "ingress_host": f"{13001 + index}-websites.e2b.app",
+                        "port": 13001 + index,
                     }
-                ],
-                "13002-websites.e2b.app": [
-                    {
-                        "transform": {
-                            "headers": {
-                                "e2b-traffic-access-token": "websites-traffic-token"
-                            }
-                        }
-                    }
-                ],
-                "8929-gitlab.e2b.app": [
-                    {
-                        "transform": {
-                            "headers": {
-                                "e2b-traffic-access-token": "gitlab-traffic-token"
-                            }
-                        }
-                    }
-                ],
-            },
-        )
-
-    async def test_replace_applies_fleet_token_rules_to_guest_network_policy(self):
-        runtime = {
-            "websites": {
-                "traffic_token": "websites-traffic-token",
-                "sites": {
-                    "mailhub": {"ingress_host": "13001-websites.e2b.app", "port": 13001}
+                    for index in range(26)
                 },
             },
             "gitlab": {
@@ -351,29 +300,9 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
             ):
                 await self.manager.replace()
 
-        self.assertEqual(
-            FakeSandbox.created[0].create_kwargs["network"]["rules"],
-            {
-                "13001-websites.e2b.app": [
-                    {
-                        "transform": {
-                            "headers": {
-                                "e2b-traffic-access-token": "websites-traffic-token"
-                            }
-                        }
-                    }
-                ],
-                "8929-gitlab.e2b.app": [
-                    {
-                        "transform": {
-                            "headers": {
-                                "e2b-traffic-access-token": "gitlab-traffic-token"
-                            }
-                        }
-                    }
-                ],
-            },
-        )
+        network = FakeSandbox.created[0].create_kwargs["network"]
+        self.assertNotIn("rules", network)
+        self.assertFalse(network["allow_public_traffic"])
 
     async def test_replace_uses_restricted_ingress_and_kills_previous_guest(self):
         with (

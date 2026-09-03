@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  quick-start-contract:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20.18.1"
+          cache: npm
+          cache-dependency-path: template/package-lock.json
+
+      - name: Validate shell scripts
+        run: find runner services template -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+
+      - name: Restore pinned public server inputs
+        run: template/fetch_server.sh
+
+      - name: Validate standalone inputs
+        run: runner/setup.sh --preflight
+
+      - name: Run Python tests
+        run: >-
+          uv run --python 3.12
+          --with pytest
+          --with pytest-asyncio
+          --with aiohttp==3.14.1
+          --with e2b==2.34.0
+          --with requests
+          pytest -q
+
+      - name: Install template dependencies
+        working-directory: template
+        run: npm ci --ignore-scripts
+
+      - name: Audit template dependencies
+        working-directory: template
+        run: npm audit --audit-level=high
+
+      - name: Type-check template
+        working-directory: template
+        run: npm run typecheck
