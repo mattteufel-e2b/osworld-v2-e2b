@@ -51,7 +51,10 @@ UPSTREAM_LOCK = REPO_ROOT / "examples" / "osworld-v2" / "upstream.lock.json"
 # site URLs land on the loopback Host-mapping proxy without any /etc/hosts edits.
 HOST_SUFFIX = "127.0.0.1.nip.io"
 
-SANDBOX_TIMEOUT_S = int(os.environ.get("FLEET_SANDBOX_TIMEOUT_S", str(12 * 3600)))
+# Must outlast the longest supported campaign: fleet timeouts are set only at
+# create / launcher start and nothing refreshes them mid-run, so a multi-wave
+# 108-task campaign (waves bounded by AGENT_TASK_TIMEOUT_SECONDS=4h) has to fit.
+SANDBOX_TIMEOUT_S = int(os.environ.get("FLEET_SANDBOX_TIMEOUT_S", str(24 * 3600)))
 
 # The E2B SDK sets vCPU/RAM at template-build time (not per-create), so the
 # fleet's 4 vCPU / 8192 MB sizing lives in this reusable base template. Docker is
@@ -221,6 +224,12 @@ def reuse_or_create(
             log(f"reusing {section} sandbox {sid}")
             return sbx, False
     elif sid:
+        if existing.get("campaign_id") != campaign:
+            raise RuntimeError(
+                f"service runtime {section} sandbox {sid} belongs to campaign "
+                f"{existing.get('campaign_id')!r}, not {campaign!r}; stop that "
+                "campaign first with services/stop.py"
+            )
         log(
             f"not reusing {section} sandbox {sid}: runtime template "
             f"{existing_template!r} does not match {template!r}"
