@@ -517,9 +517,12 @@ def test_full_agent_coordinator_bounds_sandboxes_and_namespaces_task_service_por
     assert 'task_service_ports=""' in coordinator
     assert 'AGENT_RETRY_ATTEMPTS="${AGENT_RETRY_ATTEMPTS:-0}"' in coordinator
     assert (
-        'retryable_causes = {"transport", "chrome-cdp", "environment-setup", "reset-or-observation"}'
+        'retryable_causes = {"transport", "chrome-cdp", "environment-setup", "reset-or-observation", "task-timeout"}'
         in coordinator
     )
+    retryable_causes_match = re.search(r"retryable_causes = \{([^}]*)\}", coordinator)
+    assert retryable_causes_match is not None
+    assert "evaluator-or-agent" not in retryable_causes_match.group(1)
     assert 'python3 "$HERE/aggregate_agent.py"' in coordinator
     assert 'python3 "$HERE/model_coverage.py"' in coordinator
     assert 'REQUIRE_NO_MODEL_COVERAGE="${REQUIRE_NO_MODEL_COVERAGE:-1}"' in coordinator
