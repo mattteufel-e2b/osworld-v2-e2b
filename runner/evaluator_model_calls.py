@@ -1,4 +1,11 @@
-"""Count evaluator-model calls without retaining prompts or responses."""
+"""Count evaluator-model calls without retaining prompts or responses.
+
+Counts every call routed through desktop_env's model helpers, wherever it
+happens — env.evaluate, a multiphase task's phase["evaluate"](env), or a
+metric helper — mirroring exactly where NoModelGuard raises its boundary, so
+no-model coverage and full-run accounting can never disagree on scope. The
+agent's own LLM traffic uses its own client and never touches these modules.
+"""
 
 from __future__ import annotations
 
@@ -10,30 +17,14 @@ class EvaluatorModelCallTracker:
     def __init__(self) -> None:
         self.call_attempts = 0
         self.successes = 0
-        self._evaluation_depth = 0
 
     def _tracked(self, function: Callable) -> Callable:
         @wraps(function)
         def invoke(*args, **kwargs):
-            if self._evaluation_depth == 0:
-                return function(*args, **kwargs)
             self.call_attempts += 1
             result = function(*args, **kwargs)
             self.successes += 1
             return result
-
-        return invoke
-
-    def track_evaluation(self, function: Callable) -> Callable:
-        """Count model-helper calls made while this evaluator function runs."""
-
-        @wraps(function)
-        def invoke(*args, **kwargs):
-            self._evaluation_depth += 1
-            try:
-                return function(*args, **kwargs)
-            finally:
-                self._evaluation_depth -= 1
 
         return invoke
 
