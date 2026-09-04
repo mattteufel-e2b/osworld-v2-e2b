@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import types
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -33,8 +34,10 @@ def test_evaluator_model_tracker_counts_attempts_and_only_successful_returns():
     llm_metrics = SimpleNamespace(generate_text=success)
     tracker.install(model_client=model_client, llm_metrics=llm_metrics)
 
-    # Calls outside DesktopEnv.evaluate (for example a user simulator) are not
-    # evaluator evidence.
+    # Every call routed through the installed model helpers counts, wherever
+    # it happens -- env.evaluate, a multiphase phase["evaluate"](env), or a
+    # metric helper -- there is no depth gate that only counts calls made
+    # while some wrapped "evaluate" frame is on the stack.
     assert model_client.generate_text("prompt") == "answer"
 
     def evaluate():
@@ -43,6 +46,37 @@ def test_evaluator_model_tracker_counts_attempts_and_only_successful_returns():
             model_client.generate_chat([])
         assert llm_metrics.generate_text("prompt") == "answer"
 
-    tracker.track_evaluation(evaluate)()
-    assert tracker.call_attempts == 3
-    assert tracker.successes == 2
+    evaluate()
+    assert tracker.call_attempts == 4
+    assert tracker.successes == 3
+
+
+def test_counts_calls_outside_env_evaluate():
+    # Multiphase tasks evaluate via phase["evaluate"](env) with no wrapped
+    # env.evaluate frame on the stack; their judge calls must still count,
+    # mirroring where NoModelGuard raises its boundary.
+    tracker = _tracker_class()()
+    model_client = types.SimpleNamespace(
+        generate_text=lambda *a, **k: "x",
+        generate_chat=lambda *a, **k: "x",
+    )
+    llm_metrics = types.SimpleNamespace(generate_text=lambda *a, **k: "x")
+    tracker.install(model_client=model_client, llm_metrics=llm_metrics)
+    model_client.generate_text("prompt")
+    assert tracker.call_attempts == 1
+    assert tracker.successes == 1
+
+
+def test_failed_call_counts_attempt_only():
+    tracker = _tracker_class()()
+
+    def boom(*a, **k):
+        raise RuntimeError("judge transport failure")
+
+    model_client = types.SimpleNamespace(generate_text=boom, generate_chat=boom)
+    llm_metrics = types.SimpleNamespace(generate_text=boom)
+    tracker.install(model_client=model_client, llm_metrics=llm_metrics)
+    with pytest.raises(RuntimeError):
+        model_client.generate_text("prompt")
+    assert tracker.call_attempts == 1
+    assert tracker.successes == 0

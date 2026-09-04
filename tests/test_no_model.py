@@ -53,3 +53,26 @@ def test_model_boundary_result_is_explicit_and_only_applies_during_evaluation():
     }
     assert model_boundary_result("reset", wrapped) is None
     assert model_boundary_result("evaluate", RuntimeError("unrelated")) is None
+
+
+def test_unrelated_crash_with_boundary_context_is_not_a_pass():
+    # An evaluator catches the boundary broadly, then crashes on its own bug.
+    # The boundary rides along only in __context__ — that is a PATH_FAIL.
+    try:
+        try:
+            raise NoModelEvaluationBoundary("disabled")
+        except Exception:
+            raise TypeError("broken fallback scoring")
+    except TypeError as error:
+        assert model_boundary_result("evaluate", error) is None
+
+
+def test_explicitly_chained_boundary_is_a_pass():
+    try:
+        try:
+            raise NoModelEvaluationBoundary("disabled")
+        except NoModelEvaluationBoundary as inner:
+            raise RuntimeError("wrapped") from inner
+    except RuntimeError as error:
+        result = model_boundary_result("evaluate", error)
+        assert result is not None and result["path_status"] == "MODEL_BOUNDARY_PASS"

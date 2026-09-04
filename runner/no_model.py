@@ -14,7 +14,10 @@ def _contains_boundary(error: BaseException) -> bool:
         if isinstance(current, NoModelEvaluationBoundary):
             return True
         seen.add(id(current))
-        current = current.__cause__ or current.__context__
+        # Follow only explicit `raise ... from` chains. __context__ is set by ANY
+        # exception raised inside an except block, so an unrelated evaluator crash
+        # that happened to catch the boundary must not attest a boundary pass.
+        current = current.__cause__
     return False
 
 

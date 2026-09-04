@@ -174,6 +174,15 @@ def aggregate(
         "unique_sandboxes": len(set(sandbox_ids)),
         "all_recorded_sandboxes_unique": len(set(sandbox_ids)) == len(sandbox_ids),
     }
+    # run_agent_parallel.sh copies the pre-retry receipt to
+    # task_<id>_before_retry_<n>.json before overwriting it, so the worker dir
+    # is the ground truth for whether the retry wave replaced any receipt.
+    retried_task_ids = sorted(
+        {
+            path.name[len("task_"):].split("_before_retry_")[0]
+            for path in worker_dir.glob("task_*_before_retry_*.json")
+        }
+    )
     run = {
         "schema_version": 2,
         "run_id": run_nonce,
@@ -208,7 +217,8 @@ def aggregate(
             "max_parallel_workers": concurrency,
             "task_082_concurrent": task_082_concurrent,
             "host_proxy_owned_for_campaign": True,
-            "implicit_retries": False,
+            "retried_task_ids": retried_task_ids,
+            "implicit_retries": bool(retried_task_ids),
         },
         "records": records,
         "summary": summary,

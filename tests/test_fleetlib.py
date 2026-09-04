@@ -556,6 +556,7 @@ class FleetRuntimePolicyTests(unittest.TestCase):
             "websites": {
                 "sandbox_id": "old-sandbox",
                 "template": "osworld-v2-fleet-base:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                "campaign_id": "test-campaign",
             }
         }
         stale_kills = []
@@ -579,6 +580,39 @@ class FleetRuntimePolicyTests(unittest.TestCase):
         self.assertEqual(sandbox.template, IMMUTABLE_FLEET)
         self.assertEqual(stale_kills, ["old-sandbox"])
         delete_runtime.assert_called_once_with("websites", "old-sandbox")
+
+    def test_reuse_or_create_refuses_other_campaigns_sandbox(self):
+        # runtime records a live sandbox owned by campaign-A; launching campaign-B
+        # must refuse loudly — stop.py refuses the same cross-campaign action.
+        stale = unittest.mock.MagicMock()
+        with (
+            patch.object(
+                fleetlib,
+                "read_runtime",
+                return_value={
+                    "websites": {
+                        "sandbox_id": "sb-a",
+                        "template": IMMUTABLE_FLEET,
+                        "campaign_id": "campaign-A",
+                    }
+                },
+            ),
+            patch.dict(
+                os.environ,
+                {"OSWORLD_CAMPAIGN_ID": "campaign-B", "FLEET_TEMPLATE": IMMUTABLE_FLEET},
+            ),
+            patch.object(fleetlib, "_connect", return_value=stale),
+            patch.object(fleetlib.Sandbox, "create") as create,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "campaign"):
+                fleetlib.reuse_or_create("websites", template=IMMUTABLE_FLEET)
+        stale.kill.assert_not_called()
+        create.assert_not_called()
+
+    def test_fleet_timeout_default_covers_a_full_campaign(self):
+        # Nothing refreshes fleet timeouts mid-run; the default must outlast the
+        # longest supported campaign (multi-wave 108-task run with 4h ceilings).
+        assert fleetlib.SANDBOX_TIMEOUT_S == 24 * 3600
 
 
 if __name__ == "__main__":

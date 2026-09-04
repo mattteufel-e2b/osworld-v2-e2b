@@ -324,6 +324,36 @@ def test_agent_timeout_kills_agent_and_relay_process_trees(tmp_path):
         process.communicate()
 
 
+def test_timeout_preserves_completed_receipt(tmp_path):
+    env = _runner_env(tmp_path, task_timeout=2)
+    env["AGENT_WATCHDOG_POLL_SECONDS"] = "1"
+    output = Path(env["OUTPUT"])
+    completed = json.dumps({"id": "001", "path_status": "OK", "score": 1.0})
+    _write_executable(
+        tmp_path / "bin" / "uv",
+        f"""#!/bin/sh
+case "$*" in
+  *e2b_relay.py*) trap '' INT TERM; (while :; do :; done) & wait ;;
+  *)
+    printf '%s' '{completed}' > "$OUTPUT"
+    trap '' INT TERM; (while :; do :; done) & wait
+    ;;
+esac
+""",
+    )
+    result = subprocess.run(
+        ["bash", str(ROOT / "runner" / "run_agent.sh")],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=30,
+    )
+    receipt = json.loads(output.read_text())
+    assert receipt["path_status"] == "OK", result.stderr  # not clobbered
+    assert result.returncode == 124  # still reported as timeout
+
+
 def test_agent_runner_requires_run_nonce_before_launching_resources(tmp_path):
     env = _runner_env(tmp_path, task_timeout=1)
     env.pop("OSWORLD_RUN_NONCE")

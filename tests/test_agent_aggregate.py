@@ -265,6 +265,67 @@ def test_agent_aggregate_allows_zero_evaluator_calls_for_non_boundary_task(tmp_p
     assert run["run_id"] == "run-nonce-1"
 
 
+def test_execution_block_reports_actual_retries(tmp_path):
+    manifest, workers = _inputs(tmp_path)
+    (workers / "task_001_before_retry_1.json").write_text("{}")
+
+    run, ok = aggregate(
+        manifest,
+        workers,
+        model="model",
+        agent_kind="m3",
+        model_transport="https://example.test/v1",
+        eval_model="judge",
+        eval_provider="openai_compatible",
+        eval_transport="https://example.test/v1",
+        user_sim_model="simulator",
+        user_sim_provider="openai_compatible",
+        user_sim_transport="https://example.test/v1",
+        max_steps=500,
+        concurrency=1,
+        thinking_mode=None,
+        thinking_budget=2048,
+        m3_max_llm_retries=2,
+        task_082_concurrent=True,
+        run_nonce="run-nonce-1",
+        campaign_id="campaign-1",
+        required_eval_model_ids={"001"},
+    )
+
+    assert run["execution"]["retried_task_ids"] == ["001"]
+    assert run["execution"]["implicit_retries"] is True
+
+
+def test_execution_block_without_retries(tmp_path):
+    manifest, workers = _inputs(tmp_path)
+
+    run, ok = aggregate(
+        manifest,
+        workers,
+        model="model",
+        agent_kind="m3",
+        model_transport="https://example.test/v1",
+        eval_model="judge",
+        eval_provider="openai_compatible",
+        eval_transport="https://example.test/v1",
+        user_sim_model="simulator",
+        user_sim_provider="openai_compatible",
+        user_sim_transport="https://example.test/v1",
+        max_steps=500,
+        concurrency=1,
+        thinking_mode=None,
+        thinking_budget=2048,
+        m3_max_llm_retries=2,
+        task_082_concurrent=True,
+        run_nonce="run-nonce-1",
+        campaign_id="campaign-1",
+        required_eval_model_ids={"001"},
+    )
+
+    assert run["execution"]["retried_task_ids"] == []
+    assert run["execution"]["implicit_retries"] is False
+
+
 def test_agent_aggregate_accepts_null_m3_retry_policy_for_prompt_agent(tmp_path):
     manifest, workers = _inputs(tmp_path)
     receipt = workers / "task_001.json"

@@ -386,7 +386,6 @@ def main() -> int:
             enable_proxy=False,
             force_disable_recording=True,
         )
-        env.evaluate = evaluator_model_calls.track_evaluation(env.evaluate)
         lib_run_single.run_single_example(
             agent,
             env,

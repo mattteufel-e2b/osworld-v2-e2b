@@ -40,6 +40,10 @@ for timeout_name in PROCESS_TERMINATION_GRACE_SECONDS RELAY_STOP_REQUEST_TIMEOUT
         exit 2
     fi
 done
+if [[ ! "${AGENT_WATCHDOG_POLL_SECONDS:-5}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "AGENT_WATCHDOG_POLL_SECONDS must be a positive integer" >&2
+    exit 2
+fi
 
 if [[ ! "${GUEST_TEMPLATE:-}" =~ ^[a-z0-9-]+:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
     echo "GUEST_TEMPLATE must be an immutable name:build_id reference (got: '${GUEST_TEMPLATE:-<unset>}')" >&2
@@ -250,6 +254,7 @@ start_in_new_session "$OSWORLD_ROOT" "${UV[@]}" python "$HERE/agent_runner.py" \
 agent_pid=$!
 timed_out=0
 started_at=$SECONDS
+watchdog_poll="${AGENT_WATCHDOG_POLL_SECONDS:-5}"
 while kill -0 "$agent_pid" 2>/dev/null; do
     if [ $((SECONDS - started_at)) -ge "$AGENT_TASK_TIMEOUT_SECONDS" ]; then
         timed_out=1
@@ -259,10 +264,14 @@ while kill -0 "$agent_pid" 2>/dev/null; do
         agent_pid=""
         break
     fi
-    sleep 1
+    sleep "$watchdog_poll"
 done
 if [ "$timed_out" -eq 1 ]; then
-    if ! python3 "$HERE/write_timeout_receipt.py" \
+    # agent_runner publishes its receipt atomically, so a non-empty OUTPUT is a
+    # complete result that finished just as the deadline fired — keep it.
+    if [ -s "$OUTPUT" ]; then
+        echo "[task ${TASK_ID}] completed receipt found at deadline; keeping it" >&2
+    elif ! python3 "$HERE/write_timeout_receipt.py" \
         --output "$OUTPUT" \
         --task-id "$TASK_ID" \
         --domain "$DOMAIN" \
