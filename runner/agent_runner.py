@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 import time
@@ -50,7 +51,7 @@ from desktop_env.desktop_env import DesktopEnv  # noqa: E402
 from evaluator_model_calls import EvaluatorModelCallTracker  # noqa: E402
 from mm_agents.agent import PromptAgent  # noqa: E402
 from mm_agents.m3 import M3Agent  # noqa: E402
-from receipt_safety import public_error, public_transport  # noqa: E402
+from receipt_safety import atomic_write_json, public_error, public_transport  # noqa: E402
 
 
 def utc_now() -> str:
@@ -206,6 +207,8 @@ def _read_score(result_dir: Path) -> tuple[float | None, bool | None]:
     if result_txt.exists():
         try:
             score = float(result_txt.read_text().strip())
+            if not math.isfinite(score):
+                score = None
         except ValueError:
             score = None
     # A dict-returning evaluator writes result.json; inspect KEYS only (not
@@ -436,8 +439,7 @@ def main() -> int:
     receipt["eval_model_call_attempts"] = evaluator_model_calls.call_attempts
     receipt["eval_model_successes"] = evaluator_model_calls.successes
 
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+    atomic_write_json(args.output, receipt)
     # Redacted one-liner to stderr (safe: ids + booleans + score only).
     print(
         json.dumps(

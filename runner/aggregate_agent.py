@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from receipt_safety import public_transport
@@ -178,7 +178,7 @@ def aggregate(
         "schema_version": 2,
         "run_id": run_nonce,
         "campaign_id": campaign_id,
-        "finished_at": datetime.now(UTC).isoformat(),
+        "finished_at": datetime.now(timezone.utc).isoformat(),
         "purpose": "OSWorld-V2 agent benchmark on E2B",
         "release": manifest.get("release"),
         "template": manifest["template"],

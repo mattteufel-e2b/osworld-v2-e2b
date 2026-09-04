@@ -6,16 +6,15 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import tempfile
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.request import urlopen
 
-from receipt_safety import public_transport
+from receipt_safety import atomic_write_json, public_transport
 
 
 def _utc_now() -> str:
-    return datetime.now(UTC).isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _positive_int_env(name: str) -> int | None:
@@ -35,30 +34,6 @@ def _relay_state(control_port: int) -> dict:
     except Exception:  # noqa: BLE001 -- timeout receipts must survive relay failure
         return {}
     return value if isinstance(value, dict) else {}
-
-
-def _atomic_write(path: Path, payload: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    staged_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as staged:
-            staged_path = Path(staged.name)
-            os.chmod(staged_path, 0o600)
-            json.dump(payload, staged, indent=2, sort_keys=True, allow_nan=False)
-            staged.write("\n")
-            staged.flush()
-            os.fsync(staged.fileno())
-        os.replace(staged_path, path)
-        staged_path = None
-    finally:
-        if staged_path is not None:
-            staged_path.unlink(missing_ok=True)
 
 
 def parse_args() -> argparse.Namespace:
@@ -125,7 +100,7 @@ def main() -> int:
         "sandbox_generation": state.get("generation"),
         "restricted_ingress": state.get("restricted_ingress"),
     }
-    _atomic_write(args.output, receipt)
+    atomic_write_json(args.output, receipt)
     return 0
 
 
