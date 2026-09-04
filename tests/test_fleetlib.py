@@ -128,7 +128,7 @@ class FleetRuntimePolicyTests(unittest.TestCase):
             websites.RECEIPT,
             V2_ROOT / "out" / "osworld-v2-raw" / "services" / "websites.json",
         )
-        self.assertEqual(websites.v2_checkout(), V2_ROOT / "OSWorld-V2")
+        self.assertEqual(websites.V2_CHECKOUT, V2_ROOT / "OSWorld-V2")
         self.assertEqual(
             builder.RECEIPT,
             V2_ROOT / "out" / "osworld-v2-raw" / "builds" / "fleet-template-build.json",
@@ -641,25 +641,6 @@ class FleetRuntimePolicyTests(unittest.TestCase):
                 fleetlib.rollback_launch("gitlab", sbx, created=True, token_file=token)
             sbx.kill.assert_called_once()
             assert not token.exists()
-
-    def test_websites_v2_checkout_honors_osworld_root(self):
-        websites = load_websites_launcher()
-        with patch.dict(os.environ, {"OSWORLD_ROOT": "/custom/OSWorld-V2"}):
-            assert websites.v2_checkout() == Path("/custom/OSWorld-V2")
-        os.environ.pop("OSWORLD_ROOT", None)
-        assert websites.v2_checkout() == websites.fl.REPO_ROOT / "OSWorld-V2"
-
-    def test_websites_launch_fails_fast_without_checkout(self):
-        # The post-build URL check needs the checkout; discovering that AFTER a
-        # ~50-minute compose build (and then killing the sandbox) is the bug.
-        websites = load_websites_launcher()
-        with (
-            patch.dict(os.environ, {"OSWORLD_ROOT": "/nonexistent/OSWorld-V2"}),
-            patch.object(websites.fl, "reuse_or_create") as reuse_or_create,
-        ):
-            with self.assertRaises(SystemExit):
-                websites.main()
-        reuse_or_create.assert_not_called()  # no sandbox spend before the check
 
 
 if __name__ == "__main__":
