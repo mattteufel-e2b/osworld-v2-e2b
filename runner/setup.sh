@@ -40,7 +40,7 @@ fi
 DEST="${1:-$PWD/OSWorld-V2}"
 
 # --restore returns the checkout to pristine (pin-verification state) by reverting
-# ONLY setup.sh's patch footprint: the two patched tracked files, plus the two
+# ONLY setup.sh's patch footprint: the four patched tracked files, plus the two
 # vendored untracked paths. .venv and any other untracked working files are left
 # untouched (clean is scoped, never a bare `git clean -fd`).
 if [ "$RESTORE" -eq 1 ]; then
@@ -49,6 +49,7 @@ if [ "$RESTORE" -eq 1 ]; then
         exit 1
     fi
     git -C "$DEST" checkout -- desktop_env/desktop_env.py desktop_env/providers/__init__.py lib_run_single.py 2>/dev/null || true
+    git -C "$DEST" checkout -- desktop_env/evaluators/backends/openai_backend.py 2>/dev/null || true
     git -C "$DEST" clean -fdq desktop_env/providers/e2b e2b_relay.py e2b_policy.py 2>/dev/null || true
     echo "restored pristine: $DEST (setup.sh patch footprint reverted)"
     git -C "$DEST" status --porcelain
@@ -197,6 +198,30 @@ else:
     assert count >= 1, "lib_run_single.py screenshot_file anchor missing (OSWorld-V2 moved?)"
     single.write_text(src.replace(old_name, '"screenshot_file": screenshot_file', 1))
     print("(d) lib_run_single.py: patched (terminal screenshot None is evaluable)")
+
+# (e) bound evaluator-model calls without nested SDK retries ----------------
+# The upstream OpenAI client defaults to a ten-minute request timeout and its
+# own retry layer. The evaluator backend already owns explicit retries, so a
+# stalled compatible endpoint could otherwise multiply into an unbounded task
+# tail. Keep one retry layer and match the agent transport's three-minute call
+# bound.
+backend = dest / "desktop_env/evaluators/backends/openai_backend.py"
+src = backend.read_text()
+old = 'client_kwargs: dict[str, Any] = {"api_key": config.api_key}'
+new = (
+    'client_kwargs: dict[str, Any] = {\n'
+    '            "api_key": config.api_key,\n'
+    '            "timeout": 180,\n'
+    '            "max_retries": 0,\n'
+    '        }'
+)
+if '"timeout": 180' in src and '"max_retries": 0' in src:
+    print("(e) openai_backend.py evaluator timeout: already applied")
+else:
+    count = src.count(old)
+    assert count == 1, f"openai_backend.py client anchor found {count}x, need exactly 1 (OSWorld-V2 moved?)"
+    backend.write_text(src.replace(old, new, 1))
+    print("(e) openai_backend.py: patched (bounded evaluator transport)")
 EOF
 
 echo

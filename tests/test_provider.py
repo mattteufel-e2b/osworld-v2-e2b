@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import sys
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -20,6 +21,9 @@ if not (UPSTREAM_ROOT / "desktop_env").is_dir():
 sys.path.insert(0, str(UPSTREAM_ROOT))
 sys.path.insert(0, str(V2_ROOT))
 
+from desktop_env.evaluators.backends.base import BackendConfig  # noqa: E402
+from desktop_env.evaluators.backends.openai_backend import OpenAIBackend  # noqa: E402
+
 spec = importlib.util.spec_from_file_location(
     "e2b_provider_under_test", V2_ROOT / "provider" / "provider.py"
 )
@@ -33,6 +37,30 @@ manager_spec = importlib.util.spec_from_file_location(
 manager_module = importlib.util.module_from_spec(manager_spec)
 assert manager_spec.loader is not None
 manager_spec.loader.exec_module(manager_module)
+
+
+class EvaluatorTransportTests(unittest.TestCase):
+    def test_openai_evaluator_calls_have_one_bounded_retry_layer(self):
+        captured = {}
+        fake_openai = types.ModuleType("openai")
+
+        class FakeOpenAI:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+        fake_openai.OpenAI = FakeOpenAI
+        config = BackendConfig(
+            provider="openai_compatible",
+            model="judge",
+            api_key="secret",
+            base_url="https://example.test/v1",
+        )
+
+        with patch.dict(sys.modules, {"openai": fake_openai}):
+            OpenAIBackend(config)
+
+        self.assertEqual(captured["timeout"], 180)
+        self.assertEqual(captured["max_retries"], 0)
 
 
 class ProviderVolumeTests(unittest.TestCase):
