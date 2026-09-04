@@ -80,6 +80,11 @@ if ! python3 "$HERE/preflight.py" \
     --task-id "$TASK_ID"; then
     exit 2
 fi
+if [ -z "${OSWORLD_RUN_NONCE:-}" ]; then
+    echo "OSWORLD_RUN_NONCE is required" >&2
+    exit 2
+fi
+export OSWORLD_RUN_NONCE
 
 # ---- namespacing + agent model wiring -------------------------------------
 export OSWORLD_RELAY_PORT_BASE="$PORT_BASE"
@@ -94,7 +99,7 @@ export ANTHROPIC_BASE_URL="$MODEL_BASE_URL"
 export ANTHROPIC_API_KEY="$MODEL_API_KEY"
 MODEL="${MODEL:-openai/gpt-4o}"
 AGENT_KIND="${AGENT_KIND:-prompt}"
-export AGENT_KIND
+export MODEL_BASE_URL MODEL AGENT_KIND MAX_STEPS
 
 # Some release tasks use model-based evaluators. Keep that endpoint explicit
 # because a provider's Anthropic- and OpenAI-compatible base URLs can differ.
@@ -257,6 +262,18 @@ while kill -0 "$agent_pid" 2>/dev/null; do
     sleep 1
 done
 if [ "$timed_out" -eq 1 ]; then
+    if ! python3 "$HERE/write_timeout_receipt.py" \
+        --output "$OUTPUT" \
+        --task-id "$TASK_ID" \
+        --domain "$DOMAIN" \
+        --port-base "$PORT_BASE" \
+        --model "$MODEL" \
+        --agent-kind "$AGENT_KIND" \
+        --max-steps "$MAX_STEPS" \
+        --timeout-seconds "$AGENT_TASK_TIMEOUT_SECONDS" \
+        --wall-clock-seconds "$((SECONDS - started_at))"; then
+        echo "[task ${TASK_ID}] failed to write timeout receipt" >&2
+    fi
     status=124
 else
     process_group="$agent_pid"

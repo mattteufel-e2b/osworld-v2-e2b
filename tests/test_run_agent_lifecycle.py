@@ -120,8 +120,19 @@ esac
         "PORT_BASE": "500",
         "GUEST_TEMPLATE": IMMUTABLE_GUEST,
         "OSWORLD_CAMPAIGN_ID": campaign,
-        "E2B_API_KEY": "dummy",
-        "MODEL_API_KEY": "dummy",
+        "OSWORLD_RUN_NONCE": "run-nonce-1",
+        "E2B_API_KEY": "e2b-sentinel-never-publish",
+        "MODEL_API_KEY": "model-sentinel-never-publish",
+        "MODEL_BASE_URL": "https://model-user:model-secret@example.test/v1?token=secret",
+        "MODEL": "provider/model",
+        "AGENT_KIND": "m3",
+        "M3_THINKING_BUDGET": "2048",
+        "M3_MAX_LLM_RETRIES": "2",
+        "EVAL_MODEL_BASE_URL": "https://judge-user:judge-secret@judge.test/v1?key=secret",
+        "EVAL_MODEL": "judge-model",
+        "EVAL_MODEL_API_KEY": "judge-sentinel-never-publish",
+        "USER_SIM_MODEL": "simulator-model",
+        "USER_SIM_API_KEY": "simulator-sentinel-never-publish",
         "OSWORLD_ROOT": str(osworld),
         "OSWORLD_TASKS_DIR": str(tasks),
         "OSWORLD_SERVICES_DIR": str(services),
@@ -251,6 +262,55 @@ def test_agent_timeout_kills_agent_and_relay_process_trees(tmp_path):
         assert process.returncode == 124, (stdout, stderr)
         assert time.monotonic() - started < 10
         assert "exceeded 1s deadline" in stderr
+        receipt = json.loads(Path(env["OUTPUT"]).read_text())
+        assert {
+            "id": receipt["id"],
+            "run_nonce": receipt["run_nonce"],
+            "campaign_id": receipt["campaign_id"],
+            "template": receipt["template"],
+            "path_status": receipt["path_status"],
+            "error_cause": receipt["error_cause"],
+            "error_type": receipt["error_type"],
+            "model": receipt["model"],
+            "agent_kind": receipt["agent_kind"],
+            "model_transport": receipt["model_transport"],
+            "eval_model_transport": receipt["eval_model_transport"],
+            "max_steps": receipt["max_steps"],
+        } == {
+            "id": "001",
+            "run_nonce": "run-nonce-1",
+            "campaign_id": "lifecycle-test",
+            "template": IMMUTABLE_GUEST,
+            "path_status": "ERROR",
+            "error_cause": "task-timeout",
+            "error_type": "AgentTaskTimeout",
+            "model": "provider/model",
+            "agent_kind": "m3",
+            "model_transport": "https://example.test/v1",
+            "eval_model_transport": "https://judge.test/v1",
+            "max_steps": 75,
+        }
+        serialized_receipt = Path(env["OUTPUT"]).read_text()
+        for sentinel in (
+            "secret",
+            "e2b-sentinel-never-publish",
+            "model-sentinel-never-publish",
+            "judge-sentinel-never-publish",
+            "simulator-sentinel-never-publish",
+            "websites-token",
+            "gitlab-token",
+            "private-token",
+        ):
+            assert sentinel not in serialized_receipt
+        assert receipt["evaluator_ran"] is False
+        assert receipt["score"] is None
+        assert receipt["steps_taken"] is None
+        assert receipt["eval_model_call_attempts"] is None
+        assert receipt["eval_model_successes"] is None
+        assert receipt["timeout_seconds"] == 1
+        assert receipt["wall_clock_s"] >= 1
+        assert Path(env["OUTPUT"]).stat().st_mode & 0o777 == 0o600
+        assert not list(Path(env["OUTPUT"]).parent.glob(".receipt.json.*.tmp"))
         _assert_commands_started_as_process_group_leaders(env)
         for pid in _recorded_pids(env):
             _assert_process_gone(pid)
@@ -262,6 +322,26 @@ def test_agent_timeout_kills_agent_and_relay_process_trees(tmp_path):
         if process.poll() is None:
             process.kill()
         process.communicate()
+
+
+def test_agent_runner_requires_run_nonce_before_launching_resources(tmp_path):
+    env = _runner_env(tmp_path, task_timeout=1)
+    env.pop("OSWORLD_RUN_NONCE")
+
+    result = subprocess.run(
+        ["bash", str(ROOT / "runner" / "run_agent.sh")],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=10,
+        check=False,
+    )
+
+    assert result.returncode == 2, (result.stdout, result.stderr)
+    assert "OSWORLD_RUN_NONCE is required" in result.stderr
+    assert not Path(env["RELAY_PID_FILE"]).exists()
+    assert not Path(env["AGENT_PID_FILE"]).exists()
 
 
 @pytest.mark.parametrize(

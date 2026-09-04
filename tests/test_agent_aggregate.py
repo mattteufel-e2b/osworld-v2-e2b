@@ -99,6 +99,49 @@ def test_agent_aggregate_accepts_complete_attested_record(tmp_path):
     assert run["reasoning"]["max_llm_retries"] == 2
 
 
+def test_agent_aggregate_counts_only_present_valid_records_as_attested(tmp_path):
+    """Missing receipts must not drive the attested count below zero."""
+    manifest, workers = _inputs(tmp_path)
+    manifest_payload = json.loads(manifest.read_text())
+    manifest_payload["tasks"].extend(
+        {"id": task_id, "domain": "release"} for task_id in ("002", "003", "004")
+    )
+    manifest.write_text(json.dumps(manifest_payload))
+
+    run, ok = aggregate(
+        manifest,
+        workers,
+        model="model",
+        agent_kind="m3",
+        model_transport="https://example.test/v1",
+        eval_model="judge",
+        eval_provider="openai_compatible",
+        eval_transport="https://example.test/v1",
+        user_sim_model="simulator",
+        user_sim_provider="openai_compatible",
+        user_sim_transport="https://example.test/v1",
+        max_steps=500,
+        concurrency=1,
+        thinking_mode=None,
+        thinking_budget=2048,
+        m3_max_llm_retries=2,
+        task_082_concurrent=True,
+        run_nonce="run-nonce-1",
+        campaign_id="campaign-1",
+        required_eval_model_ids={"001"},
+    )
+
+    assert not ok
+    assert run["summary"]["tasks"] == 1
+    assert run["summary"]["expected_tasks"] == 4
+    assert run["summary"]["attested_records"] == 1
+    assert run["summary"]["invalid_task_ids"] == {
+        "002": ["missing-or-invalid-receipt"],
+        "003": ["missing-or-invalid-receipt"],
+        "004": ["missing-or-invalid-receipt"],
+    }
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [

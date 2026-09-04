@@ -51,6 +51,7 @@ def aggregate(
     expected_user_sim_transport = public_transport(user_sim_transport)
     records: list[dict] = []
     invalid: dict[str, list[str]] = {}
+    attested = 0
     expected_thinking_budget = thinking_budget if thinking_budget else None
 
     for task_id in expected_ids:
@@ -130,6 +131,8 @@ def aggregate(
             reasons.append("eval-model-success")
         if reasons:
             invalid[task_id] = reasons
+        else:
+            attested += 1
         records.append(record)
 
     scores = [
@@ -140,9 +143,6 @@ def aggregate(
     sandbox_ids = [
         record["sandbox_id"] for record in records if record.get("sandbox_id")
     ]
-    attested = len(records) - sum(
-        bool(invalid.get(task_id)) for task_id in expected_ids
-    )
     summary = {
         "tasks": len(records),
         "expected_tasks": len(expected_ids),
