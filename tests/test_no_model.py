@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import json
+import re
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runner"))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "runner"))
 from no_model import (  # noqa: E402
     NoModelEvaluationBoundary,
     NoModelGuard,
@@ -76,3 +80,47 @@ def test_explicitly_chained_boundary_is_a_pass():
     except RuntimeError as error:
         result = model_boundary_result("evaluate", error)
         assert result is not None and result["path_status"] == "MODEL_BOUNDARY_PASS"
+
+
+def _validate_parallel_heredoc() -> str:
+    # The file has an earlier `python3 - "$MANIFEST" <<'PY'` heredoc (task id
+    # listing); anchor on the full aggregation-gate invocation's argv so this
+    # matches that heredoc specifically, not the first "$MANIFEST" heredoc.
+    source = (ROOT / "runner" / "validate_parallel.sh").read_text()
+    match = re.search(
+        r"python3 - \"\$MANIFEST\" \"\$RAW_DIR/workers\" \"\$OUTPUT\" "
+        r"\"\$PARALLEL_CONCURRENCY\" <<'PY'.*?\n(.*?)\nPY\n",
+        source,
+        re.DOTALL,
+    )
+    assert match is not None
+    return match.group(1)
+
+
+def test_validation_gate_rejects_missing_counter(tmp_path):
+    # A record missing external_model_calls must invalidate the run — it must
+    # never default to -1 and cancel another record's genuine call count.
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({
+        "template": "t:1", "osworld_commit": "a" * 40,
+        "tasks": [{"id": "001", "domain": "d"}, {"id": "002", "domain": "d"}],
+    }))
+    workers = tmp_path / "workers"
+    workers.mkdir()
+    base = {
+        "path_status": "PATH_PASS", "evaluator_ran": True,
+        "eval_model_call_attempts": 0,
+        "started_at": "2026-01-01T00:00:00+00:00",
+        "finished_at": "2026-01-01T00:00:01+00:00",
+    }
+    missing_counter = {**base, "id": "001", "sandbox": {"id": "sb-1"}}
+    leaky = {**base, "id": "002", "sandbox": {"id": "sb-2"}, "external_model_calls": 1}
+    (workers / "task_001.json").write_text(json.dumps({"records": [missing_counter]}))
+    (workers / "task_002.json").write_text(json.dumps({"records": [leaky]}))
+    output = tmp_path / "receipt.json"
+    proc = subprocess.run(
+        [sys.executable, "-", str(manifest), str(workers), str(output), "2"],
+        input=_validate_parallel_heredoc(), capture_output=True, text=True,
+    )
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "VALIDATION GATE: FAIL" in proc.stdout

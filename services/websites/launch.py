@@ -22,6 +22,7 @@ Run:
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 import time
@@ -291,7 +292,9 @@ def probe_host_ingress(sbx, ports: dict[str, int], token: str) -> dict:
     }
 
 
-V2_CHECKOUT = fl.REPO_ROOT / "OSWorld-V2"
+def v2_checkout() -> Path:
+    """The pinned OSWorld-V2 checkout; same override the runner scripts honor."""
+    return Path(os.environ.get("OSWORLD_ROOT") or (fl.REPO_ROOT / "OSWorld-V2"))
 
 
 def verify_via_v2_builder(public_suffix: str, site: str = "mailhub") -> dict:
@@ -303,7 +306,7 @@ def verify_via_v2_builder(public_suffix: str, site: str = "mailhub") -> dict:
 
     snippet = (
         "import os, sys, json\n"
-        f"sys.path.insert(0, {str(V2_CHECKOUT)!r})\n"
+        f"sys.path.insert(0, {str(v2_checkout())!r})\n"
         f"os.environ['WEBSITE_HOST_SUFFIX'] = {public_suffix!r}\n"
         "from desktop_env.controllers.website import build_website_url\n"
         "import requests\n"
@@ -354,6 +357,13 @@ def require_v2_builder_success(result: dict) -> None:
 
 
 def main() -> int:
+    checkout = v2_checkout()
+    if not (checkout / "desktop_env" / "controllers" / "website.py").is_file():
+        raise SystemExit(
+            f"ERROR: pinned OSWorld-V2 checkout missing at {checkout}; run "
+            "runner/setup.sh (or export OSWORLD_ROOT) before launching the "
+            "websites fleet — the post-build URL check requires it"
+        )
     commit = websites_pin()
     campaign = fl.campaign_id()
     fl.load_e2b_key()

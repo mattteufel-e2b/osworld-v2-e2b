@@ -154,7 +154,7 @@ if [ "${#batch[@]}" -gt 0 ]; then run_batch "${batch[@]}" || overall=1; fi
 
 python3 - "$MANIFEST" "$RAW_DIR/workers" "$OUTPUT" "$PARALLEL_CONCURRENCY" <<'PY' || overall=1
 import json, platform, sys, uuid
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 manifest_path, worker_dir, output_path, concurrency = sys.argv[1:]
@@ -182,8 +182,17 @@ model_boundary_passes = sum(
 )
 validated_tasks = path_passes + model_boundary_passes
 evaluator_ran = sum(bool(r.get("evaluator_ran")) for r in records)
-external_model_calls = sum(int(r.get("external_model_calls", -1)) for r in records)
-eval_model_call_attempts = sum(int(r.get("eval_model_call_attempts", 0)) for r in records)
+# A malformed counter is an invalid record, never a default: r.get(..., -1)
+# could cancel a genuine positive count and pass the ==0 gate.
+for r in records:
+    if type(r.get("external_model_calls")) is not int or type(r.get("eval_model_call_attempts")) is not int:
+        missing.append(r.get("id"))
+valid = [
+    r for r in records
+    if type(r.get("external_model_calls")) is int and type(r.get("eval_model_call_attempts")) is int
+]
+external_model_calls = sum(r["external_model_calls"] for r in valid)
+eval_model_call_attempts = sum(r["eval_model_call_attempts"] for r in valid)
 summary = {
     "tasks": len(records),
     "expected_tasks": len(expected_ids),
@@ -203,7 +212,7 @@ run = {
     "schema_version": 1,
     "run_id": str(uuid.uuid4()),
     "started_at": min((r["started_at"] for r in records), default=None),
-    "finished_at": max((r["finished_at"] for r in records), default=datetime.now(UTC).isoformat()),
+    "finished_at": max((r["finished_at"] for r in records), default=datetime.now(timezone.utc).isoformat()),
     "purpose": "environment-path validation; not an agent benchmark score",
     "release": manifest.get("release"),
     "template": manifest["template"],
