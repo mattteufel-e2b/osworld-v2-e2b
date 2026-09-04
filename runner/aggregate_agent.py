@@ -9,7 +9,7 @@ import math
 from datetime import datetime, timezone
 from pathlib import Path
 
-from receipt_safety import public_transport
+from receipt_safety import atomic_write_json, public_transport
 
 
 def _valid_score(value: object) -> bool:
@@ -289,10 +289,7 @@ def main() -> int:
         campaign_id=args.campaign_id,
         required_eval_model_ids=required_eval_model_ids,
     )
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(
-        json.dumps(run, indent=2, sort_keys=True, allow_nan=False) + "\n"
-    )
+    atomic_write_json(args.output, run)
     print(json.dumps(run["summary"], sort_keys=True))
     print("AGENT RECEIPT GATE:", "PASS" if ok else "FAIL")
     return 0 if ok else 1

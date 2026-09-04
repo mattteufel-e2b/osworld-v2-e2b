@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import stat
 import sys
 from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runner"))
+import aggregate_agent  # noqa: E402
 from aggregate_agent import aggregate  # noqa: E402
 
 
@@ -359,3 +361,39 @@ def test_agent_aggregate_accepts_null_m3_retry_policy_for_prompt_agent(tmp_path)
     )
 
     assert ok
+
+
+def test_main_writes_campaign_receipt_atomically_with_private_perms(tmp_path, monkeypatch):
+    manifest, workers = _inputs(tmp_path)
+    output = tmp_path / "campaign-receipt.json"
+    argv = [
+        "aggregate_agent.py",
+        "--manifest", str(manifest),
+        "--worker-dir", str(workers),
+        "--output", str(output),
+        "--model", "model",
+        "--agent-kind", "m3",
+        "--model-transport", "https://example.test/v1",
+        "--eval-model", "judge",
+        "--eval-provider", "openai_compatible",
+        "--eval-transport", "https://example.test/v1",
+        "--user-sim-model", "simulator",
+        "--user-sim-provider", "openai_compatible",
+        "--user-sim-transport", "https://example.test/v1",
+        "--max-steps", "500",
+        "--concurrency", "1",
+        "--thinking-budget", "2048",
+        "--m3-max-llm-retries", "2",
+        "--task-082-concurrent",
+        "--run-nonce", "run-nonce-1",
+        "--campaign-id", "campaign-1",
+    ]
+    monkeypatch.setattr(sys, "argv", argv)
+
+    aggregate_agent.main()
+
+    # 0600 perms only happen via atomic_write_json's staged-file chmod + replace;
+    # this proves main() no longer writes the campaign receipt with a plain
+    # write_text (which would inherit the process umask instead).
+    assert stat.S_IMODE(output.stat().st_mode) == 0o600
+    assert json.loads(output.read_text())["run_id"] == "run-nonce-1"
