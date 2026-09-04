@@ -106,7 +106,8 @@ without a reference to match against, and what is excluded or unexercised outrig
 - **Per-task wall clock**: `AGENT_TASK_TIMEOUT_SECONDS` (default 14400 s) bounds a
   task rollout; upstream has no per-task deadline. A timed-out task produces a
   fail-closed `task-timeout` receipt (never a score) and is eligible for the
-  infrastructure retry wave.
+  infrastructure retry wave — unless a completed receipt already exists when the
+  deadline fires, in which case that scored receipt is kept.
 - **Setup upload paths**: the relay serves `POST /setup/upload` directly through
   the E2B files API and requires absolute guest paths; upstream's in-guest server
   also accepts `~`- and `$VAR`-relative paths. All 108 release tasks use absolute
