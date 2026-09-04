@@ -96,6 +96,24 @@ without a reference to match against, and what is excluded or unexercised outrig
   3000. Preflight rejects a run containing `task_082` when host port 3000 is unavailable; because
   no other release task owns that listener, it can otherwise run in the concurrent wave without
   routing into another worker's guest.
+- **Evaluator-model transport**: the pinned checkout's OpenAI evaluator backend is
+  patched (`runner/setup.sh`, patch (e)) to a 180 s request timeout with zero SDK
+  retries, replacing upstream's ~600 s timeout plus SDK retry layer. A judge
+  response slower than 180 s or a transient transport error the SDK would have
+  retried therefore fails the evaluator call instead of eventually scoring; this
+  is a deliberate bound on external-call exposure and can differ from upstream
+  scoring on a slow judge endpoint.
+- **Per-task wall clock**: `AGENT_TASK_TIMEOUT_SECONDS` (default 14400 s) bounds a
+  task rollout; upstream has no per-task deadline. A timed-out task produces a
+  fail-closed `task-timeout` receipt (never a score) and is eligible for the
+  infrastructure retry wave.
+- **Setup upload paths**: the relay serves `POST /setup/upload` directly through
+  the E2B files API and requires absolute guest paths; upstream's in-guest server
+  also accepts `~`- and `$VAR`-relative paths. All 108 release tasks use absolute
+  paths; custom configs with relative upload destinations must be rewritten.
+- **Guest apt front-end**: the template installs a `/usr/local/sbin/apt-get`
+  wrapper forcing `DEBIAN_FRONTEND=noninteractive` and conffile-keep defaults so
+  task-driven package operations cannot hang a rollout; a stock VM would prompt.
 - **Audio kernel path**: no `snd-dummy`/`snd-aloop` ALSA kernel module in the Firecracker
   guest kernel (`modprobe: FATAL: Module snd-dummy not found`, `spike-audio.json`). The
   PulseAudio null-sink path was sufficient for every app exercised (REAPER and MuseScore

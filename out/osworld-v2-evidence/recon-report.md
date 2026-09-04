@@ -1,7 +1,7 @@
 # OSWorld 2.0 gated-task recon report
 
 Release: `osworld-v2-2026.08.08`. Tasks dataset `xlangai/osworld_v2_tasks` @
-`0ec2aa50f9eaf8d9ec757f38507d340ed9a67cbf` (108 `task_*.py` files, verified against
+`0ec2aa30344a28103a33c89c6588c3437bfcdca1` (108 `task_*.py` files, verified against
 `examples/osworld-v2/task-hashes.json`). Assets dataset `xlangai/osworld_v2_assets_gated` @
 `402754cc7bd74690168c46ef0c58c375542c4afe` (3186 payload files plus `.source.json`, ~4.2GB).
 Both were downloaded into this
