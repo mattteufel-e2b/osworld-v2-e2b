@@ -264,6 +264,27 @@ def reuse_or_create(
     return sbx, True
 
 
+def rollback_launch(
+    section: str, sbx: Sandbox, created: bool, *, token_file: Path | None = None
+) -> None:
+    """Roll back a failed launcher run. Always retract the provisional runtime
+    section and host proxy (fail closed: no routing until a launcher succeeds),
+    but destroy the sandbox and its secret file only if THIS run created them —
+    a transient gate failure against a reused healthy fleet must not cost the
+    fleet or its live credential; relaunching then reuses both."""
+    stop_host_proxy()
+    delete_runtime_section(section, sbx.sandbox_id)
+    if not created:
+        log(f"{section} launch failed against reused sandbox {sbx.sandbox_id}; leaving it running")
+        return
+    if token_file is not None:
+        token_file.unlink(missing_ok=True)
+    try:
+        sbx.kill()
+    except Exception as exc:  # noqa: BLE001
+        log(f"could not kill failed {section} sandbox: {exc}")
+
+
 def run(
     sbx: Sandbox,
     cmd: str,

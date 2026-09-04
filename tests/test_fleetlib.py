@@ -614,6 +614,34 @@ class FleetRuntimePolicyTests(unittest.TestCase):
         # longest supported campaign (multi-wave 108-task run with 4h ceilings).
         assert fleetlib.SANDBOX_TIMEOUT_S == 24 * 3600
 
+    def test_rollback_launch_spares_reused_sandboxes(self):
+        sbx = unittest.mock.MagicMock(sandbox_id="sb-1")
+        with tempfile.TemporaryDirectory() as tmp:
+            token = Path(tmp) / "token"
+            token.write_text("t")
+            with (
+                patch.object(fleetlib, "stop_host_proxy") as stop_proxy,
+                patch.object(fleetlib, "delete_runtime_section") as delete_section,
+            ):
+                fleetlib.rollback_launch("gitlab", sbx, created=False, token_file=token)
+            sbx.kill.assert_not_called()
+            assert token.exists()  # a reused fleet keeps its live PAT
+        stop_proxy.assert_called_once()
+        delete_section.assert_called_once_with("gitlab", "sb-1")
+
+    def test_rollback_launch_destroys_fresh_sandboxes(self):
+        sbx = unittest.mock.MagicMock(sandbox_id="sb-1")
+        with tempfile.TemporaryDirectory() as tmp:
+            token = Path(tmp) / "token"
+            token.write_text("t")
+            with (
+                patch.object(fleetlib, "stop_host_proxy"),
+                patch.object(fleetlib, "delete_runtime_section"),
+            ):
+                fleetlib.rollback_launch("gitlab", sbx, created=True, token_file=token)
+            sbx.kill.assert_called_once()
+            assert not token.exists()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -465,12 +465,7 @@ def main() -> int:
         RECEIPT.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
         fl.log(f"receipt -> {RECEIPT}")
     except BaseException:
-        fl.stop_host_proxy()
-        fl.delete_runtime_section("websites", sbx.sandbox_id)
-        try:
-            sbx.kill()
-        except Exception as cleanup_error:  # noqa: BLE001
-            fl.log(f"could not kill failed websites sandbox: {cleanup_error}")
+        fl.rollback_launch("websites", sbx, created)
         raise
 
     fl.stop_host_proxy()
