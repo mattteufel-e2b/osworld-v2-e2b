@@ -646,8 +646,9 @@ class FleetRuntimePolicyTests(unittest.TestCase):
         websites = load_websites_launcher()
         with patch.dict(os.environ, {"OSWORLD_ROOT": "/custom/OSWorld-V2"}):
             assert websites.v2_checkout() == Path("/custom/OSWorld-V2")
-        os.environ.pop("OSWORLD_ROOT", None)
-        assert websites.v2_checkout() == websites.fl.REPO_ROOT / "OSWorld-V2"
+        env_without = {k: v for k, v in os.environ.items() if k != "OSWORLD_ROOT"}
+        with patch.dict(os.environ, env_without, clear=True):
+            assert websites.v2_checkout() == websites.fl.REPO_ROOT / "OSWorld-V2"
 
     def test_websites_launch_fails_fast_without_checkout(self):
         # The post-build URL check needs the checkout; discovering that AFTER a
