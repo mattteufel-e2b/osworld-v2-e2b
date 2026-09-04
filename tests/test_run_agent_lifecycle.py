@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -420,3 +421,14 @@ def test_readme_bounds_canary_but_restores_sample_retry_policy():
     assert readme.index(canary_retry) < readme.index(canary_timeout)
     assert readme.index(canary_timeout) < readme.index(sample_retry)
     assert readme.index(sample_retry) < readme.index(sample_campaign)
+
+
+def test_retry_allowlist_includes_task_timeout():
+    # A shell-enforced deadline is infrastructure, not a scored model attempt;
+    # write_timeout_receipt.py emits error_cause="task-timeout" and the retry
+    # wave must be able to pick it up.
+    source = (ROOT / "runner" / "run_agent_parallel.sh").read_text()
+    match = re.search(r"retryable_causes = \{([^}]*)\}", source)
+    assert match is not None
+    assert "task-timeout" in match.group(1)
+    assert "evaluator-or-agent" not in match.group(1)  # scored attempts stay unretried

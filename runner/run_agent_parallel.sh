@@ -252,7 +252,10 @@ for item in json.load(open(manifest))["tasks"]:
         record = json.load(open(path))
     except (FileNotFoundError, json.JSONDecodeError):
         record = {}
-    retryable_causes = {"transport", "chrome-cdp", "environment-setup", "reset-or-observation"}
+    # Keep in sync with agent_runner._classify_stage_and_cause and
+    # write_timeout_receipt.py. "evaluator-or-agent" is a scored model attempt
+    # and is deliberately never retried; a shell-enforced deadline is not.
+    retryable_causes = {"transport", "chrome-cdp", "environment-setup", "reset-or-observation", "task-timeout"}
     if not record or (
         record.get("path_status") != "OK"
         and record.get("error_cause") in retryable_causes
