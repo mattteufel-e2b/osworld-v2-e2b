@@ -418,6 +418,29 @@ class FleetRuntimePolicyTests(unittest.TestCase):
             {"GITLAB_URL": launcher.gitlab_url(), "GITLAB_PRIVATE_TOKEN": secret},
         )
 
+    def test_gitlab_compose_accepts_success_observed_at_deadline(self):
+        """A compose completion during the final sleep must not become a timeout."""
+        launcher = load_gitlab_launcher()
+
+        class Commands:
+            @staticmethod
+            def run(_command, **_kwargs):
+                return object()
+
+        sandbox = type("Sandbox", (), {"commands": Commands()})()
+        with (
+            patch.object(
+                launcher.fl,
+                "poll_cmd",
+                side_effect=["no", "pulling", "COMPOSE_OK"],
+            ) as poll_cmd,
+            patch.object(launcher.time, "time", side_effect=[0, 899, 900]),
+            patch.object(launcher.time, "sleep"),
+        ):
+            launcher.compose_up(sandbox, "glpat-command-secret")
+
+        self.assertEqual(poll_cmd.call_count, 3)
+
     def test_gitlab_main_validates_release_lock_before_sandbox_creation(self):
         launcher = load_gitlab_launcher()
 

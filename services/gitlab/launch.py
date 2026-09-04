@@ -143,6 +143,15 @@ def compose_up(sbx, token: str) -> None:
             full = fl.poll_cmd(sbx, "tail -60 /var/log/compose.log") or ""
             raise RuntimeError(f"gitlab compose up failed:\n{full[-3000:]}")
         time.sleep(15)
+    # The compose process can finish during the last sleep. Observe that final
+    # state before declaring a timeout and tearing down a healthy sandbox.
+    out = fl.poll_cmd(sbx, "tail -3 /var/log/compose.log 2>/dev/null") or ""
+    if "COMPOSE_OK" in out:
+        fl.log("gitlab compose up (containers created; GitLab still initializing)")
+        return
+    if "COMPOSE_FAIL" in out:
+        full = fl.poll_cmd(sbx, "tail -60 /var/log/compose.log") or ""
+        raise RuntimeError(f"gitlab compose up failed:\n{full[-3000:]}")
     raise TimeoutError("gitlab compose up did not create containers in time")
 
 
