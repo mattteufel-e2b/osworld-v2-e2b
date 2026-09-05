@@ -3,9 +3,12 @@ import json
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "runner"))
+from receipt_safety import RETRYABLE_ERROR_CAUSES  # noqa: E402
 
 
 def test_reaper_uses_clone_safe_startup_launcher():
@@ -516,13 +519,12 @@ def test_full_agent_coordinator_bounds_sandboxes_and_namespaces_task_service_por
     assert "OSWORLD_TASK_082_HOST_PORT" not in coordinator
     assert 'task_service_ports=""' in coordinator
     assert 'AGENT_RETRY_ATTEMPTS="${AGENT_RETRY_ATTEMPTS:-0}"' in coordinator
-    assert (
-        'retryable_causes = {"transport", "chrome-cdp", "environment-setup", "reset-or-observation", "task-timeout"}'
-        in coordinator
-    )
-    retryable_causes_match = re.search(r"retryable_causes = \{([^}]*)\}", coordinator)
-    assert retryable_causes_match is not None
-    assert "evaluator-or-agent" not in retryable_causes_match.group(1)
+    # Retry-candidate selection is delegated to a standalone script rather than
+    # a heredoc embedded in a process substitution: macOS system bash (3.2)
+    # mis-parses that construct and silently drops the retry wave.
+    assert 'python3 "$HERE/retry_candidates.py" "$MANIFEST" "$RAW_DIR/workers"' in coordinator
+    assert "task-timeout" in RETRYABLE_ERROR_CAUSES
+    assert "evaluator-or-agent" not in RETRYABLE_ERROR_CAUSES
     assert 'python3 "$HERE/aggregate_agent.py"' in coordinator
     assert 'python3 "$HERE/model_coverage.py"' in coordinator
     assert 'REQUIRE_NO_MODEL_COVERAGE="${REQUIRE_NO_MODEL_COVERAGE:-1}"' in coordinator
@@ -534,7 +536,6 @@ def test_full_agent_coordinator_bounds_sandboxes_and_namespaces_task_service_por
     assert (
         "for ((attempt=1; attempt <= AGENT_RETRY_ATTEMPTS; attempt++))" in coordinator
     )
-    assert 'record.get("path_status") != "OK"' in coordinator
     assert '"path_ok": sum(record.get("path_status") == "OK"' in aggregator
     assert '"evaluator_ran_count": sum(' in aggregator
     assert '"scored_tasks": len(scores)' in aggregator

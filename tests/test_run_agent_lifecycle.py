@@ -426,9 +426,89 @@ def test_readme_bounds_canary_but_restores_sample_retry_policy():
 def test_retry_allowlist_includes_task_timeout():
     # A shell-enforced deadline is infrastructure, not a scored model attempt;
     # write_timeout_receipt.py emits error_cause="task-timeout" and the retry
-    # wave must be able to pick it up.
-    source = (ROOT / "runner" / "run_agent_parallel.sh").read_text()
-    match = re.search(r"retryable_causes = \{([^}]*)\}", source)
-    assert match is not None
-    assert "task-timeout" in match.group(1)
-    assert "evaluator-or-agent" not in match.group(1)  # scored attempts stay unretried
+    # wave must be able to pick it up. The allowlist now lives in
+    # receipt_safety.RETRYABLE_ERROR_CAUSES, shared by run_agent_parallel.sh
+    # (via retry_candidates.py) instead of being duplicated inline.
+    sys.path.insert(0, str(ROOT / "runner"))
+    from receipt_safety import RETRYABLE_ERROR_CAUSES
+
+    assert "task-timeout" in RETRYABLE_ERROR_CAUSES
+    assert "evaluator-or-agent" not in RETRYABLE_ERROR_CAUSES  # scored attempts stay unretried
+
+
+def test_retry_selection_procsub_survives_macos_bash_3_2(tmp_path):
+    # Regression test for a confirmed production bug: the retry-wave selection
+    # used to run a python heredoc INSIDE a process substitution
+    # (`< <(python3 - ... <<'PY' ... PY )`). macOS system bash 3.2.57 (the only
+    # bash on stock Macs) mis-parses that construct: in a live run it spawned
+    # the substitution multiple times, emitted "ambiguous redirect", and
+    # produced ZERO rows, so retryable failures were silently never retried.
+    # This test extracts the *real* selection lines from run_agent_parallel.sh
+    # (between "failed_rows=()" and the line after the closing paren) and runs
+    # them under /bin/bash — the actual macOS bash 3.2 binary — against fixture
+    # receipts. It must fail if someone reintroduces a heredoc-in-procsub here.
+    bash32 = Path("/bin/bash")
+    if not bash32.exists():
+        pytest.skip("/bin/bash is not available on this system")
+    version = subprocess.run(
+        [str(bash32), "--version"], capture_output=True, text=True, check=True
+    ).stdout
+    if "version 3." not in version:
+        pytest.skip(f"/bin/bash is not bash 3.x here: {version.splitlines()[0]!r}")
+
+    source_lines = (ROOT / "runner" / "run_agent_parallel.sh").read_text().splitlines()
+    start = next(i for i, line in enumerate(source_lines) if "failed_rows=()" in line)
+    end = next(
+        i
+        for i, line in enumerate(source_lines)
+        if i > start and line.strip() == ")"
+    )
+    selection_lines = source_lines[start : end + 1]
+    assert any("retry_candidates.py" in line for line in selection_lines), (
+        "expected the extracted block to invoke retry_candidates.py"
+    )
+
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "tasks": [
+                    {"id": "001", "domain": "release"},
+                    {"id": "002", "domain": "release"},
+                ]
+            }
+        )
+    )
+    worker_dir = tmp_path / "workers"
+    worker_dir.mkdir()
+    (worker_dir / "task_001.json").write_text(
+        json.dumps({"path_status": "FAIL", "error_cause": "task-timeout"})
+    )
+    (worker_dir / "task_002.json").write_text(json.dumps({"path_status": "OK"}))
+
+    script = tmp_path / "extracted_selection.sh"
+    script.write_text(
+        "\n".join(
+            [
+                "#!/bin/bash",
+                'HERE="{here}"'.format(here=ROOT / "runner"),
+                'MANIFEST="{manifest}"'.format(manifest=manifest),
+                'RAW_DIR="{raw_dir}"'.format(raw_dir=tmp_path),
+                *selection_lines,
+                "printf '%s\\n' \"${failed_rows[@]}\"",
+                "",
+            ]
+        )
+    )
+    script.chmod(0o755)
+
+    result = subprocess.run(
+        [str(bash32), str(script)],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    rows = [line for line in result.stdout.splitlines() if line]
+    assert rows == ["001 release"], (rows, result.stdout, result.stderr)

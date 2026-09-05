@@ -8,6 +8,13 @@ import tempfile
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
+# Retry-wave allowlist. Keep in sync with agent_runner._classify_stage_and_cause
+# and write_timeout_receipt.py. "evaluator-or-agent" is a scored model attempt
+# and is deliberately never retried; a shell-enforced deadline ("task-timeout") is.
+RETRYABLE_ERROR_CAUSES = frozenset(
+    {"transport", "chrome-cdp", "environment-setup", "reset-or-observation", "task-timeout"}
+)
+
 
 def public_error(error: BaseException) -> dict[str, str]:
     """Describe an exception without copying its potentially secret-bearing text."""

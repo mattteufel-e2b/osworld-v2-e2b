@@ -240,28 +240,7 @@ fi
 for ((attempt=1; attempt <= AGENT_RETRY_ATTEMPTS; attempt++)); do
     failed_rows=()
     while IFS= read -r row; do failed_rows+=("$row"); done < <(
-        python3 - "$MANIFEST" "$RAW_DIR/workers" <<'PY'
-import json, sys
-from pathlib import Path
-
-manifest, worker_dir = sys.argv[1:]
-for item in json.load(open(manifest))["tasks"]:
-    task_id = item["id"]
-    path = Path(worker_dir) / f"task_{task_id}.json"
-    try:
-        record = json.load(open(path))
-    except (FileNotFoundError, json.JSONDecodeError):
-        record = {}
-    # Keep in sync with agent_runner._classify_stage_and_cause and
-    # write_timeout_receipt.py. "evaluator-or-agent" is a scored model attempt
-    # and is deliberately never retried; a shell-enforced deadline is not.
-    retryable_causes = {"transport", "chrome-cdp", "environment-setup", "reset-or-observation", "task-timeout"}
-    if not record or (
-        record.get("path_status") != "OK"
-        and record.get("error_cause") in retryable_causes
-    ):
-        print(task_id, item.get("domain", "release"))
-PY
+        python3 "$HERE/retry_candidates.py" "$MANIFEST" "$RAW_DIR/workers"
     )
     if [ "${#failed_rows[@]}" -eq 0 ]; then break; fi
     echo "retrying ${#failed_rows[@]} infrastructure/path failures (attempt $attempt)"
