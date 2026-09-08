@@ -11,7 +11,7 @@ gitignored raw dir; the receipt carries ids, path booleans, timings and the
 evaluator's partial-credit score only -- never task or evaluator text.
 
 The agent talks to an OpenAI-compatible chat-completions endpoint:
-``OPENAI_BASE_URL`` + ``OPENAI_API_KEY`` are honored and the model slug is passed
+``MODEL_BASE_URL`` + ``MODEL_API_KEY`` are honored and the model slug is passed
 verbatim. This is the V2 reference chat-completions agent. No secrets are logged.
 """
 
@@ -23,25 +23,10 @@ import math
 import os
 import sys
 import time
-import types
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.request import urlopen
 
-
-def _stub(name: str, package: bool = False) -> None:
-    module = types.ModuleType(name)
-    if package:
-        module.__path__ = []
-    module.__getattr__ = lambda attr: type(attr, (), {})
-    sys.modules[name] = module
-
-
-# Heavy optional evaluator deps (torch via easyocr, acoustid): stub so an
-# evaluator that references one still RUNS instead of raising ImportError. Same
-# policy as the no-agent harness.
-for dependency in ["easyocr", "acoustid"]:
-    _stub(dependency, package=True)
 
 sys.path.insert(0, os.getcwd())
 import lib_run_single  # noqa: E402
@@ -83,21 +68,19 @@ class CompatiblePromptAgent(PromptAgent):
 
     Reuses the parent's prompt construction, screenshot encoding and action
     parsing verbatim; only ``call_llm`` is overridden to (a) honor
-    OPENAI_BASE_URL/OPENAI_API_KEY unconditionally and (b) send the model slug as
+    MODEL_BASE_URL/MODEL_API_KEY unconditionally and (b) send the model slug as
     given so provider-specific model identifiers remain intact, with a small
     retry on rate limits / 5xx. No secrets are logged.
     """
 
     def call_llm(self, payload):  # noqa: D401
-        base_url = os.environ.get(
-            "OPENAI_BASE_URL", "https://api.openai.com/v1"
-        ).rstrip("/")
+        base_url = os.environ["MODEL_BASE_URL"].rstrip("/")
         api_url = base_url + (
             "/chat/completions" if base_url.endswith("/v1") else "/v1/chat/completions"
         )
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}",
+            "Authorization": f"Bearer {os.environ['MODEL_API_KEY']}",
         }
         last_status = None
         for attempt in range(8):
@@ -347,6 +330,8 @@ def main() -> int:
 
     if args.agent_kind == "m3":
         agent = M3Agent(
+            base_url=os.environ["MODEL_BASE_URL"],
+            api_key=os.environ["MODEL_API_KEY"],
             platform="ubuntu",
             model=args.model,
             max_tokens=8192,
@@ -437,6 +422,17 @@ def main() -> int:
     receipt["judge_used"] = judge_used
     receipt["eval_model_call_attempts"] = evaluator_model_calls.call_attempts
     receipt["eval_model_successes"] = evaluator_model_calls.successes
+    receipt["user_sim_call_attempts"] = evaluator_model_calls.user_sim_call_attempts
+    receipt["user_sim_successes"] = evaluator_model_calls.user_sim_successes
+    if (
+        evaluator_model_calls.call_attempts != evaluator_model_calls.successes
+        or evaluator_model_calls.user_sim_call_attempts
+        != evaluator_model_calls.user_sim_successes
+    ):
+        # Upstream metrics may convert a transport exception to zero. Keep the
+        # original score artifact, but do not attest or resample that rollout.
+        receipt["path_status"] = "ERROR"
+        receipt["error_cause"] = "evaluator-or-agent"
 
     atomic_write_json(args.output, receipt)
     # Redacted one-liner to stderr (safe: ids + booleans + score only).

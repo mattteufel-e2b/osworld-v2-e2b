@@ -40,7 +40,7 @@ manager_spec.loader.exec_module(manager_module)
 
 
 class EvaluatorTransportTests(unittest.TestCase):
-    def test_openai_evaluator_calls_have_one_bounded_retry_layer(self):
+    def test_openai_evaluator_leaves_sdk_transport_defaults_untouched(self):
         captured = {}
         fake_openai = types.ModuleType("openai")
 
@@ -59,8 +59,8 @@ class EvaluatorTransportTests(unittest.TestCase):
         with patch.dict(sys.modules, {"openai": fake_openai}):
             OpenAIBackend(config)
 
-        self.assertEqual(captured["timeout"], 180)
-        self.assertEqual(captured["max_retries"], 0)
+        self.assertNotIn("timeout", captured)
+        self.assertNotIn("max_retries", captured)
 
 
 class ProviderVolumeTests(unittest.TestCase):

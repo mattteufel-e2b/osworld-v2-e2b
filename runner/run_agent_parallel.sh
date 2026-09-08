@@ -73,17 +73,10 @@ if [ "$AGENT_KIND" = "m3" ] && [[ ! "${M3_MAX_LLM_RETRIES:-}" =~ ^[0-9]+$ ]]; th
     echo "M3_MAX_LLM_RETRIES must be explicit and non-negative for an M3 benchmark" >&2
     exit 2
 fi
-: "${EVAL_MODEL_BASE_URL:?EVAL_MODEL_BASE_URL required for release model judges}"
-: "${EVAL_MODEL:?EVAL_MODEL required for release model judges}"
-EVAL_MODEL_API_KEY="${EVAL_MODEL_API_KEY:-$MODEL_API_KEY}"
-EVAL_MODEL_PROVIDER="openai_compatible"
-USER_SIM_MODEL="${USER_SIM_MODEL:-${EVAL_MODEL:-$MODEL}}"
-USER_SIM_PROVIDER="openai_compatible"
+source "$HERE/model_env.sh"
 if [ -z "${OSWORLD_CAMPAIGN_ID:-}" ]; then echo "OSWORLD_CAMPAIGN_ID is required" >&2; exit 2; fi
 export GUEST_TEMPLATE OSWORLD_CAMPAIGN_ID MODEL_API_KEY MODEL_BASE_URL MODEL AGENT_KIND MAX_STEPS
 export M3_THINKING_MODE M3_THINKING_BUDGET M3_MAX_LLM_RETRIES
-export EVAL_MODEL_BASE_URL EVAL_MODEL_API_KEY EVAL_MODEL EVAL_MODEL_PROVIDER
-export USER_SIM_MODEL USER_SIM_PROVIDER
 
 if [ -z "${E2B_API_KEY:-}" ] && [ -f "$REPO_ROOT/.env.local" ]; then
     export E2B_API_KEY="$(grep '^E2B_API_KEY=' "$REPO_ROOT/.env.local" | cut -d= -f2)"
@@ -92,9 +85,18 @@ if [ -z "${E2B_API_KEY:-}" ]; then echo "E2B_API_KEY is required" >&2; exit 2; f
 
 mkdir -p "$RAW_DIR"
 proxy_pid=""
+worker_pids=()
 cleanup_proxy() {
     local status=$?
-    trap - EXIT INT TERM
+    trap - EXIT
+    trap '' INT TERM
+    local pid
+    for pid in ${worker_pids[@]+"${worker_pids[@]}"}; do
+        kill -TERM "$pid" 2>/dev/null || true
+    done
+    for pid in ${worker_pids[@]+"${worker_pids[@]}"}; do
+        wait "$pid" 2>/dev/null || true
+    done
     if [ -n "$proxy_pid" ] && kill -0 "$proxy_pid" 2>/dev/null; then
         kill "$proxy_pid" 2>/dev/null || true
         wait "$proxy_pid" 2>/dev/null || true
@@ -108,7 +110,9 @@ cleanup_proxy() {
     fi
     exit "$status"
 }
-trap cleanup_proxy EXIT INT TERM
+trap cleanup_proxy EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 if [ "$REQUIRE_NO_MODEL_COVERAGE" = "1" ]; then
     : "${NO_MODEL_RECEIPT:?NO_MODEL_RECEIPT is required for full-agent coverage}"
@@ -121,6 +125,13 @@ fi
 if ! python3 "$HERE/preflight.py" \
     --osworld-root "$OSWORLD_ROOT" --tasks-dir "$TASKS_DIR" \
     --services-dir "$SERVICES_DIR" --manifest "$MANIFEST"; then
+    exit 2
+fi
+
+export PARALLEL_CONCURRENCY AGENT_RETRY_ATTEMPTS AGENT_RETRY_CONCURRENCY
+export RUN_TASK_082_CONCURRENT AGENT_START_STAGGER_SECONDS
+if ! $UV python "$V2ROOT/services/fleetlib.py" --check-lifetime "$MANIFEST" \
+    --runtime "$SERVICES_DIR/.runtime.json"; then
     exit 2
 fi
 
@@ -148,7 +159,7 @@ proxy_pid=$!
 proxy_ready=0
 for _ in $(seq 1 30); do
     if ! kill -0 "$proxy_pid" 2>/dev/null; then break; fi
-    if curl -fsS -H 'Host: mailhub.127.0.0.1.nip.io' \
+    if curl -fsS --connect-timeout 2 --max-time 5 -H 'Host: mailhub.127.0.0.1.nip.io' \
         'http://127.0.0.1:8090/api/state?cookie=agent-benchmark' >/dev/null 2>&1; then
         proxy_ready=1
         break
@@ -172,8 +183,8 @@ PY
 
 run_batch() {
     local -a batch=("$@")
-    local -a pids=()
-    local row task_id domain slot port_base task_service_ports receipt result_dir log pid
+    worker_pids=()
+    local row task_id domain slot port_base task_service_ports receipt result_dir log pid index
     local batch_failed=0
     slot=0
     for row in "${batch[@]}"; do
@@ -194,12 +205,13 @@ run_batch() {
             PORT_BASE="$port_base" OUTPUT="$receipt" RESULT_DIR="$result_dir" \
             RAW_DIR="$RAW_DIR" "$HERE/run_agent.sh" >"$log" 2>&1 &
         pid=$!
-        pids+=("$pid")
+        worker_pids+=("$pid")
         echo "launched agent task $task_id port_base=$port_base pid=$pid"
         sleep "$AGENT_START_STAGGER_SECONDS"
     done
-    for pid in "${pids[@]}"; do
-        wait "$pid" || batch_failed=1
+    for index in "${!worker_pids[@]}"; do
+        wait "${worker_pids[$index]}" || batch_failed=1
+        unset 'worker_pids[index]'
     done
     return "$batch_failed"
 }
@@ -224,13 +236,8 @@ done
 if [ "${#batch[@]}" -gt 0 ]; then run_batch "${batch[@]}" || overall=1; fi
 
 if [ -n "$task_082_row" ]; then
-    read -r task_id domain <<<"$task_082_row"
     echo "running agent task 082 solo on canonical host port 3000"
-    OSWORLD_TASK_SERVICE_PORTS="3000:3000" \
-        TASK_ID="$task_id" DOMAIN="$domain" \
-        PORT_BASE="0" OUTPUT="$RAW_DIR/workers/task_082.json" \
-        RESULT_DIR="$RAW_DIR/workers/task_082" RAW_DIR="$RAW_DIR" \
-        "$HERE/run_agent.sh" >"$RAW_DIR/workers/task_082.log" 2>&1 || overall=1
+    run_batch "$task_082_row" || overall=1
 fi
 
 # Retry infrastructure/path errors in a deliberately small wave. This is not a
@@ -265,13 +272,7 @@ for ((attempt=1; attempt <= AGENT_RETRY_ATTEMPTS; attempt++)); do
     done
     if [ "${#retry_batch[@]}" -gt 0 ]; then run_batch "${retry_batch[@]}" || overall=1; fi
     if [ -n "$retry_082_row" ]; then
-        read -r task_id domain <<<"$retry_082_row"
-        OSWORLD_TASK_SERVICE_PORTS="3000:3000" \
-            TASK_ID="$task_id" DOMAIN="$domain" \
-            PORT_BASE="0" OUTPUT="$RAW_DIR/workers/task_082.json" \
-            RESULT_DIR="$RAW_DIR/workers/task_082_retry_${attempt}" RAW_DIR="$RAW_DIR" \
-            "$HERE/run_agent.sh" >"$RAW_DIR/workers/task_082_retry_${attempt}.log" 2>&1 \
-            || overall=1
+        run_batch "$retry_082_row" || overall=1
     fi
 done
 unset ATTEMPT_SUFFIX
@@ -283,12 +284,12 @@ aggregate_args=(
     --model "$MODEL"
     --agent-kind "$AGENT_KIND"
     --model-transport "$MODEL_BASE_URL"
-    --eval-model "$EVAL_MODEL"
-    --eval-provider "$EVAL_MODEL_PROVIDER"
-    --eval-transport "$EVAL_MODEL_BASE_URL"
-    --user-sim-model "$USER_SIM_MODEL"
-    --user-sim-provider "$USER_SIM_PROVIDER"
-    --user-sim-transport "$EVAL_MODEL_BASE_URL"
+    --eval-model "${OSWORLD_EVAL_MODEL_NAME:-}"
+    --eval-provider "${OSWORLD_EVAL_MODEL_PROVIDER:-}"
+    --eval-transport "${OSWORLD_EVAL_MODEL_BASE_URL:-}"
+    --user-sim-model "${OSWORLD_USER_SIM_MODEL:-}"
+    --user-sim-provider "${OSWORLD_USER_SIM_PROVIDER:-}"
+    --user-sim-transport "${OSWORLD_USER_SIM_BASE_URL:-}"
     --max-steps "$MAX_STEPS"
     --concurrency "$PARALLEL_CONCURRENCY"
     --thinking-budget "${M3_THINKING_BUDGET:-0}"

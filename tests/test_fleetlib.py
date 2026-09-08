@@ -630,7 +630,7 @@ class FleetRuntimePolicyTests(unittest.TestCase):
             sbx.kill.assert_not_called()
             assert token.exists()  # a reused fleet keeps its live PAT
         stop_proxy.assert_called_once()
-        delete_section.assert_called_once_with("gitlab", "sb-1")
+        delete_section.assert_not_called()
 
     def test_rollback_launch_destroys_fresh_sandboxes(self):
         sbx = unittest.mock.MagicMock(sandbox_id="sb-1")

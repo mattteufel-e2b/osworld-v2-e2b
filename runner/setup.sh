@@ -7,17 +7,17 @@
 #
 # Checkout states (the checkout is gitignored, so its state lives on disk only):
 #   * "applied"  — setup.sh's patches present (register+classify e2b provider,
-#                  strict reset, vendored provider/manager + e2b_relay.py). This
-#                  is the NORMAL operating state between runs; the harness, relay,
-#                  and Task 12 all require it. Re-running setup.sh with no flag
-#                  restores it idempotently.
-#   * "pristine" — patch footprint reverted, matching the upstream pin exactly.
-#                  Reach it with `setup.sh --restore` (for pin verification); it
-#                  reverts only setup.sh's own files and leaves .venv/other
-#                  untracked working files intact.
+#                  strict reset, vendored provider/manager + relay/policy). This
+#                  is the NORMAL operating state between runs and the state
+#                  checked by `setup.sh --verify`. Re-running setup.sh with no
+#                  flag restores it idempotently.
+#   * "pristine" — current patch footprint reverted to the upstream pin. Reach
+#                  it with `setup.sh --restore`; it reverts only setup.sh's own
+#                  files and leaves .venv/other untracked working files intact.
 #
 # Usage:  ./setup.sh [dest-dir]            apply patches (default state)
 #         ./setup.sh --restore [dest-dir]  revert to pristine, then exit
+#         ./setup.sh --verify [dest-dir]   verify exact patched state, then exit
 #         ./setup.sh --preflight           validate local inputs and pin, then exit
 set -euo pipefail
 
@@ -29,9 +29,13 @@ POLICY_FILE="$V2ROOT/e2b_policy.py"
 LOCKFILE="$V2ROOT/examples/osworld-v2/upstream.lock.json"
 
 RESTORE=0
+VERIFY=0
 PREFLIGHT=0
 if [ "${1:-}" = "--restore" ]; then
     RESTORE=1
+    shift
+elif [ "${1:-}" = "--verify" ]; then
+    VERIFY=1
     shift
 elif [ "${1:-}" = "--preflight" ]; then
     PREFLIGHT=1
@@ -39,17 +43,16 @@ elif [ "${1:-}" = "--preflight" ]; then
 fi
 DEST="${1:-$PWD/OSWorld-V2}"
 
-# --restore returns the checkout to pristine (pin-verification state) by reverting
-# ONLY setup.sh's patch footprint: the four patched tracked files, plus the two
-# vendored untracked paths. .venv and any other untracked working files are left
-# untouched (clean is scoped, never a bare `git clean -fd`).
+# --restore returns the checkout to the upstream pin by reverting
+# ONLY setup.sh's patch footprint: the three patched tracked files, plus the
+# vendored provider package, relay, and policy. .venv and any other untracked
+# working files are left untouched (clean is scoped, never a bare `git clean -fd`).
 if [ "$RESTORE" -eq 1 ]; then
     if [ ! -d "$DEST/.git" ]; then
         echo "ERROR: --restore: no OSWorld-V2 checkout at $DEST" >&2
         exit 1
     fi
     git -C "$DEST" checkout -- desktop_env/desktop_env.py desktop_env/providers/__init__.py lib_run_single.py 2>/dev/null || true
-    git -C "$DEST" checkout -- desktop_env/evaluators/backends/openai_backend.py 2>/dev/null || true
     git -C "$DEST" clean -fdq desktop_env/providers/e2b e2b_relay.py e2b_policy.py 2>/dev/null || true
     echo "restored pristine: $DEST (setup.sh patch footprint reverted)"
     git -C "$DEST" status --porcelain
@@ -89,24 +92,8 @@ if [ "$PREFLIGHT" -eq 1 ]; then
     exit 0
 fi
 
-if [ ! -d "$DEST/.git" ]; then
-    git clone https://github.com/xlang-ai/OSWorld-V2 "$DEST"
-fi
-git -C "$DEST" fetch --quiet origin "$PIN" 2>/dev/null || true
-git -C "$DEST" checkout --quiet "$PIN"
-echo "OSWorld-V2 at $DEST (pin $PIN)"
-
-# ---- provider package ----------------------------------------------------
-mkdir -p "$DEST/desktop_env/providers/e2b"
-cp "$PROVIDER_DIR/provider.py" "$PROVIDER_DIR/manager.py" "$DEST/desktop_env/providers/e2b/"
-touch "$DEST/desktop_env/providers/e2b/__init__.py"
-
-# ---- relay (runs on the host next to run.py) ------------------------------
-cp "$RELAY_DIR/relay.py" "$DEST/e2b_relay.py"
-cp "$POLICY_FILE" "$DEST/e2b_policy.py"
-
-# ---- string patches: register + classify the provider, force strict reset --
-python3 - "$DEST" <<'EOF'
+apply_adapter_patches() {
+python3 - "$1" <<'EOF'
 import sys, pathlib
 
 dest = pathlib.Path(sys.argv[1])
@@ -198,34 +185,129 @@ else:
     assert count >= 1, "lib_run_single.py screenshot_file anchor missing (OSWorld-V2 moved?)"
     single.write_text(src.replace(old_name, '"screenshot_file": screenshot_file', 1))
     print("(d) lib_run_single.py: patched (terminal screenshot None is evaluable)")
+EOF
+}
 
-# (e) bound evaluator-model calls without nested SDK retries ----------------
-# The upstream OpenAI client defaults to a ten-minute request timeout and its
-# own retry layer. The evaluator backend already owns explicit retries, so a
-# stalled compatible endpoint could otherwise multiply into an unbounded task
-# tail. Keep one retry layer and match the agent transport's three-minute call
-# bound.
-backend = dest / "desktop_env/evaluators/backends/openai_backend.py"
-src = backend.read_text()
-old = 'client_kwargs: dict[str, Any] = {"api_key": config.api_key}'
-new = (
+if [ "$VERIFY" -eq 1 ]; then
+    if [ ! -d "$DEST/.git" ]; then
+        echo "ERROR: --verify: no OSWorld-V2 checkout at $DEST" >&2
+        exit 1
+    fi
+    ACTUAL_HEAD="$(git -C "$DEST" rev-parse HEAD)"
+    if [ "$ACTUAL_HEAD" != "$PIN" ]; then
+        echo "ERROR: OSWorld-V2 HEAD $ACTUAL_HEAD does not match pin $PIN" >&2
+        exit 1
+    fi
+
+    EXPECTED_TRACKED='desktop_env/desktop_env.py
+desktop_env/providers/__init__.py
+lib_run_single.py'
+    ACTUAL_TRACKED="$(git -C "$DEST" diff --name-only HEAD --)"
+    if [ "$ACTUAL_TRACKED" != "$EXPECTED_TRACKED" ]; then
+        echo "ERROR: OSWorld-V2 tracked edits do not match setup patch footprint" >&2
+        git -C "$DEST" status --short --untracked-files=no >&2
+        exit 1
+    fi
+
+    EXPECTED_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/osworld-v2-verify.XXXXXX")"
+    trap 'rm -rf "$EXPECTED_ROOT"' EXIT
+    for relative in \
+        desktop_env/desktop_env.py \
+        desktop_env/providers/__init__.py \
+        lib_run_single.py \
+        desktop_env/evaluators/backends/openai_backend.py
+    do
+        mkdir -p "$EXPECTED_ROOT/$(dirname "$relative")"
+        git -C "$DEST" show "$PIN:$relative" > "$EXPECTED_ROOT/$relative"
+    done
+    apply_adapter_patches "$EXPECTED_ROOT"
+
+    for relative in \
+        desktop_env/desktop_env.py \
+        desktop_env/providers/__init__.py \
+        lib_run_single.py \
+        desktop_env/evaluators/backends/openai_backend.py
+    do
+        if ! cmp -s "$DEST/$relative" "$EXPECTED_ROOT/$relative"; then
+            echo "ERROR: OSWorld-V2 checkout differs from expected: $relative" >&2
+            exit 1
+        fi
+    done
+    for pair in \
+        "desktop_env/providers/e2b/provider.py:$PROVIDER_DIR/provider.py" \
+        "desktop_env/providers/e2b/manager.py:$PROVIDER_DIR/manager.py" \
+        "e2b_relay.py:$RELAY_DIR/relay.py" \
+        "e2b_policy.py:$POLICY_FILE"
+    do
+        relative="${pair%%:*}"
+        source_file="${pair#*:}"
+        if ! cmp -s "$DEST/$relative" "$source_file"; then
+            echo "ERROR: OSWorld-V2 checkout differs from expected: $relative" >&2
+            exit 1
+        fi
+    done
+    if [ ! -f "$DEST/desktop_env/providers/e2b/__init__.py" ] || [ -s "$DEST/desktop_env/providers/e2b/__init__.py" ]; then
+        echo "ERROR: OSWorld-V2 checkout differs from expected: desktop_env/providers/e2b/__init__.py" >&2
+        exit 1
+    fi
+    echo "verified OSWorld-V2 checkout: $DEST (pin $PIN)"
+    exit 0
+fi
+
+if [ ! -d "$DEST/.git" ]; then
+    git clone https://github.com/xlang-ai/OSWorld-V2 "$DEST"
+fi
+git -C "$DEST" fetch --quiet origin "$PIN" 2>/dev/null || true
+git -C "$DEST" checkout --quiet "$PIN"
+echo "OSWorld-V2 at $DEST (pin $PIN)"
+
+# ---- provider package ----------------------------------------------------
+mkdir -p "$DEST/desktop_env/providers/e2b"
+cp "$PROVIDER_DIR/provider.py" "$PROVIDER_DIR/manager.py" "$DEST/desktop_env/providers/e2b/"
+touch "$DEST/desktop_env/providers/e2b/__init__.py"
+
+# ---- relay (runs on the host next to run.py) ------------------------------
+cp "$RELAY_DIR/relay.py" "$DEST/e2b_relay.py"
+cp "$POLICY_FILE" "$DEST/e2b_policy.py"
+
+# ---- string patches: register + classify the provider, force strict reset --
+LEGACY_BACKEND="$DEST/desktop_env/evaluators/backends/openai_backend.py"
+PRISTINE_BACKEND="$(mktemp "${TMPDIR:-/tmp}/osworld-v2-backend.XXXXXX")"
+git -C "$DEST" show "$PIN:desktop_env/evaluators/backends/openai_backend.py" > "$PRISTINE_BACKEND"
+if ! python3 - "$LEGACY_BACKEND" "$PRISTINE_BACKEND" <<'EOF'
+import pathlib
+import sys
+
+actual_path = pathlib.Path(sys.argv[1])
+pristine = pathlib.Path(sys.argv[2]).read_text()
+actual = actual_path.read_text()
+anchor = 'client_kwargs: dict[str, Any] = {"api_key": config.api_key}'
+legacy = (
     'client_kwargs: dict[str, Any] = {\n'
     '            "api_key": config.api_key,\n'
     '            "timeout": 180,\n'
     '            "max_retries": 0,\n'
     '        }'
 )
-if '"timeout": 180' in src and '"max_retries": 0' in src:
-    print("(e) openai_backend.py evaluator timeout: already applied")
+assert pristine.count(anchor) == 1
+legacy_patched = pristine.replace(anchor, legacy, 1)
+if actual == legacy_patched:
+    actual_path.write_text(pristine)
+    print("openai_backend.py: restored upstream SDK transport defaults")
+elif actual == pristine:
+    print("openai_backend.py: upstream SDK transport defaults already pristine")
 else:
-    count = src.count(old)
-    assert count == 1, f"openai_backend.py client anchor found {count}x, need exactly 1 (OSWorld-V2 moved?)"
-    backend.write_text(src.replace(old, new, 1))
-    print("(e) openai_backend.py: patched (bounded evaluator transport)")
+    raise SystemExit(
+        "ERROR: openai_backend.py has unexpected edits; refusing to overwrite them"
+    )
 EOF
+then
+    rm -f "$PRISTINE_BACKEND"
+    exit 1
+fi
+rm -f "$PRISTINE_BACKEND"
+
+apply_adapter_patches "$DEST"
 
 echo
-echo "Done. Next:"
-echo "  1. uv pip install -r $DEST/requirements.txt -r $HERE/requirements-e2b.txt   # python >=3.12"
-echo "  2. export E2B_API_KEY=... ; export GUEST_TEMPLATE=osworld-v2-gnome:<build_id>"
-echo "  3. python $DEST/e2b_relay.py   # host-side relay on 127.0.0.1:14999"
+echo "Done. Follow the Quick start in $V2ROOT/README.md to run the upstream benchmark."

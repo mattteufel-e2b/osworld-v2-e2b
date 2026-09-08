@@ -8,6 +8,7 @@ import json
 import os
 import socket
 import stat
+import subprocess
 import sys
 from pathlib import Path
 
@@ -140,6 +141,26 @@ def main() -> int:
             fail("task 082 requires host port 3000, but it is already in use")
         finally:
             probe.close()
+
+    if manifest.get("osworld_commit") != release_lock["code"]["commit"]:
+        fail("validation manifest osworld_commit does not match release lock")
+    checkout_verification = subprocess.run(
+        [
+            str(ROOT / "runner" / "setup.sh"),
+            "--verify",
+            str(args.osworld_root),
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if checkout_verification.returncode != 0:
+        detail = (
+            checkout_verification.stderr.strip()
+            or checkout_verification.stdout.strip()
+            or f"exit {checkout_verification.returncode}"
+        )
+        fail(f"patched OSWorld checkout verification failed: {detail}")
 
     print(f"runner preflight ok: {len(selected)} task(s)")
     return 0

@@ -135,7 +135,7 @@ for run_number in $(seq 1 "$RUNS"); do
     outputs+=("$output")
     relay_log="$RAW_DIR/validate-run${run_number}-relay.log"
 
-    ( cd "$OSWORLD_ROOT" && $UV python e2b_relay.py ) 2>"$relay_log" &
+    ( cd "$OSWORLD_ROOT" && $UV --locked --extra full python e2b_relay.py ) 2>"$relay_log" &
     relay_pid=$!
     ready=0
     for _ in $(seq 1 150); do
@@ -151,7 +151,7 @@ for run_number in $(seq 1 "$RUNS"); do
         continue
     fi
 
-    ( cd "$OSWORLD_ROOT" && $UV python "$HERE/harness.py" \
+    ( cd "$OSWORLD_ROOT" && $UV --locked --extra full python "$HERE/harness.py" \
         --osworld-root "$OSWORLD_ROOT" \
         --tasks-dir "$TASKS_DIR" \
         --manifest "$MANIFEST" \

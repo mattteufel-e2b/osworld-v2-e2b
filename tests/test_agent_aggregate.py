@@ -57,6 +57,8 @@ def _inputs(tmp_path: Path) -> tuple[Path, Path]:
                 "m3_max_llm_retries": 2,
                 "eval_model_call_attempts": 1,
                 "eval_model_successes": 1,
+                "user_sim_call_attempts": 0,
+                "user_sim_successes": 0,
             }
         )
     )
@@ -100,6 +102,124 @@ def test_agent_aggregate_accepts_complete_attested_record(tmp_path):
         "transport": "https://example.test/v1",
     }
     assert run["reasoning"]["max_llm_retries"] == 2
+
+
+@pytest.mark.parametrize(
+    "attempts,successes,required", [(1, 0, set()), (2, 1, {"001"})]
+)
+def test_failed_judge_invalidates_score_even_after_another_success(
+    tmp_path, attempts, successes, required
+):
+    manifest, workers = _inputs(tmp_path)
+    receipt = workers / "task_001.json"
+    record = json.loads(receipt.read_text())
+    record.update(eval_model_call_attempts=attempts, eval_model_successes=successes)
+    receipt.write_text(json.dumps(record))
+    run, ok = aggregate(
+        manifest,
+        workers,
+        model="model",
+        agent_kind="m3",
+        model_transport="https://example.test/v1",
+        eval_model="judge",
+        eval_provider="openai_compatible",
+        eval_transport="https://example.test/v1",
+        user_sim_model="simulator",
+        user_sim_provider="openai_compatible",
+        user_sim_transport="https://example.test/v1",
+        max_steps=500,
+        concurrency=1,
+        thinking_mode=None,
+        thinking_budget=2048,
+        m3_max_llm_retries=2,
+        task_082_concurrent=True,
+        run_nonce="run-nonce-1",
+        campaign_id="campaign-1",
+        required_eval_model_ids=required,
+        no_model_coverage_enforced=bool(required),
+    )
+    assert not ok
+    assert "eval-model-failure" in run["summary"]["invalid_task_ids"]["001"]
+
+
+def test_failed_simulator_invalidates_score_even_after_another_success(tmp_path):
+    manifest, workers = _inputs(tmp_path)
+    receipt = workers / "task_001.json"
+    record = json.loads(receipt.read_text())
+    record.update(user_sim_call_attempts=2, user_sim_successes=1)
+    receipt.write_text(json.dumps(record))
+
+    run, ok = aggregate(
+        manifest,
+        workers,
+        model="model",
+        agent_kind="m3",
+        model_transport="https://example.test/v1",
+        eval_model="judge",
+        eval_provider="openai_compatible",
+        eval_transport="https://example.test/v1",
+        user_sim_model="simulator",
+        user_sim_provider="openai_compatible",
+        user_sim_transport="https://example.test/v1",
+        max_steps=500,
+        concurrency=1,
+        thinking_mode=None,
+        thinking_budget=2048,
+        m3_max_llm_retries=2,
+        task_082_concurrent=True,
+        run_nonce="run-nonce-1",
+        campaign_id="campaign-1",
+        required_eval_model_ids=set(),
+        no_model_coverage_enforced=False,
+    )
+
+    assert not ok
+    assert run["summary"]["invalid_task_ids"] == {"001": ["user-sim-failure"]}
+
+
+def test_unset_model_configs_are_normalized_to_null(tmp_path):
+    manifest, workers = _inputs(tmp_path)
+    receipt = workers / "task_001.json"
+    record = json.loads(receipt.read_text())
+    record.update(
+        eval_model=None,
+        eval_provider=None,
+        eval_model_transport=None,
+        user_sim_model=None,
+        user_sim_provider=None,
+        user_sim_transport=None,
+    )
+    receipt.write_text(json.dumps(record))
+
+    run, ok = aggregate(
+        manifest,
+        workers,
+        model="model",
+        agent_kind="m3",
+        model_transport="https://example.test/v1",
+        eval_model="",
+        eval_provider="",
+        eval_transport="",
+        user_sim_model="",
+        user_sim_provider="",
+        user_sim_transport="",
+        max_steps=500,
+        concurrency=1,
+        thinking_mode=None,
+        thinking_budget=2048,
+        m3_max_llm_retries=2,
+        task_082_concurrent=True,
+        run_nonce="run-nonce-1",
+        campaign_id="campaign-1",
+        required_eval_model_ids=set(),
+        no_model_coverage_enforced=False,
+    )
+
+    assert ok
+    assert run["evaluator"]["provider"] is None
+    assert run["evaluator"]["model"] is None
+    assert run["user_simulator"]["provider"] is None
+    assert run["user_simulator"]["model"] is None
 
 
 def test_agent_aggregate_counts_only_present_valid_records_as_attested(tmp_path):
@@ -158,6 +278,8 @@ def test_agent_aggregate_counts_only_present_valid_records_as_attested(tmp_path)
         ("thinking_mode", "adaptive"),
         ("thinking_budget", 1024),
         ("m3_max_llm_retries", 0),
+        ("user_sim_call_attempts", 1),
+        ("user_sim_successes", True),
         ("eval_provider", "wrong-provider"),
         ("user_sim_model", "wrong-simulator"),
         ("user_sim_provider", "wrong-provider"),
@@ -233,7 +355,9 @@ def test_agent_aggregate_requires_successful_evaluator_call_for_boundary_task(tm
     )
 
     assert not ok
-    assert run["summary"]["invalid_task_ids"] == {"001": ["eval-model-success"]}
+    assert run["summary"]["invalid_task_ids"] == {
+        "001": ["eval-model-failure", "eval-model-success"]
+    }
 
 
 def test_agent_aggregate_allows_zero_evaluator_calls_for_non_boundary_task(tmp_path):

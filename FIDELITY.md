@@ -1,17 +1,50 @@
 # Fidelity boundary — OSWorld 2.0 on E2B
 
-Final immutable guest template: `osworld-v2-gnome:007fa754-617b-4ff0-957a-42ea4ecf5b8a`
+Initial validation-ladder guest template: `osworld-v2-gnome:007fa754-617b-4ff0-957a-42ea4ecf5b8a`
 (`out/osworld-v2-evidence/template-build.json`) — the hardening rebuild of `87d8a46b…`:
 digest-pinned Ubuntu base image, sha256-pinned artifact downloads (VS Code .deb, Zotero,
 REAPER, Compose v2 plugin), OpenBoard + snap-launcher compatibility, and the REAPER
 startup-nag launcher. Earlier ladder receipts record the predecessor build each rung ran
 against (`817519a3…`, `87d8a46b…`); each evidence file cites its own build id, and the
 full-suite/focused receipts under `out/osworld-v2-evidence/full-suite/` cover the changed
-surface on the final build.
+surface on that build. The September 8 MiniMax campaign used
+`osworld-v2-gnome:0d796343-1a70-4bd3-990e-8bb469b3dd20`; evidence for one build does not
+certify another build.
 Release pin: `osworld-v2-2026.08.08`. OSWorld-V2 checkout: `d578d2d4e0dc82b43e270fdaa7fa89d9708cd154`.
 
 This ledger separates what was verified to match a stated reference, what was recorded
 without a reference to match against, and what is excluded or unexercised outright.
+
+## September 8 parallel sample validation
+
+The [13-task receipt](out/osworld-v2-evidence/sample-24/agent-final13-m3-500-20260908.json)
+records a completed campaign with 13 concurrent workers and unique guest sandboxes,
+using `accounts/fireworks/models/minimax-m3`, the upstream M3 agent, a 500-step budget,
+2,048 thinking tokens, and no task retries. Judge and simulator settings explicitly
+overrode upstream defaults with the same MiniMax model; this is not a native-default
+model comparison. The campaign ran the reviewed runtime changes on top of `4506c1e`.
+
+Ten tasks completed evaluation; every recorded score exactly matched its upstream
+`result.txt`. Tasks 083, 093, and 105 scored 0.10, 0.63, and 0.20 respectively; the other
+seven evaluated tasks scored zero. Tasks 035, 053, and 103 remain unscored errors, not
+zero-score substitutions. The aggregate receipt gate correctly **fails**. Its mean is
+over the ten scored tasks only and is not a complete-sample benchmark result. All owned
+campaign sandboxes were cleaned up.
+
+The remaining investigations are separate from accepting the runtime integration:
+
+- **035 — judge response validity:** the model call returned, but the upstream evaluator
+  could not parse its JSON. Response truncation is plausible, not established. Diagnose
+  with upstream raw-response/debug logging; do not repair JSON or alter scores in the port.
+- **053 — upstream M3 action parser:** malformed coordinates raise `IndexError` before
+  action execution. Coordinate validation belongs upstream, not in an E2B-specific parser.
+- **103 — long-action/control failure:** screenshot acquisition failed after 293 steps.
+  Long typing actions can outlive upstream execution timeouts; the final observation
+  failure still needs a matched native/E2B investigation. An E2B contribution is not ruled
+  out, and earlier successful transport does not certify the failed observation.
+
+This supports merging a runtime integration with explicit limitations, not certifying
+full native-result parity or a passing 24-task sample.
 
 ## Matched
 
@@ -96,13 +129,11 @@ without a reference to match against, and what is excluded or unexercised outrig
   3000. Preflight rejects a run containing `task_082` when host port 3000 is unavailable; because
   no other release task owns that listener, it can otherwise run in the concurrent wave without
   routing into another worker's guest.
-- **Evaluator-model transport**: the pinned checkout's OpenAI evaluator backend is
-  patched (`runner/setup.sh`, patch (e)) to a 180 s request timeout with zero SDK
-  retries, replacing upstream's ~600 s timeout plus SDK retry layer. A judge
-  response slower than 180 s or a transient transport error the SDK would have
-  retried therefore fails the evaluator call instead of eventually scoring; this
-  is a deliberate bound on external-call exposure and can differ from upstream
-  scoring on a slow judge endpoint.
+- **Evaluator-model transport**: the pinned evaluator backend retains upstream timeouts and
+  retry behavior. Judge and simulator overrides are opt-in and recorded separately from agent
+  configuration. Failed model calls invalidate a run without rewriting upstream scores or
+  retrying scored attempts. Simulator calls cannot satisfy judge coverage. Runners use real OCR
+  and audio evaluator dependencies through upstream's `full` extra, without dependency stubs.
 - **Per-task wall clock**: `AGENT_TASK_TIMEOUT_SECONDS` (default 14400 s) bounds a
   task rollout; upstream has no per-task deadline. A timed-out task produces a
   fail-closed `task-timeout` receipt (never a score) and is eligible for the
@@ -143,20 +174,17 @@ without a reference to match against, and what is excluded or unexercised outrig
 
 - **VNC: absent entirely.** Headless, same as the V1 conversion; the provider's IP/port
   tuple reports `0` for the VNC slot. Never built, never probed.
-- **LLM-judge evaluator component: unexercised at any nonzero score.** All 10 real-agent
-  rollouts scored 0.0 (`out/osworld-v2-evidence/agent-run-summary.json`
-  `score_summary_reported_not_gated`), so no judge call was ever triggered by a genuinely
-  agent-solved task. `judge_used` is recorded per task from what could be determined from
-  the evaluator's own return shape: `false` for the 3 tasks (103, 026, 069) whose evaluator
-  returned a dict with no LLM-judge key present; `null` — undeterminable — for the other 7
-  (single-phase, no separate result artifact to inspect). Per recon, the judge helpers
-  (`desktop_env/evaluators/metrics/llm_metrics.py`) touch the guest only through getters the
-  harness already uses and then make a host-side LLM API call — no new guest endpoint — but
-  that call path was never exercised end-to-end in this conversion.
+- **Judge, simulator, and multiphase coverage remains incomplete.** The September 8
+  campaign returned responses for six of six judge calls: five on task 079 (score zero),
+  and one on task 035 (invalid JSON, no score). A returned response does not establish
+  evaluator success. No simulator calls occurred; task 026 never reached `ASK_USER`.
+  The earlier task 069 run stopped in phase one, so later-phase execution remains
+  unverified. These gaps require focused integration diagnostics and a matched reference
+  before full parity can be claimed.
 - **Pause/resume: not used.** Deliberate no-pause-by-default stance (median task length
   ~1.6 h, tail to ~3 h — a guest clock jump under pause risks breaking scheduled dynamic
-  events and drops CDP WebSockets). None of this conversion's rollouts (up to ~1064 s /
-  ~17.7 min at a 75-step budget) invoked pause; the feature itself remains untested here.
+  events and drops CDP WebSockets). The validation campaigns did not invoke pause;
+  the feature itself remains untested here.
 - **Proxy-required tasks: not applicable to this release.** Unlike V1 (which excluded
   `proxy=true` tasks), recon found zero references to a proxy-requirement field anywhere in
   the pinned V2 task set — there is nothing to exclude on this axis.
@@ -172,7 +200,7 @@ executed by this conversion.**
 | Reference model / agent | Claude Opus 4.8, max-thinking configuration — published 20.6% binary task-completion on OSWorld 2.0's 108-task release. Secondary published reference: GPT-5.5, ~13–14%, same release. |
 | Published band | 20.6% (Opus 4.8, primary); ~13–14% (GPT-5.5, secondary) — point estimates as published; no confidence interval is publicly stated for either, unlike the Terminal-Bench 2.0 comparison this repository already has (16.0–21.4%). Treat point-estimate comparison as weaker evidence until an interval is available. |
 | Valid-trial count | Not fewer than 1 trial/task (108 rollouts) to reproduce a single comparable point; **recommended minimum for a defensible comparison is 3 trials/task (324 rollouts)** given no published interval to anchor against. Operator sets the final count before authorizing spend. |
-| Release pins | `osworld-v2-2026.08.08`; OSWorld-V2 commit `d578d2d4e0dc82b43e270fdaa7fa89d9708cd154`; guest template `osworld-v2-gnome:007fa754-617b-4ff0-957a-42ea4ecf5b8a`; e2b SDK `2.34.0`; aiohttp `3.14.1`. All are fixed across every trial. |
+| Release pins | `osworld-v2-2026.08.08`; OSWorld-V2 commit `d578d2d4e0dc82b43e270fdaa7fa89d9708cd154`; e2b SDK `2.34.0`; aiohttp `3.14.1`. Select and validate an immutable guest build before the comparison; keep all pins fixed across every trial. |
 | Cost estimate | See below. |
 
 ### Cost estimate (derived from this conversion's own measured numbers)
@@ -206,7 +234,7 @@ sanity-check floor.
   current rate cards before authorization, not assumed from this conversion's numbers.
 - This estimate excludes: fleet warm-up (websites fleet first-boot compose build measured
   524 s, `out/osworld-v2-evidence/services-websites.json`), any repair/retry overhead, and
-  judge-model calls (unexercised in this conversion, so their cost contribution is unknown).
+  judge-model calls (their cost contribution is not measured here).
 
 **NOT AUTHORIZED — separate decision.** This stanza defines and prices the gate; it does
 not request or imply authorization to run it. A parity campaign requires an explicit

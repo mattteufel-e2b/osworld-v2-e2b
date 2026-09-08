@@ -89,7 +89,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-( cd "$OSWORLD_ROOT" && $UV python e2b_relay.py ) 2>"$RELAY_LOG" &
+( cd "$OSWORLD_ROOT" && $UV --locked --extra full python e2b_relay.py ) 2>"$RELAY_LOG" &
 relay_pid=$!
 ready=0
 for _ in $(seq 1 180); do
@@ -106,7 +106,7 @@ if [ "$ready" -ne 1 ]; then
     exit 1
 fi
 
-( cd "$OSWORLD_ROOT" && $UV python "$HERE/harness.py" \
+( cd "$OSWORLD_ROOT" && $UV --locked --extra full python "$HERE/harness.py" \
     --osworld-root "$OSWORLD_ROOT" \
     --tasks-dir "$TASKS_DIR" \
     --manifest "$WORKER_MANIFEST" \

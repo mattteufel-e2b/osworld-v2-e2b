@@ -21,7 +21,9 @@ distinct sandbox port per site, and the Host-mapping proxy maps an incoming
 from __future__ import annotations
 
 import contextlib
+from datetime import datetime, timezone
 import json
+import math
 import os
 import subprocess
 import sys
@@ -120,6 +122,56 @@ def log(msg: str) -> None:
 
 def campaign_id() -> str:
     return require_campaign_id(os.environ.get("OSWORLD_CAMPAIGN_ID"))
+
+
+def campaign_budget_seconds(tasks: list[dict], env: dict) -> int:
+    """Conservative admission budget, including setup, cleanup and retry waves."""
+
+    def positive(name, default):
+        value = int(env.get(name, default))
+        if value <= 0:
+            raise ValueError(f"{name} must be positive")
+        return value
+
+    concurrency = positive("PARALLEL_CONCURRENCY", 80)
+    retries = int(env.get("AGENT_RETRY_ATTEMPTS", 0))
+    retry_concurrency = positive("AGENT_RETRY_CONCURRENCY", 4)
+    solo = int(
+        env.get("RUN_TASK_082_CONCURRENT", "1") == "0"
+        and any(t["id"] == "082" for t in tasks)
+    )
+    waves = math.ceil((len(tasks) - solo) / concurrency) + solo
+    retry_solo = int(any(t["id"] == "082" for t in tasks))
+    waves += retries * (
+        math.ceil((len(tasks) - retry_solo) / retry_concurrency) + retry_solo
+    )
+    per_task = (
+        positive("AGENT_TASK_TIMEOUT_SECONDS", 14400)
+        + 150 * 7  # relay readiness: 150 x (5s request + 2s sleep)
+        + 5 * positive("PROCESS_TERMINATION_GRACE_SECONDS", 10)
+        + positive("RELAY_STOP_REQUEST_TIMEOUT_SECONDS", 10)
+        + positive("AGENT_WATCHDOG_POLL_SECONDS", 5)
+        + 60  # local preflight margin
+    )
+    stagger = float(env.get("AGENT_START_STAGGER_SECONDS", "0.25"))
+    if retries < 0 or not math.isfinite(stagger) or stagger < 0:
+        raise ValueError("retry count and start stagger must be non-negative")
+    return math.ceil(waves * per_task + len(tasks) * (1 + retries) * stagger + 300)
+
+
+def require_campaign_lifetime(runtime: dict, seconds: int) -> None:
+    """Read existing expiry; never resume or extend a stateful fleet implicitly."""
+    for section in ("websites", "gitlab"):
+        entry = runtime[section]
+        if entry.get("campaign_id") != campaign_id():
+            raise RuntimeError(f"{section} belongs to a different campaign")
+        info = Sandbox.get_info(sandbox_id=entry["sandbox_id"])
+        remaining = (info.end_at - datetime.now(timezone.utc)).total_seconds()
+        if remaining < seconds:
+            raise RuntimeError(
+                f"{section} has {remaining:.0f}s remaining; campaign needs {seconds}s. "
+                "Use fresh fleets, higher concurrency, or a smaller manifest."
+            )
 
 
 # --- runtime file -----------------------------------------------------------
@@ -267,18 +319,14 @@ def reuse_or_create(
 def rollback_launch(
     section: str, sbx: Sandbox, created: bool, *, token_file: Path | None = None
 ) -> None:
-    """Roll back a failed launcher run. Always retract the provisional runtime
-    section and host proxy (fail closed: no routing until a launcher succeeds),
-    but destroy the sandbox and its secret file only if THIS run created them —
-    a transient gate failure against a reused healthy fleet must not cost the
-    fleet or its live credential; relaunching then reuses both."""
+    """Stop the proxy; preserve reused fleet identity and credentials for recovery."""
     stop_host_proxy()
-    delete_runtime_section(section, sbx.sandbox_id)
     if not created:
         log(
             f"{section} launch failed against reused sandbox {sbx.sandbox_id}; leaving it running"
         )
         return
+    delete_runtime_section(section, sbx.sandbox_id)
     if token_file is not None:
         token_file.unlink(missing_ok=True)
     try:
@@ -481,3 +529,22 @@ def verify_host_proxy_path(sample_host: str, path: str, port: int) -> dict:
             return {"url": url, "status": resp.status, "body_prefix": body}
     except Exception as exc:  # noqa: BLE001
         return {"url": url, "status": None, "error": repr(exc)[:200]}
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Check fleet lifetime before launching agents"
+    )
+    parser.add_argument(
+        "--check-lifetime", type=Path, required=True, metavar="MANIFEST"
+    )
+    parser.add_argument("--runtime", type=Path, default=RUNTIME_FILE)
+    args = parser.parse_args()
+    load_e2b_key()
+    budget = campaign_budget_seconds(
+        json.loads(args.check_lifetime.read_text())["tasks"], os.environ
+    )
+    require_campaign_lifetime(json.loads(args.runtime.read_text()), budget)
+    log(f"fleet lifetime admission passed: {budget}s budget")

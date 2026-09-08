@@ -34,6 +34,7 @@ uv run --env-file .env.local --locked \
 export GUEST_TEMPLATE=<name:build_id>       # from template/results/template-build.json
 export FLEET_TEMPLATE=<name:build_id>       # from out/osworld-v2-raw/builds/fleet-template-build.json
 runner/setup.sh                             # clone pinned OSWorld-V2 + apply e2b patches
+uv sync --project OSWorld-V2 --locked --extra full               # real evaluator dependencies
 uv run --locked python runner/gated_data.py                     # exact gated revisions + hashes
 
 export OSWORLD_CAMPAIGN_ID="osworld-v2-$(date -u +%Y%m%dT%H%M%SZ)"
@@ -55,9 +56,7 @@ export MODEL_API_KEY="$FIREWORKS_API_KEY"
 export MODEL_BASE_URL="https://api.fireworks.ai/inference"
 export MODEL="accounts/fireworks/models/minimax-m3"
 export AGENT_KIND=m3 M3_THINKING_BUDGET=2048 M3_MAX_LLM_RETRIES=0
-export EVAL_MODEL_API_KEY="$FIREWORKS_API_KEY"
-export EVAL_MODEL_BASE_URL="https://api.fireworks.ai/inference/v1"
-export EVAL_MODEL="accounts/fireworks/models/minimax-m3"
+export OPENAI_API_KEY="..."                # upstream judge / simulator credentials
 
 AGENT_MANIFEST="$RUN_ROOT/full-manifest.json" PARALLEL_CONCURRENCY=80 MAX_STEPS=500 \
     AGENT_TASK_TIMEOUT_SECONDS=28800 RAW_DIR="$RUN_ROOT/agent-raw" \
@@ -74,6 +73,19 @@ Measured pacing on provider-served endpoints runs close to ~40 s/step, and a ful
 rollout at the 500-step budget can then exceed the 14400 s (4 h) `AGENT_TASK_TIMEOUT_SECONDS`
 default well before the agent is actually stuck. Set `AGENT_TASK_TIMEOUT_SECONDS=28800` (8 h,
 as shown above) for full runs so genuinely long tasks aren't cut off mid-rollout.
+
+Agent credentials are separate from upstream judge and simulator credentials. Optional
+`EVAL_MODEL`, `EVAL_MODEL_BASE_URL`, and `EVAL_MODEL_API_KEY` override judge configuration;
+`USER_SIM_MODEL`, `USER_SIM_BASE_URL`, `USER_SIM_API_KEY`, and `USER_SIM_PROVIDER` override
+the simulator. Native `OSWORLD_*` settings take precedence. Changing these settings is an
+experiment configuration change, not runtime parity. A failed judge or simulator model call
+invalidates the run even if upstream returns zero; simulator calls cannot satisfy judge
+coverage. These rollouts are not automatically retried.
+
+Preflight verifies the actual upstream commit and exact adapter patches. The coordinator
+rejects campaigns whose timeout budget, including setup and allowed retries, exceeds either
+fleet's remaining lifetime. Use fresh fleets, higher concurrency, or a smaller manifest;
+fleets are not renewed mid-run.
 
 `run_agent_parallel.sh` stops both service fleets on exit. Set `TEARDOWN_FLEETS_ON_EXIT=0` only
 when deliberately retaining a campaign, and stop it later with
@@ -136,9 +148,7 @@ export MODEL_API_KEY="$FIREWORKS_API_KEY"
 export MODEL_BASE_URL="https://api.fireworks.ai/inference"
 export MODEL="accounts/fireworks/models/minimax-m3"
 export AGENT_KIND=m3 M3_THINKING_BUDGET=2048 M3_MAX_LLM_RETRIES=0
-export EVAL_MODEL_API_KEY="$FIREWORKS_API_KEY"
-export EVAL_MODEL_BASE_URL="https://api.fireworks.ai/inference/v1"
-export EVAL_MODEL="accounts/fireworks/models/minimax-m3"
+export OPENAI_API_KEY="..."                # upstream judge / simulator credentials
 export NO_MODEL_RECEIPT="$RUN_ROOT/no-model.json"
 
 export OSWORLD_CAMPAIGN_ID="osworld-v2-canary-$(date -u +%Y%m%dT%H%M%SZ)"
@@ -171,8 +181,8 @@ AGENT_MANIFEST="$RUN_ROOT/sample24-manifest.json" REQUIRE_NO_MODEL_COVERAGE=1 \
 Only immutable `name:build_id` references are accepted — launchers reject mutable aliases
 and never build templates at runtime. The guest build is promotable only if its exact
 immutable build restores with ≥100 GB usable root capacity. `runner/setup.sh` is idempotent
-(grep-guarded patches); `runner/setup.sh --restore` reverts its patch footprint for pin
-verification.
+(grep-guarded patches); `runner/setup.sh --verify OSWorld-V2` checks the pin and patch
+contents without modifying the checkout.
 
 ## Resource requirements
 

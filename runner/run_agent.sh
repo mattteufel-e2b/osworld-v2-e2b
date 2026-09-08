@@ -25,7 +25,7 @@ MAX_STEPS="${MAX_STEPS:-75}"
 AGENT_TASK_TIMEOUT_SECONDS="${AGENT_TASK_TIMEOUT_SECONDS:-14400}"
 PROCESS_TERMINATION_GRACE_SECONDS="${PROCESS_TERMINATION_GRACE_SECONDS:-10}"
 RELAY_STOP_REQUEST_TIMEOUT_SECONDS="${RELAY_STOP_REQUEST_TIMEOUT_SECONDS:-10}"
-UV=(uv run --python 3.12 --with e2b==2.34.0 --with aiohttp==3.14.1)
+UV=(uv run --locked --extra full --python 3.12 --with e2b==2.34.0 --with aiohttp==3.14.1)
 
 : "${TASK_ID:?TASK_ID required}"
 : "${DOMAIN:?DOMAIN required}"
@@ -97,26 +97,11 @@ export E2B_RELAY_CONTROL_URL="http://127.0.0.1:${CONTROL_PORT}"
 MODEL_BASE_URL="${MODEL_BASE_URL:-https://openrouter.ai/api/v1}"
 MODEL_API_KEY="${MODEL_API_KEY:-${OPENROUTER_API_KEY:-}}"
 : "${MODEL_API_KEY:?MODEL_API_KEY required}"
-export OPENAI_BASE_URL="$MODEL_BASE_URL"
-export OPENAI_API_KEY="$MODEL_API_KEY"
-export ANTHROPIC_BASE_URL="$MODEL_BASE_URL"
-export ANTHROPIC_API_KEY="$MODEL_API_KEY"
 MODEL="${MODEL:-openai/gpt-4o}"
 AGENT_KIND="${AGENT_KIND:-prompt}"
-export MODEL_BASE_URL MODEL AGENT_KIND MAX_STEPS
+export MODEL_BASE_URL MODEL_API_KEY MODEL AGENT_KIND MAX_STEPS
 
-# Some release tasks use model-based evaluators. Keep that endpoint explicit
-# because a provider's Anthropic- and OpenAI-compatible base URLs can differ.
-if [ -n "${EVAL_MODEL_BASE_URL:-}" ]; then
-    export OSWORLD_EVAL_MODEL_PROVIDER="openai_compatible"
-    export OSWORLD_EVAL_MODEL_BASE_URL="$EVAL_MODEL_BASE_URL"
-    export OSWORLD_EVAL_MODEL_API_KEY="${EVAL_MODEL_API_KEY:-$MODEL_API_KEY}"
-    export OSWORLD_EVAL_MODEL_NAME="${EVAL_MODEL:-$MODEL}"
-    export OSWORLD_USER_SIM_PROVIDER="openai_compatible"
-    export OSWORLD_USER_SIM_BASE_URL="$EVAL_MODEL_BASE_URL"
-    export OSWORLD_USER_SIM_API_KEY="${USER_SIM_API_KEY:-${EVAL_MODEL_API_KEY:-$MODEL_API_KEY}}"
-    export OSWORLD_USER_SIM_MODEL="${USER_SIM_MODEL:-${EVAL_MODEL:-$MODEL}}"
-fi
+source "$HERE/model_env.sh"
 
 # ---- fleet + asset wiring (same as validate.sh) ---------------------------
 read -r WEBSITE_HOST_SUFFIX GITLAB_URL < <(python3 - "$SERVICES_DIR/.runtime.json" <<'PY'
@@ -231,7 +216,7 @@ start_in_new_session "$OSWORLD_ROOT" "${UV[@]}" python e2b_relay.py 2>"$RELAY_LO
 relay_pid=$!
 ready=0
 for _ in $(seq 1 150); do
-    if curl -fsS "http://127.0.0.1:${CONTROL_PORT}/health" >/dev/null 2>&1; then ready=1; break; fi
+    if curl -fsS --connect-timeout 2 --max-time 5 "http://127.0.0.1:${CONTROL_PORT}/health" >/dev/null 2>&1; then ready=1; break; fi
     if ! kill -0 "$relay_pid" 2>/dev/null; then break; fi
     sleep 2
 done

@@ -327,6 +327,64 @@ def test_agent_timeout_kills_agent_and_relay_process_trees(tmp_path):
         process.communicate()
 
 
+@pytest.mark.parametrize("task_id", ["001", "082"])
+def test_coordinator_cancellation_reaps_workers_before_stopping_fleets(
+    tmp_path, task_id
+):
+    env = _runner_env(tmp_path, task_timeout=60)
+    env.update(
+        PARALLEL_CONCURRENCY="1",
+        AGENT_RETRY_ATTEMPTS="0",
+        AGENT_START_STAGGER_SECONDS="0",
+        RUN_TASK_082_CONCURRENT="0",
+        REQUIRE_NO_MODEL_COVERAGE="0",
+        TEARDOWN_FLEETS_ON_EXIT="1",
+        FLEET_STOPPED_FILE=str(tmp_path / "fleets-stopped"),
+    )
+    manifest = Path(env["AGENT_MANIFEST"])
+    data = json.loads(manifest.read_text())
+    data["tasks"][0]["id"] = task_id
+    manifest.write_text(json.dumps(data))
+    uv = tmp_path / "bin/uv"
+    uv.write_text(
+        uv.read_text().replace(
+            'case "$*" in',
+            """case "$*" in
+  *fleetlib.py*) exit 0 ;;
+  *hostmap_proxy.py*) exec sleep 60 ;;
+  *stop.py*)
+    for file in "$AGENT_PID_FILE" "$AGENT_CHILD_PID_FILE" "$RELAY_PID_FILE" "$RELAY_CHILD_PID_FILE"; do
+      if kill -0 "$(cat "$file")" 2>/dev/null; then exit 1; fi
+    done
+    touch "$FLEET_STOPPED_FILE"
+    exit 0
+    ;;""",
+        )
+    )
+    process = subprocess.Popen(
+        ["bash", str(ROOT / "runner/run_agent_parallel.sh")],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        for name in ("AGENT_CHILD_PID_FILE", "RELAY_CHILD_PID_FILE"):
+            _wait_for_file(Path(env[name]))
+        process.terminate()
+        stdout, stderr = process.communicate(timeout=20)
+        assert process.returncode == 143, (stdout, stderr)
+        assert Path(env["FLEET_STOPPED_FILE"]).exists(), (stdout, stderr)
+        for pid in _recorded_pids(env):
+            _assert_process_gone(pid)
+    finally:
+        _force_cleanup(env)
+        if process.poll() is None:
+            process.kill()
+        process.communicate()
+
+
 def test_timeout_preserves_completed_receipt(tmp_path):
     env = _runner_env(tmp_path, task_timeout=2)
     env["AGENT_WATCHDOG_POLL_SECONDS"] = "1"

@@ -93,11 +93,14 @@ def aggregate(
             ),
             (record.get("model") == model, "model"),
             (record.get("agent_kind") == agent_kind, "agent-kind"),
-            (record.get("eval_model") == eval_model, "eval-model"),
-            (record.get("eval_provider") == eval_provider, "eval-provider"),
-            (record.get("user_sim_model") == user_sim_model, "user-sim-model"),
+            (record.get("eval_model") == (eval_model or None), "eval-model"),
+            (record.get("eval_provider") == (eval_provider or None), "eval-provider"),
             (
-                record.get("user_sim_provider") == user_sim_provider,
+                record.get("user_sim_model") == (user_sim_model or None),
+                "user-sim-model",
+            ),
+            (
+                record.get("user_sim_provider") == (user_sim_provider or None),
                 "user-sim-provider",
             ),
             (
@@ -126,6 +129,17 @@ def aggregate(
             (valid_eval_successes, "eval-model-success-count"),
         )
         reasons.extend(label for passed, label in checks if not passed)
+        if valid_eval_successes and eval_successes != eval_attempts:
+            reasons.append("eval-model-failure")
+        sim_attempts = record.get("user_sim_call_attempts")
+        sim_successes = record.get("user_sim_successes")
+        if not (
+            type(sim_attempts) is int
+            and sim_attempts >= 0
+            and type(sim_successes) is int
+            and sim_successes == sim_attempts
+        ):
+            reasons.append("user-sim-failure")
         if task_id in required_eval_model_ids and not (
             valid_eval_successes and eval_successes > 0
         ):
@@ -202,14 +216,14 @@ def aggregate(
             "max_llm_retries": m3_max_llm_retries,
         },
         "evaluator": {
-            "provider": eval_provider,
-            "model": eval_model,
+            "provider": eval_provider or None,
+            "model": eval_model or None,
             "transport": expected_eval_transport,
             "required_success_task_ids": sorted(required_eval_model_ids),
         },
         "user_simulator": {
-            "provider": user_sim_provider,
-            "model": user_sim_model,
+            "provider": user_sim_provider or None,
+            "model": user_sim_model or None,
             "transport": expected_user_sim_transport,
         },
         "max_steps": max_steps,

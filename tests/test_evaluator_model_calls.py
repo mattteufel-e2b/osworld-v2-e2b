@@ -80,3 +80,55 @@ def test_failed_call_counts_attempt_only():
         model_client.generate_text("prompt")
     assert tracker.call_attempts == 1
     assert tracker.successes == 0
+
+
+def test_simulator_success_does_not_count_as_a_judge_success():
+    tracker = _tracker_class()()
+    model_client = SimpleNamespace(
+        generate_text=lambda *a, **k: "YES",
+        generate_chat=lambda *a, **k: "user answer",
+    )
+
+    class Simulator:
+        def respond(self, question):
+            return model_client.generate_chat([question])
+
+    tracker.install(
+        model_client=model_client,
+        llm_metrics=SimpleNamespace(generate_text=model_client.generate_text),
+        user_simulator=Simulator,
+    )
+    assert Simulator().respond("question") == "user answer"
+    assert tracker.call_attempts == tracker.successes == 0
+    assert tracker.user_sim_call_attempts == tracker.user_sim_successes == 1
+    assert model_client.generate_text("judge") == "YES"
+    assert tracker.call_attempts == tracker.successes == 1
+
+
+def test_simulator_failure_does_not_leak_context_into_later_judge_calls():
+    tracker = _tracker_class()()
+
+    def failure(*args):
+        raise RuntimeError("simulator unavailable")
+
+    model_client = SimpleNamespace(
+        generate_text=lambda *args: "YES", generate_chat=failure
+    )
+
+    class Simulator:
+        def respond(self, question):
+            try:
+                return model_client.generate_chat([question])
+            except RuntimeError:
+                return "fallback"  # upstream can swallow model failures
+
+    tracker.install(
+        model_client=model_client,
+        llm_metrics=SimpleNamespace(generate_text=model_client.generate_text),
+        user_simulator=Simulator,
+    )
+    assert Simulator().respond("question") == "fallback"
+    assert tracker.user_sim_call_attempts == 1
+    assert tracker.user_sim_successes == 0
+    assert model_client.generate_text("judge") == "YES"
+    assert tracker.call_attempts == tracker.successes == 1

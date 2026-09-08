@@ -31,28 +31,11 @@ import signal
 import subprocess
 import sys
 import time
-import types
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.request import urlopen
 
-
-def _stub(name: str, package: bool = False) -> None:
-    module = types.ModuleType(name)
-    if package:
-        module.__path__ = []
-    module.__getattr__ = lambda attr: type(attr, (), {})
-    sys.modules[name] = module
-
-
-# easyocr (pulls torch) and acoustid are optional, heavy evaluator deps that are
-# intentionally not in the pinned env. Stub them so an evaluator that references
-# one degrades to a scored result instead of raising ImportError -- the evaluator
-# still RUNS, which is all the environment path asserts. Every other evaluator
-# dependency in the pinned checkout is installed for real.
-for dependency in ["easyocr", "acoustid"]:
-    _stub(dependency, package=True)
 
 # task_loader.py is a top-level module in the pinned checkout root (not part of
 # the installed ``desktop_env`` package). validate.sh launches us with cwd set to

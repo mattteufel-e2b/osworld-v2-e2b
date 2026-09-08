@@ -486,8 +486,8 @@ def test_agent_runner_supports_any_openai_compatible_provider_without_secret_log
 
     assert 'MODEL_BASE_URL="${MODEL_BASE_URL:-' in runner
     assert 'MODEL_API_KEY="${MODEL_API_KEY:-' in runner
-    assert 'export OPENAI_BASE_URL="$MODEL_BASE_URL"' in runner
-    assert 'export OPENAI_API_KEY="$MODEL_API_KEY"' in runner
+    assert 'os.environ["MODEL_BASE_URL"]' in agent
+    assert "os.environ['MODEL_API_KEY']" in agent
     assert "OPENROUTER_API_KEY required" not in runner
     assert "class CompatiblePromptAgent" in agent
     assert "No secrets are logged" in agent
@@ -498,8 +498,8 @@ def test_agent_runner_can_use_the_release_m3_scaffold_and_anthropic_transport():
     agent = (ROOT / "runner" / "agent_runner.py").read_text()
 
     assert 'AGENT_KIND="${AGENT_KIND:-prompt}"' in runner
-    assert 'export ANTHROPIC_BASE_URL="$MODEL_BASE_URL"' in runner
-    assert 'export ANTHROPIC_API_KEY="$MODEL_API_KEY"' in runner
+    assert 'base_url=os.environ["MODEL_BASE_URL"]' in agent
+    assert 'api_key=os.environ["MODEL_API_KEY"]' in agent
     assert "from mm_agents.m3 import M3Agent" in agent
     assert 'choices=("prompt", "m3")' in agent
     assert "M3Agent(" in agent
@@ -631,19 +631,6 @@ def test_setup_patches_terminal_none_screenshot_before_agent_runs():
     assert "terminal observation returned screenshot=None" in setup
     assert "if screenshot_bytes is not None:" in setup
     assert "desktop_env/providers/__init__.py lib_run_single.py" in setup
-
-
-def test_agent_worker_routes_user_simulator_to_explicit_compatible_model():
-    runner = (ROOT / "runner" / "run_agent.sh").read_text()
-    agent = (ROOT / "runner" / "agent_runner.py").read_text()
-
-    assert 'export OSWORLD_USER_SIM_PROVIDER="openai_compatible"' in runner
-    assert 'export OSWORLD_USER_SIM_BASE_URL="$EVAL_MODEL_BASE_URL"' in runner
-    assert (
-        'export OSWORLD_USER_SIM_MODEL="${USER_SIM_MODEL:-${EVAL_MODEL:-$MODEL}}"'
-        in runner
-    )
-    assert '"user_sim_model": os.environ.get("OSWORLD_USER_SIM_MODEL") or None' in agent
 
 
 def test_template_build_smoke_covers_ipv4_and_ipv6_protected_ranges():
