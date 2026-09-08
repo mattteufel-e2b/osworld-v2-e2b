@@ -43,6 +43,7 @@ def aggregate(
     run_nonce: str,
     campaign_id: str,
     required_eval_model_ids: set[str],
+    no_model_coverage_enforced: bool,
 ) -> tuple[dict, bool]:
     manifest = json.loads(manifest_path.read_text())
     expected_ids = [item["id"] for item in manifest["tasks"]]
@@ -219,6 +220,7 @@ def aggregate(
             "host_proxy_owned_for_campaign": True,
             "retried_task_ids": retried_task_ids,
             "implicit_retries": bool(retried_task_ids),
+            "no_model_coverage_enforced": no_model_coverage_enforced,
         },
         "records": records,
         "summary": summary,
@@ -288,6 +290,7 @@ def main() -> int:
         run_nonce=args.run_nonce,
         campaign_id=args.campaign_id,
         required_eval_model_ids=required_eval_model_ids,
+        no_model_coverage_enforced=args.no_model_receipt is not None,
     )
     atomic_write_json(args.output, run)
     print(json.dumps(run["summary"], sort_keys=True))

@@ -87,6 +87,7 @@ def test_agent_aggregate_accepts_complete_attested_record(tmp_path):
         run_nonce="run-nonce-1",
         campaign_id="campaign-1",
         required_eval_model_ids={"001"},
+        no_model_coverage_enforced=False,
     )
 
     assert ok
@@ -131,6 +132,7 @@ def test_agent_aggregate_counts_only_present_valid_records_as_attested(tmp_path)
         run_nonce="run-nonce-1",
         campaign_id="campaign-1",
         required_eval_model_ids={"001"},
+        no_model_coverage_enforced=False,
     )
 
     assert not ok
@@ -192,6 +194,7 @@ def test_agent_aggregate_rejects_unattested_or_invalid_records(tmp_path, field, 
         run_nonce="run-nonce-1",
         campaign_id="campaign-1",
         required_eval_model_ids={"001"},
+        no_model_coverage_enforced=False,
     )
 
     assert not ok
@@ -226,6 +229,7 @@ def test_agent_aggregate_requires_successful_evaluator_call_for_boundary_task(tm
         run_nonce="run-nonce-1",
         campaign_id="campaign-1",
         required_eval_model_ids={"001"},
+        no_model_coverage_enforced=False,
     )
 
     assert not ok
@@ -261,6 +265,7 @@ def test_agent_aggregate_allows_zero_evaluator_calls_for_non_boundary_task(tmp_p
         run_nonce="run-nonce-1",
         campaign_id="campaign-1",
         required_eval_model_ids=set(),
+        no_model_coverage_enforced=False,
     )
 
     assert ok
@@ -292,10 +297,12 @@ def test_execution_block_reports_actual_retries(tmp_path):
         run_nonce="run-nonce-1",
         campaign_id="campaign-1",
         required_eval_model_ids={"001"},
+        no_model_coverage_enforced=True,
     )
 
     assert run["execution"]["retried_task_ids"] == ["001"]
     assert run["execution"]["implicit_retries"] is True
+    assert run["execution"]["no_model_coverage_enforced"] is True
 
 
 def test_execution_block_without_retries(tmp_path):
@@ -322,10 +329,12 @@ def test_execution_block_without_retries(tmp_path):
         run_nonce="run-nonce-1",
         campaign_id="campaign-1",
         required_eval_model_ids={"001"},
+        no_model_coverage_enforced=False,
     )
 
     assert run["execution"]["retried_task_ids"] == []
     assert run["execution"]["implicit_retries"] is False
+    assert run["execution"]["no_model_coverage_enforced"] is False
 
 
 def test_agent_aggregate_accepts_null_m3_retry_policy_for_prompt_agent(tmp_path):
@@ -358,9 +367,18 @@ def test_agent_aggregate_accepts_null_m3_retry_policy_for_prompt_agent(tmp_path)
         run_nonce="run-nonce-1",
         campaign_id="campaign-1",
         required_eval_model_ids={"001"},
+        no_model_coverage_enforced=False,
     )
 
     assert ok
+
+
+def test_main_wiring_passes_no_model_coverage_enforced_from_receipt_flag():
+    """main() must derive no_model_coverage_enforced from whether
+    --no-model-receipt was supplied, not from a separate flag (no new CLI
+    flag was introduced for this)."""
+    source = Path(aggregate_agent.__file__).read_text()
+    assert "no_model_coverage_enforced=args.no_model_receipt is not None" in source
 
 
 def test_main_writes_campaign_receipt_atomically_with_private_perms(tmp_path, monkeypatch):
@@ -396,4 +414,8 @@ def test_main_writes_campaign_receipt_atomically_with_private_perms(tmp_path, mo
     # this proves main() no longer writes the campaign receipt with a plain
     # write_text (which would inherit the process umask instead).
     assert stat.S_IMODE(output.stat().st_mode) == 0o600
-    assert json.loads(output.read_text())["run_id"] == "run-nonce-1"
+    receipt = json.loads(output.read_text())
+    assert receipt["run_id"] == "run-nonce-1"
+    # No --no-model-receipt was passed on argv, so main() must record the
+    # coverage gate as unenforced rather than silently defaulting to True.
+    assert receipt["execution"]["no_model_coverage_enforced"] is False

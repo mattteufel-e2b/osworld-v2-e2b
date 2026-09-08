@@ -527,7 +527,7 @@ def test_full_agent_coordinator_bounds_sandboxes_and_namespaces_task_service_por
     assert "evaluator-or-agent" not in RETRYABLE_ERROR_CAUSES
     assert 'python3 "$HERE/aggregate_agent.py"' in coordinator
     assert 'python3 "$HERE/model_coverage.py"' in coordinator
-    assert 'REQUIRE_NO_MODEL_COVERAGE="${REQUIRE_NO_MODEL_COVERAGE:-1}"' in coordinator
+    assert 'REQUIRE_NO_MODEL_COVERAGE="${REQUIRE_NO_MODEL_COVERAGE:-0}"' in coordinator
     assert 'AGENT_RETRY_CONCURRENCY="${AGENT_RETRY_CONCURRENCY:-4}"' in coordinator
     assert (
         'AGENT_START_STAGGER_SECONDS="${AGENT_START_STAGGER_SECONDS:-0.25}"'

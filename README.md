@@ -39,7 +39,58 @@ uv run --locked python runner/gated_data.py                     # exact gated re
 export OSWORLD_CAMPAIGN_ID="osworld-v2-$(date -u +%Y%m%dT%H%M%SZ)"
 uv run --env-file .env.local --locked python services/websites/launch.py
 uv run --env-file .env.local --locked python services/gitlab/launch.py
+```
 
+That brings up the pinned template, the checkout, gated task data, and both service fleets.
+Running the benchmark is the default next step — no separate opt-in is required. Render the
+full 108-task manifest against the pinned template, export the model endpoint (Fireworks
+shown; any OpenAI-compatible endpoint works), and launch the parallel driver:
+
+```bash
+RUN_ROOT="$(mktemp -d)"
+python3 runner/render_manifest.py --source validation/full-manifest.json \
+    --template "$GUEST_TEMPLATE" --output "$RUN_ROOT/full-manifest.json"
+
+export MODEL_API_KEY="$FIREWORKS_API_KEY"
+export MODEL_BASE_URL="https://api.fireworks.ai/inference"
+export MODEL="accounts/fireworks/models/minimax-m3"
+export AGENT_KIND=m3 M3_THINKING_BUDGET=2048 M3_MAX_LLM_RETRIES=0
+export EVAL_MODEL_API_KEY="$FIREWORKS_API_KEY"
+export EVAL_MODEL_BASE_URL="https://api.fireworks.ai/inference/v1"
+export EVAL_MODEL="accounts/fireworks/models/minimax-m3"
+
+AGENT_MANIFEST="$RUN_ROOT/full-manifest.json" PARALLEL_CONCURRENCY=80 MAX_STEPS=500 \
+    AGENT_TASK_TIMEOUT_SECONDS=28800 RAW_DIR="$RUN_ROOT/agent-raw" \
+    OUTPUT="$RUN_ROOT/agent-full.json" runner/run_agent_parallel.sh
+```
+
+The campaign receipt lands at `$OUTPUT`; watch stdout for the `AGENT RECEIPT GATE: PASS`/`FAIL`
+line, which gates on complete, attested, uniquely-sandboxed records for every task in the
+manifest. `REQUIRE_NO_MODEL_COVERAGE` defaults to `0` here, so a full benchmark run needs no
+preceding no-model receipt — that coverage gate is a maintainer-only opt-in, covered in
+"Release validation (maintainers)" below.
+
+Measured pacing on provider-served endpoints runs close to ~40 s/step, and a full-length
+rollout at the 500-step budget can then exceed the 14400 s (4 h) `AGENT_TASK_TIMEOUT_SECONDS`
+default well before the agent is actually stuck. Set `AGENT_TASK_TIMEOUT_SECONDS=28800` (8 h,
+as shown above) for full runs so genuinely long tasks aren't cut off mid-rollout.
+
+`run_agent_parallel.sh` stops both service fleets on exit. Set `TEARDOWN_FLEETS_ON_EXIT=0` only
+when deliberately retaining a campaign, and stop it later with
+`uv run --env-file .env.local --locked python services/stop.py --campaign-id "$OSWORLD_CAMPAIGN_ID"`.
+Run-scoped raw trajectories, service receipts, and secrets stay in ignored paths; committed
+evidence is published only after allowlist sanitization.
+
+## Release validation (maintainers)
+
+This validates every environment path across all 108 tasks with zero external model calls,
+then optionally gates a full-model benchmark receipt on that coverage. It's how maintainers
+qualify a release before it ships — it is **not** required to run the benchmark (see Quick
+start above). When the gate is enabled, the resulting campaign receipt records
+`execution.no_model_coverage_enforced: true`, so gated and ungated runs stay distinguishable
+from the receipt alone.
+
+```bash
 RUN_ROOT="$(mktemp -d)"
 python3 runner/render_manifest.py --source validation/full-manifest.json \
     --template "$GUEST_TEMPLATE" --output "$RUN_ROOT/full-manifest.json"
@@ -60,7 +111,20 @@ The validation coordinator stops both service fleets on exit. Set
 Run-scoped raw trajectories, service receipts, and secrets stay in ignored paths; committed
 evidence is published only after allowlist sanitization.
 
-## Full-model validation sample
+To gate a full-model run on that coverage instead of running it ungated, set
+`REQUIRE_NO_MODEL_COVERAGE=1` and point `NO_MODEL_RECEIPT` at the receipt above — this is the
+same `run_agent_parallel.sh` invocation as Quick start, plus those two variables:
+
+```bash
+AGENT_MANIFEST="$RUN_ROOT/full-manifest.json" REQUIRE_NO_MODEL_COVERAGE=1 \
+    NO_MODEL_RECEIPT="$RUN_ROOT/no-model.json" PARALLEL_CONCURRENCY=80 MAX_STEPS=500 \
+    AGENT_TASK_TIMEOUT_SECONDS=28800 RAW_DIR="$RUN_ROOT/agent-raw" \
+    OUTPUT="$RUN_ROOT/agent-full.json" runner/run_agent_parallel.sh
+```
+
+`REQUIRE_NO_MODEL_COVERAGE=1` fails closed with `NO_MODEL_RECEIPT is required for full-agent
+coverage` unless `NO_MODEL_RECEIPT` is also set, and then runs `model_coverage.py` against it
+before any agent launches.
 
 After the all-task no-model run passes, use one fresh fleet campaign for a three-step canary and
 another for the 24-task representative sample. The sample covers selected model-based evaluator
@@ -97,7 +161,8 @@ for task_id in 003 008 011 015 019 026 035 038 046 048 050 053 057 059 067 069 0
 done
 python3 runner/render_manifest.py --source validation/full-manifest.json \
     --template "$GUEST_TEMPLATE" --output "$RUN_ROOT/sample24-manifest.json" "${sample_args[@]}"
-AGENT_MANIFEST="$RUN_ROOT/sample24-manifest.json" PARALLEL_CONCURRENCY=12 MAX_STEPS=500 \
+AGENT_MANIFEST="$RUN_ROOT/sample24-manifest.json" REQUIRE_NO_MODEL_COVERAGE=1 \
+    PARALLEL_CONCURRENCY=12 MAX_STEPS=500 \
     AGENT_TASK_TIMEOUT_SECONDS=14400 AGENT_RETRY_ATTEMPTS=0 AGENT_START_STAGGER_SECONDS=1 \
     RUN_TASK_082_CONCURRENT=1 RAW_DIR="$RUN_ROOT/sample24-raw" \
     OUTPUT="$RUN_ROOT/sample24.json" runner/run_agent_parallel.sh
