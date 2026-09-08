@@ -435,7 +435,9 @@ def test_retry_allowlist_includes_task_timeout():
     from receipt_safety import RETRYABLE_ERROR_CAUSES
 
     assert "task-timeout" in RETRYABLE_ERROR_CAUSES
-    assert "evaluator-or-agent" not in RETRYABLE_ERROR_CAUSES  # scored attempts stay unretried
+    assert (
+        "evaluator-or-agent" not in RETRYABLE_ERROR_CAUSES
+    )  # scored attempts stay unretried
 
 
 def test_retry_selection_procsub_survives_macos_bash_3_2(tmp_path):
@@ -461,9 +463,7 @@ def test_retry_selection_procsub_survives_macos_bash_3_2(tmp_path):
     source_lines = (ROOT / "runner" / "run_agent_parallel.sh").read_text().splitlines()
     start = next(i for i, line in enumerate(source_lines) if "failed_rows=()" in line)
     end = next(
-        i
-        for i, line in enumerate(source_lines)
-        if i > start and line.strip() == ")"
+        i for i, line in enumerate(source_lines) if i > start and line.strip() == ")"
     )
     selection_lines = source_lines[start : end + 1]
     assert any("retry_candidates.py" in line for line in selection_lines), (

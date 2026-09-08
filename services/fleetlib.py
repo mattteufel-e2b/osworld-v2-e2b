@@ -275,7 +275,9 @@ def rollback_launch(
     stop_host_proxy()
     delete_runtime_section(section, sbx.sandbox_id)
     if not created:
-        log(f"{section} launch failed against reused sandbox {sbx.sandbox_id}; leaving it running")
+        log(
+            f"{section} launch failed against reused sandbox {sbx.sandbox_id}; leaving it running"
+        )
         return
     if token_file is not None:
         token_file.unlink(missing_ok=True)

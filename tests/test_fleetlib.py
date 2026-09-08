@@ -599,7 +599,10 @@ class FleetRuntimePolicyTests(unittest.TestCase):
             ),
             patch.dict(
                 os.environ,
-                {"OSWORLD_CAMPAIGN_ID": "campaign-B", "FLEET_TEMPLATE": IMMUTABLE_FLEET},
+                {
+                    "OSWORLD_CAMPAIGN_ID": "campaign-B",
+                    "FLEET_TEMPLATE": IMMUTABLE_FLEET,
+                },
             ),
             patch.object(fleetlib, "_connect", return_value=stale),
             patch.object(fleetlib.Sandbox, "create") as create,

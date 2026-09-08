@@ -12,7 +12,13 @@ from urllib.parse import urlsplit, urlunsplit
 # and write_timeout_receipt.py. "evaluator-or-agent" is a scored model attempt
 # and is deliberately never retried; a shell-enforced deadline ("task-timeout") is.
 RETRYABLE_ERROR_CAUSES = frozenset(
-    {"transport", "chrome-cdp", "environment-setup", "reset-or-observation", "task-timeout"}
+    {
+        "transport",
+        "chrome-cdp",
+        "environment-setup",
+        "reset-or-observation",
+        "task-timeout",
+    }
 )
 
 
@@ -44,7 +50,11 @@ def atomic_write_json(path: Path, payload: dict) -> None:
     staged_path = None
     try:
         with tempfile.NamedTemporaryFile(
-            mode="w", dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", delete=False
+            mode="w",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
         ) as staged:
             staged_path = Path(staged.name)
             os.chmod(staged_path, 0o600)

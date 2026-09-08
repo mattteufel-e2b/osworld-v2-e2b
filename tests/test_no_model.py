@@ -101,14 +101,20 @@ def test_validation_gate_rejects_missing_counter(tmp_path):
     # A record missing external_model_calls must invalidate the run — it must
     # never default to -1 and cancel another record's genuine call count.
     manifest = tmp_path / "manifest.json"
-    manifest.write_text(json.dumps({
-        "template": "t:1", "osworld_commit": "a" * 40,
-        "tasks": [{"id": "001", "domain": "d"}, {"id": "002", "domain": "d"}],
-    }))
+    manifest.write_text(
+        json.dumps(
+            {
+                "template": "t:1",
+                "osworld_commit": "a" * 40,
+                "tasks": [{"id": "001", "domain": "d"}, {"id": "002", "domain": "d"}],
+            }
+        )
+    )
     workers = tmp_path / "workers"
     workers.mkdir()
     base = {
-        "path_status": "PATH_PASS", "evaluator_ran": True,
+        "path_status": "PATH_PASS",
+        "evaluator_ran": True,
         "eval_model_call_attempts": 0,
         "started_at": "2026-01-01T00:00:00+00:00",
         "finished_at": "2026-01-01T00:00:01+00:00",
@@ -120,7 +126,9 @@ def test_validation_gate_rejects_missing_counter(tmp_path):
     output = tmp_path / "receipt.json"
     proc = subprocess.run(
         [sys.executable, "-", str(manifest), str(workers), str(output), "2"],
-        input=_validate_parallel_heredoc(), capture_output=True, text=True,
+        input=_validate_parallel_heredoc(),
+        capture_output=True,
+        text=True,
     )
     assert proc.returncode == 1, proc.stdout + proc.stderr
     assert "VALIDATION GATE: FAIL" in proc.stdout

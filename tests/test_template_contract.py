@@ -522,7 +522,10 @@ def test_full_agent_coordinator_bounds_sandboxes_and_namespaces_task_service_por
     # Retry-candidate selection is delegated to a standalone script rather than
     # a heredoc embedded in a process substitution: macOS system bash (3.2)
     # mis-parses that construct and silently drops the retry wave.
-    assert 'python3 "$HERE/retry_candidates.py" "$MANIFEST" "$RAW_DIR/workers"' in coordinator
+    assert (
+        'python3 "$HERE/retry_candidates.py" "$MANIFEST" "$RAW_DIR/workers"'
+        in coordinator
+    )
     assert "task-timeout" in RETRYABLE_ERROR_CAUSES
     assert "evaluator-or-agent" not in RETRYABLE_ERROR_CAUSES
     assert 'python3 "$HERE/aggregate_agent.py"' in coordinator

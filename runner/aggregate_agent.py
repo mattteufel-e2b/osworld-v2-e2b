@@ -180,7 +180,7 @@ def aggregate(
     # is the ground truth for whether the retry wave replaced any receipt.
     retried_task_ids = sorted(
         {
-            path.name[len("task_"):].split("_before_retry_")[0]
+            path.name[len("task_") :].split("_before_retry_")[0]
             for path in worker_dir.glob("task_*_before_retry_*.json")
         }
     )

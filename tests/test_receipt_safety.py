@@ -35,7 +35,7 @@ def test_atomic_write_json_is_private_and_replaces(tmp_path):
     receipt_safety.atomic_write_json(target, {"a": 1})
     assert json.loads(target.read_text()) == {"a": 1}
     assert stat.S_IMODE(target.stat().st_mode) == 0o600
-    assert not list(tmp_path.glob(".receipt.json.*"))   # no staged leftovers
+    assert not list(tmp_path.glob(".receipt.json.*"))  # no staged leftovers
 
 
 def test_bare_python3_receipt_scripts_run_on_310():
@@ -47,6 +47,8 @@ def test_bare_python3_receipt_scripts_run_on_310():
 
 
 def test_agent_runner_receipt_write_is_atomic():
-    source = (Path(__file__).resolve().parents[1] / "runner" / "agent_runner.py").read_text()
+    source = (
+        Path(__file__).resolve().parents[1] / "runner" / "agent_runner.py"
+    ).read_text()
     assert "atomic_write_json" in source
     assert "args.output.write_text" not in source

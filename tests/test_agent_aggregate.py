@@ -381,30 +381,50 @@ def test_main_wiring_passes_no_model_coverage_enforced_from_receipt_flag():
     assert "no_model_coverage_enforced=args.no_model_receipt is not None" in source
 
 
-def test_main_writes_campaign_receipt_atomically_with_private_perms(tmp_path, monkeypatch):
+def test_main_writes_campaign_receipt_atomically_with_private_perms(
+    tmp_path, monkeypatch
+):
     manifest, workers = _inputs(tmp_path)
     output = tmp_path / "campaign-receipt.json"
     argv = [
         "aggregate_agent.py",
-        "--manifest", str(manifest),
-        "--worker-dir", str(workers),
-        "--output", str(output),
-        "--model", "model",
-        "--agent-kind", "m3",
-        "--model-transport", "https://example.test/v1",
-        "--eval-model", "judge",
-        "--eval-provider", "openai_compatible",
-        "--eval-transport", "https://example.test/v1",
-        "--user-sim-model", "simulator",
-        "--user-sim-provider", "openai_compatible",
-        "--user-sim-transport", "https://example.test/v1",
-        "--max-steps", "500",
-        "--concurrency", "1",
-        "--thinking-budget", "2048",
-        "--m3-max-llm-retries", "2",
+        "--manifest",
+        str(manifest),
+        "--worker-dir",
+        str(workers),
+        "--output",
+        str(output),
+        "--model",
+        "model",
+        "--agent-kind",
+        "m3",
+        "--model-transport",
+        "https://example.test/v1",
+        "--eval-model",
+        "judge",
+        "--eval-provider",
+        "openai_compatible",
+        "--eval-transport",
+        "https://example.test/v1",
+        "--user-sim-model",
+        "simulator",
+        "--user-sim-provider",
+        "openai_compatible",
+        "--user-sim-transport",
+        "https://example.test/v1",
+        "--max-steps",
+        "500",
+        "--concurrency",
+        "1",
+        "--thinking-budget",
+        "2048",
+        "--m3-max-llm-retries",
+        "2",
         "--task-082-concurrent",
-        "--run-nonce", "run-nonce-1",
-        "--campaign-id", "campaign-1",
+        "--run-nonce",
+        "run-nonce-1",
+        "--campaign-id",
+        "campaign-1",
     ]
     monkeypatch.setattr(sys, "argv", argv)
 
