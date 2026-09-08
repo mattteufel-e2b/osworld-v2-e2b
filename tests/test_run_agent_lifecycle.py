@@ -245,6 +245,9 @@ def _force_cleanup(env: dict[str, str]) -> None:
 
 def test_agent_timeout_kills_agent_and_relay_process_trees(tmp_path):
     env = _runner_env(tmp_path, task_timeout=1)
+    # The production watchdog polls every 5s; this test's 10s cleanup bound
+    # measures kill/cleanup latency, not poll latency, so poll fast here.
+    env["AGENT_WATCHDOG_POLL_SECONDS"] = "1"
     started = time.monotonic()
     process = subprocess.Popen(
         ["bash", str(ROOT / "runner" / "run_agent.sh")],
