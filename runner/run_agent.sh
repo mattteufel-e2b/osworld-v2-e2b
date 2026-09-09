@@ -87,6 +87,8 @@ MODEL="${MODEL:-openai/gpt-4o}"
 AGENT_KIND="${AGENT_KIND:-prompt}"
 export MODEL_BASE_URL MODEL_API_KEY MODEL AGENT_KIND MAX_STEPS
 
+source "$HERE/model_env.sh"
+
 # ---- fleet + asset wiring (same as validate.sh) ---------------------------
 read -r WEBSITE_HOST_SUFFIX GITLAB_URL < <(python3 - "$SERVICES_DIR/.runtime.json" <<'PY'
 import json, sys
