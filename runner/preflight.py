@@ -24,6 +24,45 @@ def fail(message: str) -> None:
     raise SystemExit(f"ERROR: {message}")
 
 
+def require_model_credentials() -> None:
+    """Resolve the judge (and any overridden simulator) API key exactly the way
+    upstream model_client._build_config does, but now: upstream resolves it
+    inside the first evaluator call and llm_metrics turns that failure into a
+    0.0 score, so a missing key would otherwise surface hours later on every
+    judged task.
+
+    Upstream's order is: literal API_KEY, then API_KEY_ENV, then the caller's
+    default key variable, which every upstream caller leaves at OPENAI_API_KEY
+    (bedrock needs no key). The per-provider table in model_client is only
+    reached after that default, so it never applies; do not mirror it here."""
+    if os.environ.get("OSWORLD_EVAL_MODEL_MODE") == "stub":
+        return
+    targets = [("judge model", ("OSWORLD_EVAL_MODEL",))]
+    if any(
+        os.environ.get(f"OSWORLD_USER_SIM_{suffix}")
+        for suffix in ("MODEL", "PROVIDER", "BASE_URL", "API_KEY", "API_KEY_ENV")
+    ):
+        # The simulator inherits judge settings it does not override itself.
+        targets.append(("user simulator", ("OSWORLD_USER_SIM", "OSWORLD_EVAL_MODEL")))
+    for label, prefixes in targets:
+
+        def first(suffix: str) -> str | None:
+            for prefix in prefixes:
+                if os.environ.get(f"{prefix}_{suffix}"):
+                    return os.environ[f"{prefix}_{suffix}"]
+            return None
+
+        provider = first("PROVIDER") or "openai"
+        if provider == "bedrock" or first("API_KEY"):
+            continue
+        key_env = first("API_KEY_ENV") or "OPENAI_API_KEY"
+        if not os.environ.get(key_env):
+            fail(
+                f"{label} API key unresolved for provider {provider!r}: "
+                f"set {prefixes[0]}_API_KEY or {key_env}"
+            )
+
+
 def require_file(path: Path, label: str) -> None:
     if not path.is_file():
         fail(f"required {label} missing: {path}")
@@ -92,6 +131,7 @@ def main() -> int:
         fail(f"GitLab token file is empty: {token_path}")
     if token_path.read_text().strip() != runtime["gitlab"]["private_token"]:
         fail("GitLab token file does not match service runtime")
+    require_model_credentials()
 
     if not args.osworld_root.is_dir():
         fail(f"required patched OSWorld checkout missing: {args.osworld_root}")

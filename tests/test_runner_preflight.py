@@ -224,6 +224,7 @@ def test_preflight_rejects_busy_canonical_task_082_host_port(tmp_path, monkeypat
 
     monkeypatch.setenv("GUEST_TEMPLATE", IMMUTABLE_GUEST)
     monkeypatch.setenv("OSWORLD_CAMPAIGN_ID", "test-campaign")
+    monkeypatch.setenv("OSWORLD_EVAL_MODEL_API_KEY", "judge-key")
     monkeypatch.setattr(
         preflight, "validate_release_lock", lambda _path: {"tasks_data": {}}
     )
@@ -257,3 +258,115 @@ def test_preflight_rejects_busy_canonical_task_082_host_port(tmp_path, monkeypat
             preflight.main()
     finally:
         listener.close()
+
+
+def _admissible_inputs(tmp_path, monkeypatch):
+    sys.path.insert(0, str(ROOT / "runner"))
+    import preflight
+
+    osworld, tasks, manifest, services = _minimal_inputs(tmp_path)
+    (osworld / "e2b_relay.py").write_text("# test relay\n")
+    runtime = {
+        "websites": {
+            "sandbox_id": "website-sandbox",
+            "campaign_id": "test-campaign",
+            "template": "fleet:11111111-2222-3333-4444-555555555555",
+            "traffic_token": "website-traffic-token",
+            "public_host_suffix": "127.0.0.1.nip.io:8090",
+            "sites": {"mailhub": {}},
+        },
+        "gitlab": {
+            "sandbox_id": "gitlab-sandbox",
+            "campaign_id": "test-campaign",
+            "template": "fleet:11111111-2222-3333-4444-555555555555",
+            "traffic_token": "gitlab-traffic-token",
+            "url": "http://gitlab.127.0.0.1.nip.io:8090",
+            "private_token": "test-private-token",
+        },
+    }
+    (services / ".runtime.json").write_text(json.dumps(runtime))
+    (services / ".runtime.json").chmod(0o600)
+    (services / ".gitlab-token").write_text("test-private-token")
+    (services / ".gitlab-token").chmod(0o600)
+    for name in list(os.environ):
+        if name.startswith(("OSWORLD_EVAL_MODEL", "OSWORLD_USER_SIM")) or name in {
+            "OPENAI_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "GEMINI_API_KEY",
+        }:
+            monkeypatch.delenv(name)
+    monkeypatch.setenv("GUEST_TEMPLATE", IMMUTABLE_GUEST)
+    monkeypatch.setenv("OSWORLD_CAMPAIGN_ID", "test-campaign")
+    monkeypatch.setattr(
+        preflight,
+        "validate_release_lock",
+        lambda _path: {"tasks_data": {}, "code": {"commit": "a" * 40}},
+    )
+    monkeypatch.setattr(preflight, "verify_task_snapshot", lambda *_a, **_k: 1)
+    monkeypatch.setattr(
+        preflight.subprocess,
+        "run",
+        lambda *_a, **_k: subprocess.CompletedProcess([], 0, "", ""),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "preflight.py",
+            "--osworld-root",
+            str(osworld),
+            "--tasks-dir",
+            str(tasks),
+            "--services-dir",
+            str(services),
+            "--manifest",
+            str(manifest),
+        ],
+    )
+    return preflight
+
+
+def test_preflight_requires_resolvable_judge_and_simulator_credentials(
+    tmp_path, monkeypatch
+):
+    # Upstream resolves the judge key only inside the first evaluator call, and
+    # llm_metrics converts that failure to a 0.0 score; without this check a
+    # missing key surfaces hours later as an unretryable receipt on every task.
+    preflight = _admissible_inputs(tmp_path, monkeypatch)
+    with pytest.raises(SystemExit, match="judge model.*OPENAI_API_KEY"):
+        preflight.main()
+
+    # Upstream's default key variable is OPENAI_API_KEY for EVERY provider
+    # (model_client._build_config consults the caller default before its
+    # per-provider table); a provider-named key alone is not enough.
+    monkeypatch.setenv("OSWORLD_EVAL_MODEL_PROVIDER", "anthropic")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-key")
+    with pytest.raises(SystemExit, match="judge model.*OPENAI_API_KEY"):
+        preflight.main()
+    monkeypatch.setenv("OSWORLD_EVAL_MODEL_API_KEY_ENV", "JUDGE_KEY")
+    with pytest.raises(SystemExit, match="judge model.*JUDGE_KEY"):
+        preflight.main()
+    monkeypatch.setenv("JUDGE_KEY", "judge-key")
+    assert preflight.main() == 0
+    monkeypatch.delenv("OSWORLD_EVAL_MODEL_API_KEY_ENV")
+    monkeypatch.setenv("OSWORLD_EVAL_MODEL_PROVIDER", "bedrock")  # no key needed
+    assert preflight.main() == 0
+    monkeypatch.setenv("OSWORLD_EVAL_MODEL_PROVIDER", "anthropic")
+    monkeypatch.setenv("OPENAI_API_KEY", "judge-key")
+    assert preflight.main() == 0
+
+    # The simulator inherits judge settings it does not override (as upstream
+    # does); only an explicit simulator key variable of its own is checked.
+    monkeypatch.setenv("OSWORLD_USER_SIM_MODEL", "sim-model")
+    assert preflight.main() == 0
+    monkeypatch.setenv("OSWORLD_USER_SIM_API_KEY_ENV", "SIM_KEY")
+    with pytest.raises(SystemExit, match="user simulator.*SIM_KEY"):
+        preflight.main()
+    monkeypatch.setenv("OSWORLD_USER_SIM_API_KEY", "sim-key")
+    assert preflight.main() == 0
+
+
+def test_preflight_skips_credentials_for_no_model_validation(tmp_path, monkeypatch):
+    preflight = _admissible_inputs(tmp_path, monkeypatch)
+    monkeypatch.setenv("OSWORLD_EVAL_MODEL_MODE", "stub")
+    assert preflight.main() == 0
