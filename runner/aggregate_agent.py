@@ -51,6 +51,7 @@ def aggregate(
     expected_eval_transport = public_transport(eval_transport)
     expected_user_sim_transport = public_transport(user_sim_transport)
     records: list[dict] = []
+    accepted_records: list[dict] = []
     invalid: dict[str, list[str]] = {}
     attested = 0
     expected_thinking_budget = thinking_budget if thinking_budget else None
@@ -148,11 +149,12 @@ def aggregate(
             invalid[task_id] = reasons
         else:
             attested += 1
+            accepted_records.append(record)
         records.append(record)
 
     scores = [
         float(record["score"])
-        for record in records
+        for record in accepted_records
         if _valid_score(record.get("score"))
     ]
     sandbox_ids = [

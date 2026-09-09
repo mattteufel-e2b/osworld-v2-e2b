@@ -22,28 +22,12 @@ TASKS_DIR="${OSWORLD_TASKS_DIR:-$V2ROOT/tasks}"
 SERVICES_DIR="${OSWORLD_SERVICES_DIR:-$V2ROOT/services}"
 RAW_DIR="${RAW_DIR:-$REPO_ROOT/out/osworld-v2-raw}"
 MAX_STEPS="${MAX_STEPS:-75}"
-AGENT_TASK_TIMEOUT_SECONDS="${AGENT_TASK_TIMEOUT_SECONDS:-14400}"
-PROCESS_TERMINATION_GRACE_SECONDS="${PROCESS_TERMINATION_GRACE_SECONDS:-10}"
-RELAY_STOP_REQUEST_TIMEOUT_SECONDS="${RELAY_STOP_REQUEST_TIMEOUT_SECONDS:-10}"
+source "$HERE/worker_env.sh"
 UV=(uv run --locked --extra full --python 3.12 --with e2b==2.34.0 --with aiohttp==3.14.1)
 
 : "${TASK_ID:?TASK_ID required}"
 : "${DOMAIN:?DOMAIN required}"
 : "${PORT_BASE:?PORT_BASE required}"
-if [[ ! "$AGENT_TASK_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
-    echo "AGENT_TASK_TIMEOUT_SECONDS must be a positive integer" >&2
-    exit 2
-fi
-for timeout_name in PROCESS_TERMINATION_GRACE_SECONDS RELAY_STOP_REQUEST_TIMEOUT_SECONDS; do
-    if [[ ! "${!timeout_name}" =~ ^[1-9][0-9]*$ ]]; then
-        echo "$timeout_name must be a positive integer" >&2
-        exit 2
-    fi
-done
-if [[ ! "${AGENT_WATCHDOG_POLL_SECONDS:-5}" =~ ^[1-9][0-9]*$ ]]; then
-    echo "AGENT_WATCHDOG_POLL_SECONDS must be a positive integer" >&2
-    exit 2
-fi
 
 if [[ ! "${GUEST_TEMPLATE:-}" =~ ^[a-z0-9-]+:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
     echo "GUEST_TEMPLATE must be an immutable name:build_id reference (got: '${GUEST_TEMPLATE:-<unset>}')" >&2
@@ -78,7 +62,9 @@ RELAY_LOG="$(abspath "$RELAY_LOG")"
 mkdir -p "$RESULT_DIR" "$(dirname "$OUTPUT")" "$(dirname "$RELAY_LOG")"
 rm -f "$OUTPUT"
 
-if ! python3 "$HERE/preflight.py" \
+# run_agent_parallel.sh has already run the same checks for the whole manifest
+# moments ago; 80 workers re-verifying the checkout at once is pure load.
+if [ "${OSWORLD_PREFLIGHT_VERIFIED:-0}" != "1" ] && ! python3 "$HERE/preflight.py" \
     --osworld-root "$OSWORLD_ROOT" --tasks-dir "$TASKS_DIR" \
     --services-dir "$SERVICES_DIR" --manifest "${AGENT_MANIFEST:-$V2ROOT/validation/full-manifest.json}" \
     --task-id "$TASK_ID"; then
@@ -100,8 +86,6 @@ MODEL_API_KEY="${MODEL_API_KEY:-${OPENROUTER_API_KEY:-}}"
 MODEL="${MODEL:-openai/gpt-4o}"
 AGENT_KIND="${AGENT_KIND:-prompt}"
 export MODEL_BASE_URL MODEL_API_KEY MODEL AGENT_KIND MAX_STEPS
-
-source "$HERE/model_env.sh"
 
 # ---- fleet + asset wiring (same as validate.sh) ---------------------------
 read -r WEBSITE_HOST_SUFFIX GITLAB_URL < <(python3 - "$SERVICES_DIR/.runtime.json" <<'PY'
@@ -138,32 +122,41 @@ os.execvp(sys.argv[2], sys.argv[2:])
 ' "$working_directory" "$@"
 }
 
-process_group_alive() {
-    kill -0 -- "-$1" 2>/dev/null
+# A child launched by start_in_new_session shares OUR process group until its
+# python reaches os.setsid(), so a group-only probe or kill can miss it and a
+# bare `wait` would then block forever. Probe and signal the group first, then
+# the pid itself; a zombie (exited, not yet reaped) counts as gone.
+process_alive() {
+    local state
+    state="$(ps -o stat= -p "$1" 2>/dev/null | tr -d ' ')"
+    [ -n "$state" ] && [ "${state#Z}" = "$state" ]
 }
 
-wait_for_process_group() {
-    local process_group="$1"
+signal_process() {
+    kill "-$1" -- "-$2" 2>/dev/null || true
+    kill "-$1" "$2" 2>/dev/null || true
+}
+
+wait_for_exit() {
+    local process="$1"
     local timeout_seconds="$2"
     local deadline=$((SECONDS + timeout_seconds))
-    while process_group_alive "$process_group" && [ "$SECONDS" -lt "$deadline" ]; do
+    while process_alive "$process" && [ "$SECONDS" -lt "$deadline" ]; do
         sleep 1
     done
-    ! process_group_alive "$process_group"
+    ! process_alive "$process"
 }
 
 terminate_process_group() {
     local process_group="$1"
-    if process_group_alive "$process_group"; then
-        kill -TERM -- "-$process_group" 2>/dev/null || true
-        if ! wait_for_process_group "$process_group" "$PROCESS_TERMINATION_GRACE_SECONDS"; then
-            kill -KILL -- "-$process_group" 2>/dev/null || true
-            wait_for_process_group "$process_group" "$PROCESS_TERMINATION_GRACE_SECONDS" || true
+    if process_alive "$process_group"; then
+        signal_process TERM "$process_group"
+        if ! wait_for_exit "$process_group" "$PROCESS_TERMINATION_GRACE_SECONDS"; then
+            signal_process KILL "$process_group"
+            wait_for_exit "$process_group" "$PROCESS_TERMINATION_GRACE_SECONDS" || true
         fi
     fi
-    if ! process_group_alive "$process_group"; then
-        wait "$process_group" 2>/dev/null || true
-    fi
+    wait "$process_group" 2>/dev/null || true
 }
 
 # shellcheck disable=SC2329  # Called from EXIT/signal cleanup.
@@ -177,7 +170,7 @@ shutdown_relay() {
         --connect-timeout "$RELAY_STOP_REQUEST_TIMEOUT_SECONDS" \
         --max-time "$RELAY_STOP_REQUEST_TIMEOUT_SECONDS" \
         -X POST "http://127.0.0.1:${CONTROL_PORT}/stop" >/dev/null 2>&1 || true
-    if ! wait_for_process_group "$process_group" "$PROCESS_TERMINATION_GRACE_SECONDS"; then
+    if ! wait_for_exit "$process_group" "$PROCESS_TERMINATION_GRACE_SECONDS"; then
         terminate_process_group "$process_group"
     else
         wait "$process_group" 2>/dev/null || true
@@ -215,7 +208,8 @@ trap 'handle_signal 143' TERM
 start_in_new_session "$OSWORLD_ROOT" "${UV[@]}" python e2b_relay.py 2>"$RELAY_LOG" &
 relay_pid=$!
 ready=0
-for _ in $(seq 1 150); do
+relay_deadline=$((SECONDS + RELAY_READY_TIMEOUT_SECONDS))
+while [ "$SECONDS" -lt "$relay_deadline" ]; do
     if curl -fsS --connect-timeout 2 --max-time 5 "http://127.0.0.1:${CONTROL_PORT}/health" >/dev/null 2>&1; then ready=1; break; fi
     if ! kill -0 "$relay_pid" 2>/dev/null; then break; fi
     sleep 2
@@ -239,7 +233,6 @@ start_in_new_session "$OSWORLD_ROOT" "${UV[@]}" python "$HERE/agent_runner.py" \
 agent_pid=$!
 timed_out=0
 started_at=$SECONDS
-watchdog_poll="${AGENT_WATCHDOG_POLL_SECONDS:-5}"
 while kill -0 "$agent_pid" 2>/dev/null; do
     if [ $((SECONDS - started_at)) -ge "$AGENT_TASK_TIMEOUT_SECONDS" ]; then
         timed_out=1
@@ -249,7 +242,7 @@ while kill -0 "$agent_pid" 2>/dev/null; do
         agent_pid=""
         break
     fi
-    sleep "$watchdog_poll"
+    sleep "$AGENT_WATCHDOG_POLL_SECONDS"
 done
 if [ "$timed_out" -eq 1 ]; then
     # agent_runner publishes its receipt atomically, so a non-empty OUTPUT is a
@@ -274,7 +267,7 @@ else
     wait "$agent_pid"
     status=$?
     # A successful leader exit must not leave helpers running in its session.
-    if process_group_alive "$process_group"; then
+    if process_alive "$process_group"; then
         terminate_process_group "$process_group"
     fi
     agent_pid=""

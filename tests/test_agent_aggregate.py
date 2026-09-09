@@ -142,6 +142,39 @@ def test_failed_judge_invalidates_score_even_after_another_success(
     assert "eval-model-failure" in run["summary"]["invalid_task_ids"]["001"]
 
 
+def test_invalid_receipts_are_excluded_from_score_summary(tmp_path):
+    manifest, workers = _inputs(tmp_path)
+    record = json.loads((workers / "task_001.json").read_text())
+    record.update(eval_model_call_attempts=1, eval_model_successes=0)
+    (workers / "task_001.json").write_text(json.dumps(record))
+    run, ok = aggregate(
+        manifest,
+        workers,
+        model="model",
+        agent_kind="m3",
+        model_transport="https://example.test/v1",
+        eval_model="judge",
+        eval_provider="openai_compatible",
+        eval_transport="https://example.test/v1",
+        user_sim_model="simulator",
+        user_sim_provider="openai_compatible",
+        user_sim_transport="https://example.test/v1",
+        max_steps=500,
+        concurrency=1,
+        thinking_mode=None,
+        thinking_budget=2048,
+        m3_max_llm_retries=2,
+        task_082_concurrent=True,
+        run_nonce="run-nonce-1",
+        campaign_id="campaign-1",
+        required_eval_model_ids=set(),
+        no_model_coverage_enforced=False,
+    )
+    assert not ok
+    assert run["summary"]["scored_tasks"] == 0
+    assert run["summary"]["mean_score"] is None
+
+
 def test_failed_simulator_invalidates_score_even_after_another_success(tmp_path):
     manifest, workers = _inputs(tmp_path)
     receipt = workers / "task_001.json"
