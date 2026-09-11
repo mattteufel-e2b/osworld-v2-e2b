@@ -110,8 +110,9 @@ and the receipts never look inside the agent.
   chat-completions endpoint (`MODEL_BASE_URL`, `MODEL_API_KEY`, `MODEL` passed verbatim).
   `AGENT_KIND=m3` is upstream's MiniMax-M3 agent over its Anthropic Messages transport.
 - To run your own, implement upstream's `reset()` / `predict(instruction, observation)`
-  interface (see `OSWorld-V2/mm_agents/`), add a builder to `AGENT_KINDS` in `runner/agents.py`,
-  and launch with `AGENT_KIND=<your name>`. Prompts, model calls, memory and context policy live
+  interface (see `OSWorld-V2/mm_agents/` for reference), put the class under `runner/` next to
+  `agents.py` rather than inside the checkout (`setup.sh --restore` resets tracked files there),
+  add a builder to `AGENT_KINDS`, and launch with `AGENT_KIND=<your name>`. Prompts, model calls, memory and context policy live
   in your class, as in upstream's `run_multienv_*.py` runners.
 - Generation settings mirror upstream `run.py` flags and are optional environment variables on
   the same launch command: `MAX_TOKENS`, `TEMPERATURE`, `TOP_P`, `MAX_TRAJECTORY_LENGTH`. Unset

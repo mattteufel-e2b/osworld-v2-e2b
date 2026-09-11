@@ -8,7 +8,10 @@ looks inside the agent, so bringing your own is upstream's documented workflow:
      ``predict(instruction, observation) -> (response, actions)``, plus
      ``action_space`` / ``observation_type`` attributes. Prompts, model calls,
      memory and context management live inside that class.
-  2. Add a builder for it to ``AGENT_KINDS`` below.
+  2. Add a builder for it to ``AGENT_KINDS`` below, and its generation defaults
+     to ``_GENERATION_DEFAULTS`` so receipts record what it actually ran with.
+     Keep the class under ``runner/`` (already on ``sys.path``), not inside the
+     ``OSWorld-V2/`` checkout, which ``setup.sh --restore`` resets.
   3. Launch with ``AGENT_KIND=<your name>``; ``MODEL`` is passed through verbatim.
 
 The shipped kinds are upstream's own agents from the pinned checkout:
@@ -177,3 +180,18 @@ def agent_settings(
 
 def build_agent(kind: str, *, model: str, settings: dict, client_password: str):
     return AGENT_KINDS[kind](model, settings, client_password)
+
+
+if __name__ == "__main__":
+    # `python agents.py --check KIND`: the coordinator rejects an unknown
+    # AGENT_KIND here, before any guest sandbox is admitted or created.
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--check", required=True, metavar="AGENT_KIND")
+    kind = parser.parse_args().check
+    if kind not in AGENT_KINDS:
+        raise SystemExit(
+            f"AGENT_KIND {kind!r} is not defined in runner/agents.py "
+            f"(known kinds: {', '.join(sorted(AGENT_KINDS))})"
+        )

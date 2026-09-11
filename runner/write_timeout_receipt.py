@@ -54,6 +54,9 @@ def main() -> int:
         finished_at=_utc_now(),
         wall_clock_s=args.wall_clock_seconds,
         timeout_seconds=args.timeout_seconds,
+        # Resolved by agents.py inside the worker; a timed-out worker may never
+        # have reached that point, and this writer cannot import the checkout.
+        agent_settings=None,
         transport_ok=False,
         evaluator_ran=False,
         path_status="ERROR",

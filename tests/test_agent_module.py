@@ -195,4 +195,45 @@ def test_timeout_receipt_accepts_any_agent_kind(tmp_path):
         check=False,
     )
     assert result.returncode == 0, result.stderr
-    assert json.loads(output.read_text())["agent_kind"] == "custom"
+    receipt = json.loads(output.read_text())
+    assert receipt["agent_kind"] == "custom"
+    # Same key set as agent_runner's receipt: a timeout record carries the
+    # field even though only a started agent can resolve it.
+    assert "agent_settings" in receipt and receipt["agent_settings"] is None
+
+
+def _stub_upstream_packages(root: Path) -> None:
+    (root / "mm_agents" / "m3").mkdir(parents=True)
+    (root / "mm_agents" / "__init__.py").write_text("")
+    (root / "mm_agents" / "agent.py").write_text(
+        "class PromptAgent:\n    def __init__(self, **kwargs):\n        pass\n"
+    )
+    (root / "mm_agents" / "m3" / "__init__.py").write_text(
+        "class M3Agent:\n    def __init__(self, **kwargs):\n        pass\n"
+    )
+
+
+def _check_kind(tmp_path: Path, kind: str) -> subprocess.CompletedProcess:
+    _stub_upstream_packages(tmp_path)
+    return subprocess.run(
+        [sys.executable, str(RUNNER / "agents.py"), "--check", kind],
+        env={**os.environ, "PYTHONPATH": str(tmp_path)},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def test_agents_module_check_accepts_a_known_kind(tmp_path):
+    result = _check_kind(tmp_path, "m3")
+    assert result.returncode == 0, result.stderr
+
+
+def test_agents_module_check_rejects_an_unknown_kind_naming_the_known_ones(tmp_path):
+    result = _check_kind(tmp_path, "custom")
+    assert result.returncode != 0
+    assert (
+        "custom" in result.stderr
+        and "m3" in result.stderr
+        and "prompt" in result.stderr
+    )

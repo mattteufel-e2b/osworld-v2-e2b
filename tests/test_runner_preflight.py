@@ -321,15 +321,36 @@ def test_preflight_skips_credentials_for_no_model_validation(tmp_path, monkeypat
     assert preflight.main() == 0
 
 
-def test_agent_coordinator_leaves_agent_kind_validation_to_the_agent_module(tmp_path):
+def _coordinator_inputs_past_preflight(tmp_path, *, agents_check_case: str):
+    """Fake python3 passes preflight; fake uv answers the agents.py kind check
+    with ``agents_check_case`` and records, then rejects, the lifetime check."""
+    osworld, tasks, manifest, services = _minimal_inputs(tmp_path)
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
-    fake_uv = fake_bin / "uv"
-    fake_uv.write_text("#!/bin/sh\nexit 0\n")
-    fake_uv.chmod(0o755)
-    env = {
+    (fake_bin / "python3").write_text(
+        """#!/bin/sh
+case "$1" in
+  */preflight.py) exit 0 ;;
+  *) exec "$REAL_PYTHON" "$@" ;;
+esac
+"""
+    )
+    (fake_bin / "python3").chmod(0o755)
+    (fake_bin / "uv").write_text(
+        f"""#!/bin/sh
+case "$*" in
+  *agents.py*) {agents_check_case} ;;
+  *--check-lifetime*) touch "$LIFETIME_CHECKED"; exit 1 ;;
+  *) exit 0 ;;
+esac
+"""
+    )
+    (fake_bin / "uv").chmod(0o755)
+    return {
         **os.environ,
         "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "REAL_PYTHON": sys.executable,
+        "LIFETIME_CHECKED": str(tmp_path / "lifetime-checked"),
         "GUEST_TEMPLATE": IMMUTABLE_GUEST,
         "OSWORLD_CAMPAIGN_ID": "test-campaign",
         "E2B_API_KEY": "dummy",
@@ -337,17 +358,46 @@ def test_agent_coordinator_leaves_agent_kind_validation_to_the_agent_module(tmp_
         "MODEL_BASE_URL": "https://example.test/v1",
         "MODEL": "test-model",
         "AGENT_KIND": "custom",
-        "OSWORLD_SERVICES_DIR": str(tmp_path / "no-services"),
+        "OSWORLD_ROOT": str(osworld),
+        "OSWORLD_TASKS_DIR": str(tasks),
+        "OSWORLD_SERVICES_DIR": str(services),
+        "AGENT_MANIFEST": str(manifest),
+        "RAW_DIR": str(tmp_path / "raw"),
+        "OUTPUT": str(tmp_path / "out.json"),
     }
 
-    result = subprocess.run(
+
+def _run_coordinator(env):
+    return subprocess.run(
         ["bash", str(ROOT / "runner" / "run_agent_parallel.sh")],
         cwd=ROOT,
         env=env,
         text=True,
         capture_output=True,
-        timeout=10,
+        timeout=30,
         check=False,
     )
+
+
+def test_agent_coordinator_rejects_unknown_agent_kind_before_admission(tmp_path):
+    # A typo in AGENT_KIND must cost nothing: reject it before the fleet
+    # lifetime gate admits the run and any guest sandbox is created.
+    env = _coordinator_inputs_past_preflight(
+        tmp_path,
+        agents_check_case="echo \"AGENT_KIND 'custom' is not defined\" >&2; exit 1",
+    )
+    result = _run_coordinator(env)
     assert result.returncode == 2, (result.stdout, result.stderr)
-    assert "AGENT_KIND must be" not in result.stderr
+    assert "AGENT_KIND" in result.stderr
+    assert not Path(env["LIFETIME_CHECKED"]).exists()
+
+
+def test_agent_coordinator_admits_agent_kinds_the_module_knows(tmp_path):
+    env = _coordinator_inputs_past_preflight(tmp_path, agents_check_case="exit 0")
+    result = _run_coordinator(env)
+    assert result.returncode == 2, (
+        result.stdout,
+        result.stderr,
+    )  # lifetime fake rejects
+    assert Path(env["LIFETIME_CHECKED"]).exists()
+    assert "AGENT_KIND" not in result.stderr

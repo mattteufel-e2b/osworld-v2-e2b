@@ -72,6 +72,7 @@ if [ "$AGENT_KIND" = "m3" ] && [[ ! "${M3_MAX_LLM_RETRIES:-}" =~ ^[0-9]+$ ]]; th
 fi
 if [ -z "${OSWORLD_CAMPAIGN_ID:-}" ]; then echo "OSWORLD_CAMPAIGN_ID is required" >&2; exit 2; fi
 export GUEST_TEMPLATE OSWORLD_CAMPAIGN_ID MODEL_API_KEY MODEL_BASE_URL MODEL AGENT_KIND MAX_STEPS
+export MAX_TOKENS TEMPERATURE TOP_P MAX_TRAJECTORY_LENGTH  # unset = upstream default
 export M3_THINKING_MODE M3_THINKING_BUDGET M3_MAX_LLM_RETRIES
 
 if [ -z "${E2B_API_KEY:-}" ] && [ -f "$REPO_ROOT/.env.local" ]; then
@@ -131,6 +132,13 @@ if ! python3 "$HERE/preflight.py" \
     exit 2
 fi
 export OSWORLD_PREFLIGHT_VERIFIED=1  # workers skip the checks just made for them
+# Reject an unknown AGENT_KIND now, in the worker's own environment, rather than
+# letting every worker discover it after its guest sandbox has been created.
+if ! (cd "$OSWORLD_ROOT" && PYTHONPATH="$OSWORLD_ROOT" uv run --locked --extra full --python 3.12 \
+        python "$HERE/agents.py" --check "$AGENT_KIND"); then
+    echo "AGENT_KIND='$AGENT_KIND' rejected by runner/agents.py" >&2
+    exit 2
+fi
 
 export PARALLEL_CONCURRENCY RUN_TASK_082_CONCURRENT AGENT_START_STAGGER_SECONDS
 if ! $UV python "$V2ROOT/services/fleetlib.py" --check-lifetime "$MANIFEST" \

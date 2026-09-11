@@ -45,6 +45,7 @@ esac
         fake_bin / "uv",
         """#!/bin/sh
 case "$*" in
+  *agents.py*) exit 0 ;;
   *e2b_relay.py*)
     echo $$ > "$RELAY_PID_FILE"
     ps -o pgid= -p $$ | tr -d ' ' > "$RELAY_GROUP_FILE"
