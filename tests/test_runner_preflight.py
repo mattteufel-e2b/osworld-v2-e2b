@@ -68,9 +68,9 @@ def test_all_runners_fail_before_launching_when_service_runtime_is_missing(tmp_p
     }
 
     for relative in (
-        "runner/validate.sh",
-        "runner/validate_parallel.sh",
-        "runner/run_path_task.sh",
+        "maintainer/validate.sh",
+        "maintainer/validate_parallel.sh",
+        "maintainer/run_path_task.sh",
         "runner/run_agent.sh",
         "runner/run_agent_parallel.sh",
     ):

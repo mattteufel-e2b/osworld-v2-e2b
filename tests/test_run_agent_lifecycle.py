@@ -758,3 +758,66 @@ def test_launch_script_leaves_generation_settings_to_agent_defaults_when_unset(
     assert "--agent-kind m3" in argv
     for flag in ("--max-tokens", "--temperature", "--top-p", "--max-trajectory-length"):
         assert flag not in argv, flag
+
+
+def test_launch_script_forwards_recording_opt_in(tmp_path):
+    env = _runner_env(tmp_path, task_timeout=30)
+    args_file = _record_agent_args_instead_of_running(env, tmp_path)
+    env["ENABLE_RECORDING"] = "1"
+    subprocess.run(
+        ["bash", str(ROOT / "runner" / "run_agent.sh")],
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=60,
+        check=False,
+    )
+    assert "--enable-recording" in args_file.read_text()
+
+
+def test_launch_script_keeps_recording_off_unless_opted_in(tmp_path):
+    env = _runner_env(tmp_path, task_timeout=30)
+    args_file = _record_agent_args_instead_of_running(env, tmp_path)
+    env.pop("ENABLE_RECORDING", None)
+    subprocess.run(
+        ["bash", str(ROOT / "runner" / "run_agent.sh")],
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=60,
+        check=False,
+    )
+    assert "--enable-recording" not in args_file.read_text()
+
+
+def test_path_task_worker_signal_kills_harness_and_relay_process_trees(tmp_path):
+    # The maintainer worker shares worker_lib.sh with run_agent.sh, so a
+    # SIGTERM must reap its harness and relay sessions the same way.
+    env = _runner_env(tmp_path, task_timeout=60)
+    env.update(
+        VALIDATION_MANIFEST=env["AGENT_MANIFEST"], OUTPUT=str(tmp_path / "path.json")
+    )
+    process = subprocess.Popen(
+        ["bash", str(ROOT / "maintainer" / "run_path_task.sh")],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        _wait_for_file(Path(env["AGENT_CHILD_PID_FILE"]))
+        process.send_signal(signal.SIGTERM)
+        stdout, stderr = process.communicate(timeout=10)
+    finally:
+        _force_cleanup(env)
+        if process.poll() is None:
+            process.kill()
+        process.communicate()
+
+    assert process.returncode == 143, (stdout, stderr)
+    _assert_commands_started_as_process_group_leaders(env)
+    for pid in _recorded_pids(env):
+        _assert_process_gone(pid)
+    for process_group in _recorded_process_groups(env):
+        _assert_process_group_gone(process_group)

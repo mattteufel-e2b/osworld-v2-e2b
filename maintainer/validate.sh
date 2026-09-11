@@ -1,59 +1,37 @@
 #!/usr/bin/env bash
-# OSWorld-V2 -> E2B environment-path validation: run the selected manifest
-# against the immutable guest template, preserving per-run receipts and raw
-# relay logs. The final gate derives its expected task and unique-sandbox counts
-# from the manifest and VALIDATION_RUNS rather than assuming the 10-task sample.
+# Maintainer-only release validation (sequential): run the
+# selected manifest VALIDATION_RUNS times against the immutable guest template,
+# preserving per-run receipts and raw relay logs. The final gate derives its
+# expected task and unique-sandbox counts from the manifest and VALIDATION_RUNS.
 #
-# The relay + harness both run under `uv run --python 3.12` using the pinned
-# OSWorld-V2 checkout's project env, with e2b + aiohttp layered on top.
+# Relay + harness run under the pinned checkout's project env via worker_lib.sh;
+# this script additionally owns the host-side fleet proxy for the whole run.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-V2ROOT="$(cd "$HERE/.." && pwd)"            # repo root
-REPO_ROOT="$V2ROOT"
-OSWORLD_ROOT="${OSWORLD_ROOT:-$V2ROOT/OSWorld-V2}"
-TASKS_DIR="${OSWORLD_TASKS_DIR:-$V2ROOT/tasks}"
-SERVICES_DIR="${OSWORLD_SERVICES_DIR:-$V2ROOT/services}"
+source "$HERE/../runner/worker_lib.sh"  # shared with the benchmark path
 MANIFEST="${VALIDATION_MANIFEST:-$V2ROOT/validation/manifest.json}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-$REPO_ROOT/out/osworld-v2-evidence}"
 RAW_DIR="${RAW_DIR:-$REPO_ROOT/out/osworld-v2-raw}"
 RUNS="${VALIDATION_RUNS:-2}"
+# Host-side helper (fleet proxy) runs from the repo env, not the checkout's.
 UV="uv run --python 3.12 --with e2b==2.34.0 --with aiohttp==3.14.1"
 
-# ---- immutable-template gate ----------------------------------------------
-# GUEST_TEMPLATE must be an immutable `name:build_id` reference (a UUID build id
-# from `npm run build`), never a mutable alias like `osworld-v2-gnome:latest`.
-if [[ ! "${GUEST_TEMPLATE:-}" =~ ^[a-z0-9-]+:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
-    echo "GUEST_TEMPLATE must be an immutable name:build_id reference (got: '${GUEST_TEMPLATE:-<unset>}')" >&2
-    exit 2
-fi
-export GUEST_TEMPLATE
-if [ -z "${OSWORLD_CAMPAIGN_ID:-}" ]; then echo "OSWORLD_CAMPAIGN_ID is required" >&2; exit 2; fi
-export OSWORLD_CAMPAIGN_ID
+require_immutable_guest_template
+require_campaign_id
 export OSWORLD_EVAL_MODEL_MODE=stub
 unset OPENAI_API_KEY OPENAI_API_KEY_CUA ANTHROPIC_API_KEY GEMINI_API_KEY MODEL_API_KEY
 unset OSWORLD_EVAL_MODEL_API_KEY OSWORLD_USER_SIM_API_KEY
-
-# ---- E2B key ---------------------------------------------------------------
-if [ -z "${E2B_API_KEY:-}" ] && [ -f "$REPO_ROOT/.env.local" ]; then
-    export E2B_API_KEY="$(grep '^E2B_API_KEY=' "$REPO_ROOT/.env.local" | cut -d= -f2)"
-fi
-if [ -z "${E2B_API_KEY:-}" ]; then echo "E2B_API_KEY is required" >&2; exit 2; fi
+resolve_e2b_api_key
 
 mkdir -p "$EVIDENCE_DIR" "$RAW_DIR"
 overall=0
-relay_pid=""
 proxy_pid=""
 outputs=()
-cleanup_current() {
-    curl -fsS -X POST http://127.0.0.1:14999/stop >/dev/null 2>&1 || true
-    if [ -n "$relay_pid" ]; then wait "$relay_pid" 2>/dev/null || true; fi
-    relay_pid=""
-}
 cleanup_all() {
     local status=$?
     trap - EXIT INT TERM
-    cleanup_current
+    worker_cleanup
     if [ -n "$proxy_pid" ] && kill -0 "$proxy_pid" 2>/dev/null; then
         kill "$proxy_pid" 2>/dev/null || true
         wait "$proxy_pid" 2>/dev/null || true
@@ -62,27 +40,14 @@ cleanup_all() {
 }
 trap cleanup_all EXIT INT TERM
 
-if ! python3 "$HERE/preflight.py" \
+if ! python3 "$RUNNER_DIR/preflight.py" \
     --osworld-root "$OSWORLD_ROOT" --tasks-dir "$TASKS_DIR" \
     --services-dir "$SERVICES_DIR" --manifest "$MANIFEST"; then
     exit 2
 fi
 
-# ---- fleet + asset wiring (consumed by relay and harness) ------------------
-# Read the fleet interface from the gitignored runtime file the launchers wrote.
-read -r WEBSITE_HOST_SUFFIX GITLAB_URL < <(python3 - "$SERVICES_DIR/.runtime.json" <<'PY'
-import json, sys
-rt = json.load(open(sys.argv[1]))
-print(rt["websites"]["public_host_suffix"], rt["gitlab"]["url"])
-PY
-)
-export WEBSITE_HOST_SUFFIX GITLAB_URL
-export GITLAB_PRIVATE_TOKEN="$(cat "$SERVICES_DIR/.gitlab-token")"
-export OSWORLD_FILE_BASE_URL="$TASKS_DIR/assets"
-# Relay installs the in-guest Host-mapping proxy only when both of these point at
-# the proxy script and the fleet runtime file.
-export HOSTMAP_PROXY_SCRIPT="$SERVICES_DIR/hostmap_proxy.py"
-export OSWORLD_FLEET_RULES="$SERVICES_DIR/.runtime.json"
+namespace_relay 0
+export_fleet_wiring
 
 echo "template=$GUEST_TEMPLATE"
 echo "WEBSITE_HOST_SUFFIX=$WEBSITE_HOST_SUFFIX"
@@ -128,31 +93,24 @@ for run_number in $(seq 1 "$RUNS"); do
     outputs+=("$output")
     relay_log="$RAW_DIR/validate-run${run_number}-relay.log"
 
-    ( cd "$OSWORLD_ROOT" && $UV --locked --extra full python e2b_relay.py ) 2>"$relay_log" &
-    relay_pid=$!
-    ready=0
-    for _ in $(seq 1 150); do
-        if curl -fsS http://127.0.0.1:14999/health >/dev/null 2>&1; then ready=1; break; fi
-        if ! kill -0 "$relay_pid" 2>/dev/null; then break; fi
-        sleep 2
-    done
-    if [ "$ready" -ne 1 ]; then
+    if ! start_relay "$relay_log"; then
         echo "relay did not become ready for run $run_number" >&2
-        tail -60 "$relay_log" >&2
-        cleanup_current
+        shutdown_relay
         overall=1
         continue
     fi
 
-    ( cd "$OSWORLD_ROOT" && $UV --locked --extra full python "$HERE/harness.py" \
+    start_in_new_session "$OSWORLD_ROOT" "${WORKER_UV[@]}" python "$HERE/harness.py" \
         --osworld-root "$OSWORLD_ROOT" \
         --tasks-dir "$TASKS_DIR" \
         --manifest "$MANIFEST" \
         --raw-dir "$RAW_DIR" \
-        --output "$output" )
+        --output "$output" &
+    rollout_pid=$!
+    wait_for_rollout "$AGENT_TASK_TIMEOUT_SECONDS"
     status=$?
     [ "$status" -eq 0 ] || overall=1
-    cleanup_current
+    shutdown_relay
 done
 
 # ---- aggregate gate: every task passes and every sandbox id is unique ------

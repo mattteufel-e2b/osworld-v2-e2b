@@ -237,3 +237,13 @@ def test_agents_module_check_rejects_an_unknown_kind_naming_the_known_ones(tmp_p
         and "m3" in result.stderr
         and "prompt" in result.stderr
     )
+
+
+def test_agent_runner_exposes_upstream_recording_opt_in():
+    # Upstream runners take --enable_recording and pass
+    # force_disable_recording=not enable_recording; mirror that instead of
+    # hardcoding recording off.
+    runner = (RUNNER / "agent_runner.py").read_text()
+    assert '"--enable-recording"' in runner
+    assert "force_disable_recording=not args.enable_recording" in runner
+    assert "force_disable_recording=True" not in runner

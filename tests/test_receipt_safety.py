@@ -91,6 +91,7 @@ def test_base_receipt_is_the_single_source_for_both_receipt_writers(monkeypatch)
     assert receipt["thinking_budget"] == 2048
     assert receipt["m3_max_llm_retries"] == 2
     assert receipt["user_sim_model"] is None
+    assert receipt["recording_enabled"] is False  # ENABLE_RECORDING unset
     assert "k=s" not in json.dumps(receipt)
     assert (
         receipt_safety.base_receipt(
@@ -109,3 +110,17 @@ def test_base_receipt_is_the_single_source_for_both_receipt_writers(monkeypatch)
         source = (runner / name).read_text()
         assert "base_receipt(" in source, name
         assert '"eval_model_transport": public_transport' not in source, name
+
+
+def test_base_receipt_records_screen_recording_opt_in(monkeypatch):
+    monkeypatch.setenv("OSWORLD_RUN_NONCE", "nonce-1")
+    monkeypatch.setenv("ENABLE_RECORDING", "1")
+    receipt = receipt_safety.base_receipt(
+        task_id="001",
+        domain="release",
+        agent_kind="m3",
+        model="m",
+        max_steps=1,
+        port_base=0,
+    )
+    assert receipt["recording_enabled"] is True

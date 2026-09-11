@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Full 108-task OSWorld-V2 environment-path validation with bounded E2B
-# concurrency. A worker can briefly own two sandboxes during strict reset, so
+# Maintainer-only release validation: the full 108-task OSWorld-V2
+# environment-path run with no model calls, bounded E2B concurrency. Not needed
+# to run the benchmark (see README "Quick start"); it qualifies a template build. A worker can briefly own two sandboxes during strict reset, so
 # 80 workers peak near 160 guest sandboxes; the two service sandboxes and retry
 # headroom remain below the account's 200-concurrent-sandbox ceiling.
 set -uo pipefail
@@ -55,7 +56,7 @@ cleanup_proxy() {
 }
 trap cleanup_proxy EXIT INT TERM
 
-if ! python3 "$HERE/preflight.py" \
+if ! python3 "$V2ROOT/runner/preflight.py" \
     --osworld-root "$OSWORLD_ROOT" --tasks-dir "$TASKS_DIR" \
     --services-dir "$SERVICES_DIR" --manifest "$MANIFEST"; then
     exit 2

@@ -78,12 +78,12 @@ def test_lazy_module_ignores_uninstalled_names():
 
 
 def test_both_runners_keep_torch_out_of_worker_startup():
-    for name in ("agent_runner.py", "harness.py"):
-        source = (ROOT / "runner" / name).read_text()
-        assert 'lazy_module("easyocr")' in source, name
+    for path in ("runner/agent_runner.py", "maintainer/harness.py"):
+        source = (ROOT / path).read_text()
+        assert 'lazy_module("easyocr")' in source, path
         assert source.index('lazy_module("easyocr")') < source.index(
             "from desktop_env.desktop_env import DesktopEnv"
-        ), name
+        ), path
     venv_python = ROOT / "OSWorld-V2" / ".venv" / "bin" / "python"
     if not venv_python.exists():
         return

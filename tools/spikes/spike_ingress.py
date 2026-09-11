@@ -47,7 +47,7 @@ Decision rule (recorded as `host_suffix_mode` in the evidence JSON):
 
 Run:
     export E2B_API_KEY=$(grep '^E2B_API_KEY=' .env.local | cut -d= -f2)
-    uv run --with e2b --with requests python runner/spike_ingress.py
+    uv run --with e2b --with requests python tools/spikes/spike_ingress.py
 
 Writes out/osworld-v2-evidence/spike-ingress.json.
 """

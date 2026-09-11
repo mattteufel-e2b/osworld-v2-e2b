@@ -42,6 +42,8 @@ from urllib.request import urlopen
 # that root, but Python seeds sys.path[0] with this script's directory, so add the
 # checkout root explicitly before importing it.
 sys.path.insert(0, os.getcwd())
+# Shared runner helpers (lazy_import) live in runner/; this ladder lives in maintainer/.
+sys.path.insert(1, str(Path(__file__).resolve().parents[1] / "runner"))
 from lazy_import import lazy_module  # noqa: E402
 
 lazy_module("easyocr")  # torch only if an OCR metric actually runs

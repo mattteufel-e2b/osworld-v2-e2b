@@ -195,6 +195,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--top-p", type=float, default=None)
     parser.add_argument("--max-trajectory-length", type=int, default=None)
     parser.add_argument("--sleep-after-execution", type=float, default=3.0)
+    # Upstream's --enable_recording: the guest records the screen with ffmpeg
+    # for the whole rollout and the mp4 lands in the raw result dir. Off by
+    # default there and here.
+    parser.add_argument("--enable-recording", action="store_true")
     parser.add_argument("--client-password", default="osworld-public-evaluation")
     return parser.parse_args()
 
@@ -269,7 +273,7 @@ def main() -> int:
             screen_size=(1920, 1080),
             headless=True,
             enable_proxy=False,
-            force_disable_recording=True,
+            force_disable_recording=not args.enable_recording,
         )
         lib_run_single.run_single_example(
             agent,

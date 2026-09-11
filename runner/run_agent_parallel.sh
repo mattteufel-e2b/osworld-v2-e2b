@@ -73,6 +73,7 @@ fi
 if [ -z "${OSWORLD_CAMPAIGN_ID:-}" ]; then echo "OSWORLD_CAMPAIGN_ID is required" >&2; exit 2; fi
 export GUEST_TEMPLATE OSWORLD_CAMPAIGN_ID MODEL_API_KEY MODEL_BASE_URL MODEL AGENT_KIND MAX_STEPS
 export MAX_TOKENS TEMPERATURE TOP_P MAX_TRAJECTORY_LENGTH  # unset = upstream default
+export ENABLE_RECORDING  # 1 = upstream --enable_recording (mp4 per task); unset = off
 export M3_THINKING_MODE M3_THINKING_BUDGET M3_MAX_LLM_RETRIES
 
 if [ -z "${E2B_API_KEY:-}" ] && [ -f "$REPO_ROOT/.env.local" ]; then

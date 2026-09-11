@@ -24,7 +24,7 @@ def test_reaper_uses_clone_safe_startup_launcher():
 
 
 def test_path_harness_uses_namespaced_relay_control_port():
-    harness = (ROOT / "runner" / "harness.py").read_text()
+    harness = (ROOT / "maintainer" / "harness.py").read_text()
 
     assert 'os.environ.get("OSWORLD_RELAY_PORT_BASE", "0")' in harness
     assert 'f"http://127.0.0.1:{14999 + relay_port_base()}' in harness
@@ -32,7 +32,7 @@ def test_path_harness_uses_namespaced_relay_control_port():
 
 
 def test_parallel_validator_owns_proxy_and_namespaces_task_service_ports():
-    coordinator = (ROOT / "runner" / "validate_parallel.sh").read_text()
+    coordinator = (ROOT / "maintainer" / "validate_parallel.sh").read_text()
 
     assert 'PARALLEL_CONCURRENCY="${PARALLEL_CONCURRENCY:-80}"' in coordinator
     assert 'if [ "$PARALLEL_CONCURRENCY" -gt 80 ]' in coordinator
@@ -44,7 +44,7 @@ def test_parallel_validator_owns_proxy_and_namespaces_task_service_ports():
 
 
 def test_sequential_validator_owns_host_proxy_for_whole_run():
-    validator = (ROOT / "runner" / "validate.sh").read_text()
+    validator = (ROOT / "maintainer" / "validate.sh").read_text()
 
     assert 'HOSTMAP_PORT="8090"' in validator
     assert '$UV python "$SERVICES_DIR/hostmap_proxy.py"' in validator
@@ -560,8 +560,8 @@ def test_agent_coordinator_can_opt_literal_port_task_into_a_sample_wave():
 
 
 def test_no_model_aggregate_distinguishes_full_paths_from_model_boundaries():
-    parallel = (ROOT / "runner" / "validate_parallel.sh").read_text()
-    sequential = (ROOT / "runner" / "validate.sh").read_text()
+    parallel = (ROOT / "maintainer" / "validate_parallel.sh").read_text()
+    sequential = (ROOT / "maintainer" / "validate.sh").read_text()
 
     assert "MODEL_BOUNDARY_PASS" in parallel
     assert '"model_boundary_passes"' in parallel

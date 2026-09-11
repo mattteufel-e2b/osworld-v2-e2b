@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "runner"))
+sys.path.insert(0, str(ROOT / "maintainer"))
 from no_model import (  # noqa: E402
     NoModelEvaluationBoundary,
     NoModelGuard,
@@ -86,7 +86,7 @@ def _validate_parallel_heredoc() -> str:
     # The file has an earlier `python3 - "$MANIFEST" <<'PY'` heredoc (task id
     # listing); anchor on the full aggregation-gate invocation's argv so this
     # matches that heredoc specifically, not the first "$MANIFEST" heredoc.
-    source = (ROOT / "runner" / "validate_parallel.sh").read_text()
+    source = (ROOT / "maintainer" / "validate_parallel.sh").read_text()
     match = re.search(
         r"python3 - \"\$MANIFEST\" \"\$RAW_DIR/workers\" \"\$OUTPUT\" "
         r"\"\$PARALLEL_CONCURRENCY\" <<'PY'.*?\n(.*?)\nPY\n",

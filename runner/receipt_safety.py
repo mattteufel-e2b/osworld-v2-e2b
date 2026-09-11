@@ -109,6 +109,9 @@ def base_receipt(
         "m3_max_llm_retries": (
             nonnegative_int_env("M3_MAX_LLM_RETRIES") if agent_kind == "m3" else None
         ),
+        # Screen recording is upstream's --enable_recording opt-in; the launch
+        # script exports ENABLE_RECORDING=1 when a run asked for it.
+        "recording_enabled": os.environ.get("ENABLE_RECORDING") == "1",
         "eval_model": os.environ.get("OSWORLD_EVAL_MODEL_NAME") or None,
         "eval_provider": os.environ.get("OSWORLD_EVAL_MODEL_PROVIDER") or None,
         "eval_model_transport": public_transport(

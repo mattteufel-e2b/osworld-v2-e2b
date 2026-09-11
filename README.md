@@ -128,6 +128,9 @@ AGENT_MANIFEST="$RUN_ROOT/full-manifest.json" MAX_STEPS=75 \
 
 ## Release validation (maintainers)
 
+Everything in this section lives under `maintainer/` and is **not required to run the
+benchmark**. `runner/` holds only the benchmark path; `tools/spikes/` keeps the one-off
+probes that shaped the port (their evidence is cited from `FIDELITY.md`).
 This validates every environment path across all 108 tasks with zero external model calls,
 then optionally gates a full-model benchmark receipt on that coverage. It's how maintainers
 qualify a release before it ships — it is **not** required to run the benchmark (see Quick
@@ -142,7 +145,7 @@ python3 runner/render_manifest.py --source validation/full-manifest.json \
 VALIDATION_MANIFEST="$RUN_ROOT/full-manifest.json" VALIDATION_RUNS=1 \
     PARALLEL_CONCURRENCY=24 RAW_DIR="$RUN_ROOT/no-model-raw" \
     EVIDENCE_DIR="$RUN_ROOT/no-model-evidence" OUTPUT="$RUN_ROOT/no-model.json" \
-    runner/validate_parallel.sh                # all 108 tasks, zero external model calls
+    maintainer/validate_parallel.sh            # all 108 tasks, zero external model calls
 ```
 
 The no-model receipt distinguishes an evaluator path that returned normally (`PATH_PASS`) from one
@@ -317,8 +320,8 @@ Rungs run in order; PATH_PASS is never reported as task success:
 4. Snapshot save/revert probe.
 5. No-agent evaluator run (expected zeros).
 6. Small full-agent run with audited trajectories.
-7. Resource profiling (`runner/profile_resources.sh`) → `resource-requirements.json`;
+7. Resource profiling (`maintainer/profile_resources.sh`) → `resource-requirements.json`;
    run soon after the ladder while metrics are within E2B's retention window.
 
 For a full single-pass run: `VALIDATION_MANIFEST=validation/full-manifest.json`,
-`VALIDATION_RUNS=1`, a distinct `EVIDENCE_DIR`, then `runner/validate.sh`.
+`VALIDATION_RUNS=1`, a distinct `EVIDENCE_DIR`, then `maintainer/validate.sh`.
