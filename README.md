@@ -56,7 +56,7 @@ export MODEL_API_KEY="$FIREWORKS_API_KEY"
 export MODEL_BASE_URL="https://api.fireworks.ai/inference"
 export MODEL="accounts/fireworks/models/minimax-m3"
 export AGENT_KIND=m3 M3_THINKING_BUDGET=2048 M3_MAX_LLM_RETRIES=0
-export OPENAI_API_KEY="..."                # upstream judge / simulator credentials
+export OPENAI_API_KEY="..."                # upstream judge / simulator credentials (checked by preflight)
 
 AGENT_MANIFEST="$RUN_ROOT/full-manifest.json" PARALLEL_CONCURRENCY=80 MAX_STEPS=500 \
     AGENT_TASK_TIMEOUT_SECONDS=28800 RAW_DIR="$RUN_ROOT/agent-raw" \
@@ -74,22 +74,28 @@ rollout at the 500-step budget can then exceed the 14400 s (4 h) `AGENT_TASK_TIM
 default well before the agent is actually stuck. Set `AGENT_TASK_TIMEOUT_SECONDS=28800` (8 h,
 as shown above) for full runs so genuinely long tasks aren't cut off mid-rollout.
 
-Agent credentials are separate from upstream judge and simulator credentials. Optional
-`EVAL_MODEL`, `EVAL_MODEL_BASE_URL`, and `EVAL_MODEL_API_KEY` override judge configuration;
-`USER_SIM_MODEL`, `USER_SIM_BASE_URL`, `USER_SIM_API_KEY`, and `USER_SIM_PROVIDER` override
-the simulator. Native `OSWORLD_*` settings take precedence. Changing these settings is an
-experiment configuration change, not runtime parity. A failed judge or simulator model call
-invalidates the run even if upstream returns zero; simulator calls cannot satisfy judge
-coverage. These rollouts are not automatically retried.
+Agent credentials are separate from the upstream judge and simulator credentials. Those use
+upstream's own settings unchanged: `OSWORLD_EVAL_MODEL_PROVIDER`, `OSWORLD_EVAL_MODEL_NAME`,
+`OSWORLD_EVAL_MODEL_BASE_URL`, `OSWORLD_EVAL_MODEL_API_KEY` (or `OSWORLD_EVAL_MODEL_API_KEY_ENV`)
+for the judge, and the same names under `OSWORLD_USER_SIM_` for the simulator, which inherits
+whatever it does not override. Both default to OpenAI with `OPENAI_API_KEY`. Preflight resolves
+the keys the way upstream does and fails before any sandbox launches if one is missing, because
+upstream would otherwise turn that failure into a 0.0 score hours later. Changing these settings
+is an experiment configuration change, not runtime parity. A failed judge or simulator model call
+invalidates the run even if upstream returns zero; simulator calls cannot satisfy judge coverage.
+These rollouts are not automatically retried.
 
-Preflight verifies the actual upstream commit and exact adapter patches. The coordinator
-rejects campaigns whose timeout budget, including setup and allowed retries, exceeds either
-fleet's remaining lifetime. Use fresh fleets, higher concurrency, or a smaller manifest;
-fleets are not renewed mid-run.
+Preflight verifies the actual upstream commit and exact adapter patches; on drift it prints the
+`runner/setup.sh --restore` + re-apply command that repairs the checkout. The coordinator admits
+a run only if both fleets outlast the worst-case budget of its waves (every wave charged its full
+`AGENT_TASK_TIMEOUT_SECONDS`), and re-checks before each retry wave against the tasks that
+actually failed, skipping that wave when it no longer fits. Fleets are not renewed mid-run.
 
-`run_agent_parallel.sh` stops both service fleets on exit. Set `TEARDOWN_FLEETS_ON_EXIT=0` only
-when deliberately retaining a campaign, and stop it later with
+`run_agent_parallel.sh` stops both service fleets when an admitted run exits. A run rejected
+before admission (preflight, lifetime) leaves them running so the rejection can be acted on with
+the same fleets; stop them yourself with
 `uv run --env-file .env.local --locked python services/stop.py --campaign-id "$OSWORLD_CAMPAIGN_ID"`.
+Set `TEARDOWN_FLEETS_ON_EXIT=0` to retain the fleets after an admitted run as well.
 Run-scoped raw trajectories, service receipts, and secrets stay in ignored paths; committed
 evidence is published only after allowlist sanitization.
 
@@ -117,11 +123,8 @@ that propagated the intentional disabled-model sentinel (`MODEL_BOUNDARY_PASS`).
 no-model outcomes. The full-model sample must exercise every task that either propagated that
 sentinel or attempted an evaluator-model call that an upstream metric converted into a zero score.
 
-The validation coordinator stops both service fleets on exit. Set
-`TEARDOWN_FLEETS_ON_EXIT=0` only when deliberately retaining a campaign, and stop it later with
-`uv run --env-file .env.local --locked python services/stop.py --campaign-id "$OSWORLD_CAMPAIGN_ID"`.
-Run-scoped raw trajectories, service receipts, and secrets stay in ignored paths; committed
-evidence is published only after allowlist sanitization.
+The validation coordinators leave the fleets running so later rungs can reuse the campaign;
+stop it with the `services/stop.py` command above when you are done with it.
 
 To gate a full-model run on that coverage instead of running it ungated, set
 `REQUIRE_NO_MODEL_COVERAGE=1` and point `NO_MODEL_RECEIPT` at the receipt above — this is the
@@ -182,7 +185,7 @@ Only immutable `name:build_id` references are accepted — launchers reject muta
 and never build templates at runtime. The guest build is promotable only if its exact
 immutable build restores with ≥100 GB usable root capacity. `runner/setup.sh` is idempotent
 (grep-guarded patches); `runner/setup.sh --verify OSWorld-V2` checks the pin and patch
-contents without modifying the checkout.
+contents without modifying the checkout, and `--restore` returns it to the bare pin.
 
 ## Resource requirements
 
@@ -210,7 +213,9 @@ Don't trim below these even though measured peaks look low:
 
 Account level: the full-suite parallel drivers (80 workers) peak near 160 guest sandboxes
 (strict reset briefly holds two per worker) plus the two fleet sandboxes — sized for a
-200-concurrent-sandbox ceiling. Host needs are negligible (localhost relay + harness).
+200-concurrent-sandbox ceiling. On the host, each worker is a relay plus a Python process
+holding upstream's evaluator stack (~270 MB RSS at startup; easyocr/torch load only if an
+OCR metric runs), so budget roughly 22 GB of host RAM for 80 workers.
 
 ## Layout
 

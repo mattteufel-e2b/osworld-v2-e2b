@@ -29,6 +29,11 @@ from urllib.request import urlopen
 
 
 sys.path.insert(0, os.getcwd())
+from lazy_import import lazy_module  # noqa: E402
+
+# easyocr (and torch behind it) serves one OCR metric no release task uses;
+# load it on first use instead of in every one of 80 workers at startup.
+lazy_module("easyocr")
 import lib_run_single  # noqa: E402
 import requests  # noqa: E402
 import task_loader  # noqa: E402  (checkout-local; cwd is the pinned checkout)
@@ -36,7 +41,7 @@ from desktop_env.desktop_env import DesktopEnv  # noqa: E402
 from evaluator_model_calls import EvaluatorModelCallTracker  # noqa: E402
 from mm_agents.agent import PromptAgent  # noqa: E402
 from mm_agents.m3 import M3Agent  # noqa: E402
-from receipt_safety import atomic_write_json, public_error, public_transport  # noqa: E402
+from receipt_safety import atomic_write_json, base_receipt, public_error  # noqa: E402
 
 
 def utc_now() -> str:
@@ -45,16 +50,6 @@ def utc_now() -> str:
 
 def _port_base() -> int:
     return int(os.environ.get("OSWORLD_RELAY_PORT_BASE", "0"))
-
-
-def _positive_int_env(name: str) -> int | None:
-    raw = os.environ.get(name, "").strip()
-    return int(raw) if raw.isdigit() and int(raw) > 0 else None
-
-
-def _nonnegative_int_env(name: str) -> int | None:
-    raw = os.environ.get(name, "").strip()
-    return int(raw) if raw.isdigit() else None
 
 
 def relay_state() -> dict:
@@ -283,50 +278,29 @@ def main() -> int:
     phases = getattr(example, "get_phases", None)
     multiphase = callable(phases) and bool(phases())
 
-    template_ref = os.environ.get("GUEST_TEMPLATE", "")
-    receipt = {
-        "id": args.task_id,
-        "run_nonce": run_nonce,
-        "domain": args.domain,
-        "agent_kind": args.agent_kind,
-        "model": args.model,
-        "model_transport": public_transport(os.environ.get("MODEL_BASE_URL")),
-        "thinking_mode": os.environ.get("M3_THINKING_MODE") or None,
-        "thinking_budget": _positive_int_env("M3_THINKING_BUDGET"),
-        "m3_max_llm_retries": (
-            _nonnegative_int_env("M3_MAX_LLM_RETRIES")
-            if args.agent_kind == "m3"
-            else None
-        ),
-        "eval_model": os.environ.get("OSWORLD_EVAL_MODEL_NAME") or None,
-        "eval_provider": os.environ.get("OSWORLD_EVAL_MODEL_PROVIDER") or None,
-        "eval_model_transport": public_transport(
-            os.environ.get("OSWORLD_EVAL_MODEL_BASE_URL")
-        ),
-        "user_sim_model": os.environ.get("OSWORLD_USER_SIM_MODEL") or None,
-        "user_sim_provider": os.environ.get("OSWORLD_USER_SIM_PROVIDER") or None,
-        "user_sim_transport": public_transport(
-            os.environ.get("OSWORLD_USER_SIM_BASE_URL")
-        ),
-        "port_base": port_base,
-        "control_port": 14999 + port_base,
-        "template": template_ref,
-        "campaign_id": os.environ.get("OSWORLD_CAMPAIGN_ID"),
-        "multiphase": multiphase,
-        "max_steps": args.max_steps,
-        "started_at": utc_now(),
-        "transport_ok": False,
-        "evaluator_ran": False,
-        "path_status": None,
-        "steps_taken": 0,
-        "score": None,
-        "judge_used": None,
-        "eval_model_call_attempts": 0,
-        "eval_model_successes": 0,
-        "sandbox_id": None,
-        "sandbox_generation": None,
-        "wall_clock_s": None,
-    }
+    receipt = base_receipt(
+        task_id=args.task_id,
+        domain=args.domain,
+        agent_kind=args.agent_kind,
+        model=args.model,
+        max_steps=args.max_steps,
+        port_base=port_base,
+    )
+    receipt.update(
+        multiphase=multiphase,
+        started_at=utc_now(),
+        transport_ok=False,
+        evaluator_ran=False,
+        path_status=None,
+        steps_taken=0,
+        score=None,
+        judge_used=None,
+        eval_model_call_attempts=0,
+        eval_model_successes=0,
+        sandbox_id=None,
+        sandbox_generation=None,
+        wall_clock_s=None,
+    )
 
     if args.agent_kind == "m3":
         agent = M3Agent(

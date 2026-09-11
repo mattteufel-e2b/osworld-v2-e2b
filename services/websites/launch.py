@@ -369,6 +369,7 @@ def main() -> int:
     fl.load_e2b_key()
     template_ref = fl.ensure_fleet_template()
     sbx, created = fl.reuse_or_create("websites", template=template_ref)
+    published = False
     try:
         docker_secs = fl.ensure_docker(sbx)
         fl.ensure_swap(sbx)
@@ -415,6 +416,7 @@ def main() -> int:
                 "sites": site_map,
             },
         )
+        published = True
 
         proxy_path_check = fl.verify_host_proxy_path(
             f"mailhub.{fl.HOST_SUFFIX}", "/api/state?cookie=proxycheck", public_port
@@ -475,7 +477,7 @@ def main() -> int:
         RECEIPT.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
         fl.log(f"receipt -> {RECEIPT}")
     except BaseException:
-        fl.rollback_launch("websites", sbx, created)
+        fl.rollback_launch("websites", sbx, created, published=published)
         raise
 
     fl.stop_host_proxy()

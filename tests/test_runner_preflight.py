@@ -64,8 +64,6 @@ def test_all_runners_fail_before_launching_when_service_runtime_is_missing(tmp_p
         "MODEL_API_KEY": "dummy",
         "MODEL_BASE_URL": "https://example.test/v1",
         "MODEL": "test-model",
-        "EVAL_MODEL_BASE_URL": "https://example.test/v1",
-        "EVAL_MODEL": "test-evaluator",
         "REQUIRE_NO_MODEL_COVERAGE": "0",
     }
 
@@ -89,56 +87,9 @@ def test_all_runners_fail_before_launching_when_service_runtime_is_missing(tmp_p
 
         assert result.returncode == 2, (relative, result.stdout, result.stderr)
         assert "required service runtime file missing" in result.stderr, relative
-        if relative in {
-            "runner/validate.sh",
-            "runner/validate_parallel.sh",
-            "runner/run_agent_parallel.sh",
-        }:
-            assert uv_called.exists(), relative
-        else:
-            assert not uv_called.exists(), relative
-
-
-def test_agent_coordinator_returns_failure_when_early_teardown_fails(tmp_path):
-    osworld, tasks, manifest, services = _minimal_inputs(tmp_path)
-    fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
-    fake_uv = fake_bin / "uv"
-    fake_uv.write_text("#!/bin/sh\nexit 97\n")
-    fake_uv.chmod(0o755)
-    env = {
-        **os.environ,
-        "PATH": f"{fake_bin}:{os.environ['PATH']}",
-        "GUEST_TEMPLATE": IMMUTABLE_GUEST,
-        "OSWORLD_CAMPAIGN_ID": "test-campaign",
-        "E2B_API_KEY": "dummy",
-        "OSWORLD_ROOT": str(osworld),
-        "OSWORLD_TASKS_DIR": str(tasks),
-        "OSWORLD_SERVICES_DIR": str(services),
-        "AGENT_MANIFEST": str(manifest),
-        "RAW_DIR": str(tmp_path / "raw"),
-        "OUTPUT": str(tmp_path / "receipt.json"),
-        "MODEL_API_KEY": "dummy",
-        "MODEL_BASE_URL": "https://example.test/v1",
-        "MODEL": "test-model",
-        "EVAL_MODEL_BASE_URL": "https://example.test/v1",
-        "EVAL_MODEL": "test-evaluator",
-        "REQUIRE_NO_MODEL_COVERAGE": "0",
-    }
-
-    result = subprocess.run(
-        ["bash", str(ROOT / "runner" / "run_agent_parallel.sh")],
-        cwd=ROOT,
-        env=env,
-        text=True,
-        capture_output=True,
-        timeout=10,
-        check=False,
-    )
-
-    assert result.returncode == 1
-    assert "required service runtime file missing" in result.stderr
-    assert "service fleet cleanup failed" in result.stderr
+        # No coordinator may touch the fleets (stop.py runs under uv) before
+        # the run has been admitted.
+        assert not uv_called.exists(), relative
 
 
 def test_agent_coordinator_requires_explicit_m3_retry_policy(tmp_path):
@@ -159,8 +110,6 @@ def test_agent_coordinator_requires_explicit_m3_retry_policy(tmp_path):
         "MODEL": "test-model",
         "AGENT_KIND": "m3",
         "M3_THINKING_BUDGET": "2048",
-        "EVAL_MODEL_BASE_URL": "https://example.test/v1",
-        "EVAL_MODEL": "test-evaluator",
     }
     env.pop("M3_MAX_LLM_RETRIES", None)
 

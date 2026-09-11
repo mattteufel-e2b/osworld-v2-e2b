@@ -5,7 +5,9 @@ import os
 import stat
 import sys
 import tempfile
+from contextlib import ExitStack
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -241,6 +243,80 @@ class FleetRuntimePolicyTests(unittest.TestCase):
             websites.main()
 
         self.assertEqual(kill_calls, ["website-sandbox"])
+
+    def _run_reused_websites_launch(self, *, fail_before_publish: bool):
+        websites = load_websites_launcher()
+        kill_calls = []
+        sandbox = type(
+            "Sandbox",
+            (),
+            {
+                "sandbox_id": "website-sandbox",
+                "traffic_access_token": "runtime-only-token",
+                "get_host": lambda _self, port: f"{port}-website.example.test",
+                "kill": lambda _self: kill_calls.append("website-sandbox"),
+            },
+        )()
+        wait_ready = (
+            {"side_effect": RuntimeError("website readiness timed out")}
+            if fail_before_publish
+            else {"return_value": {"mailhub": 0.1}}
+        )
+        ingress = {
+            "per_port_probe": {"status": 200},
+            "unauthenticated_probe": {"status": 403},
+        }
+        patches = [
+            patch.object(websites, "websites_pin", return_value="a" * 40),
+            patch.object(websites.fl, "load_e2b_key"),
+            patch.object(
+                websites.fl, "ensure_fleet_template", return_value=IMMUTABLE_FLEET
+            ),
+            patch.object(websites.fl, "reuse_or_create", return_value=(sandbox, False)),
+            patch.object(websites.fl, "ensure_docker", return_value=0.0),
+            patch.object(websites.fl, "ensure_swap"),
+            patch.object(websites, "clone_repo"),
+            patch.object(websites, "enumerate_sites", return_value={"mailhub": 13001}),
+            patch.object(websites, "write_fanout"),
+            patch.object(websites, "compose_up", return_value=0.0),
+            patch.object(websites, "recreate_fanout"),
+            patch.object(websites, "wait_ready", **wait_ready),
+            patch.object(websites, "probe_host_ingress", return_value=ingress),
+            patch.object(
+                websites.fl,
+                "restart_host_proxy",
+                return_value={"running": True, "port": 8090},
+            ),
+            patch.object(
+                websites.fl, "verify_host_proxy_path", return_value={"status": 200}
+            ),
+            patch.object(
+                websites, "verify_via_v2_builder", return_value={"status": 500}
+            ),
+            patch.object(websites.fl, "stop_host_proxy"),
+            patch.object(websites.fl, "write_runtime_section"),
+        ]
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            stack.enter_context(
+                patch.object(websites, "RECEIPT", Path(directory) / "receipt.json")
+            )
+            for item in patches:
+                stack.enter_context(item)
+            delete_runtime = stack.enter_context(
+                patch.object(websites.fl, "delete_runtime_section")
+            )
+            with self.assertRaises(RuntimeError):
+                websites.main()
+        self.assertEqual(kill_calls, [])  # a reused sandbox is never killed
+        return delete_runtime
+
+    def test_websites_relaunch_failing_before_publish_keeps_reused_fleet_section(self):
+        delete_runtime = self._run_reused_websites_launch(fail_before_publish=True)
+        delete_runtime.assert_not_called()
+
+    def test_websites_relaunch_failing_after_publish_retracts_its_section(self):
+        delete_runtime = self._run_reused_websites_launch(fail_before_publish=False)
+        delete_runtime.assert_called_once_with("websites", "website-sandbox")
 
     def test_websites_main_rolls_back_runtime_and_kills_new_sandbox_on_final_gate_failure(
         self,
@@ -617,7 +693,12 @@ class FleetRuntimePolicyTests(unittest.TestCase):
         # longest supported campaign (multi-wave 108-task run with 4h ceilings).
         assert fleetlib.SANDBOX_TIMEOUT_S == 24 * 3600
 
-    def test_rollback_launch_spares_reused_sandboxes(self):
+    def test_rollback_launch_spares_reused_sandboxes_and_their_earlier_section(self):
+        # A gate that fails BEFORE this launch publishes (wait_ready, ingress,
+        # proxy restart) must not erase the section a previous successful
+        # launch wrote for the reused sandbox: it is the only record
+        # reuse_or_create consults, and losing it means a second fleet is
+        # built beside the healthy orphan.
         sbx = unittest.mock.MagicMock(sandbox_id="sb-1")
         with tempfile.TemporaryDirectory() as tmp:
             token = Path(tmp) / "token"
@@ -631,6 +712,40 @@ class FleetRuntimePolicyTests(unittest.TestCase):
             assert token.exists()  # a reused fleet keeps its live PAT
         stop_proxy.assert_called_once()
         delete_section.assert_not_called()
+
+    def test_rollback_launch_retracts_the_section_this_launch_published(self):
+        # The launcher publishes provisionally before its final gates; a gate
+        # failing after that must retract it so preflight cannot admit a fleet
+        # that just failed, while a reused sandbox itself survives.
+        sbx = unittest.mock.MagicMock(sandbox_id="sb-1")
+        with (
+            patch.object(fleetlib, "stop_host_proxy"),
+            patch.object(fleetlib, "delete_runtime_section") as delete_section,
+        ):
+            fleetlib.rollback_launch("gitlab", sbx, created=False, published=True)
+        sbx.kill.assert_not_called()
+        delete_section.assert_called_once_with("gitlab", "sb-1")
+
+    def test_connect_only_reuses_sandboxes_whose_metadata_matches(self):
+        def sandbox_with(metadata):
+            sbx = unittest.mock.MagicMock(sandbox_id="sb-1")
+            sbx.get_info.return_value = SimpleNamespace(metadata=metadata)
+            return sbx
+
+        mine = {
+            "workload": "osworld-v2-services",
+            "section": "websites",
+            "campaign_id": "campaign-A",
+        }
+        with patch.object(fleetlib.Sandbox, "connect") as connect:
+            connect.return_value = sandbox_with(mine)
+            assert fleetlib._connect("sb-1", "websites", "campaign-A") is not None
+            connect.return_value = sandbox_with({**mine, "campaign_id": "campaign-B"})
+            assert fleetlib._connect("sb-1", "websites", "campaign-A") is None
+            connect.return_value = sandbox_with({**mine, "section": "gitlab"})
+            assert fleetlib._connect("sb-1", "websites", "campaign-A") is None
+            connect.return_value = sandbox_with({})  # not a fleet sandbox at all
+            assert fleetlib._connect("sb-1", "websites", "campaign-A") is None
 
     def test_rollback_launch_destroys_fresh_sandboxes(self):
         sbx = unittest.mock.MagicMock(sandbox_id="sb-1")

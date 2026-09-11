@@ -133,7 +133,8 @@ full native-result parity or a passing 24-task sample.
   retry behavior. Judge and simulator overrides are opt-in and recorded separately from agent
   configuration. Failed model calls invalidate a run without rewriting upstream scores or
   retrying scored attempts. Simulator calls cannot satisfy judge coverage. Runners use real OCR
-  and audio evaluator dependencies through upstream's `full` extra, without dependency stubs.
+  and audio evaluator dependencies through upstream's `full` extra, without dependency stubs;
+  easyocr is imported lazily so torch loads only in a worker whose task runs an OCR metric.
 - **Per-task wall clock**: `AGENT_TASK_TIMEOUT_SECONDS` (default 14400 s) bounds a
   task rollout; upstream has no per-task deadline. A timed-out task produces a
   fail-closed `task-timeout` receipt (never a score) and is eligible for the

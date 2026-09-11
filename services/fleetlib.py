@@ -27,7 +27,6 @@ import math
 import os
 import subprocess
 import sys
-import tempfile
 import time
 from pathlib import Path
 
@@ -39,6 +38,7 @@ from e2b_policy import (  # noqa: E402
     require_immutable_template_ref,
     sandbox_network_policy,
 )
+from runner.receipt_safety import atomic_write_text  # noqa: E402
 from services.release_lock import validate_release_lock  # noqa: E402
 
 SERVICES_DIR = Path(__file__).resolve().parent
@@ -64,6 +64,10 @@ SANDBOX_TIMEOUT_S = int(os.environ.get("FLEET_SANDBOX_TIMEOUT_S", str(24 * 3600)
 FLEET_TEMPLATE_NAME = os.environ.get("FLEET_TEMPLATE_NAME", "osworld-v2-fleet-base")
 FLEET_CPU = 4
 FLEET_MEMORY_MB = 8192
+
+# Stamped on every fleet sandbox; the only ownership record that survives a
+# lost or rewritten services/.runtime.json (stop.py lists by it, reuse checks it).
+WORKLOAD = "osworld-v2-services"
 
 
 def release_lock() -> dict:
@@ -125,38 +129,37 @@ def campaign_id() -> str:
 
 
 def campaign_budget_seconds(tasks: list[dict], env: dict) -> int:
-    """Conservative admission budget, including setup, cleanup and retry waves."""
+    """Worst-case seconds to run `tasks` once: every wave charged its full
+    per-task ceiling plus relay start-up, teardown and a local margin.
 
-    def positive(name, default):
-        value = int(env.get(name, default))
+    Every knob comes from the coordinator's environment with no fallback here,
+    so this can never budget with a default the shell no longer uses. A retry
+    wave is budgeted by a separate call against the tasks that actually failed.
+    """
+
+    def positive(name):
+        value = int(env[name])
         if value <= 0:
             raise ValueError(f"{name} must be positive")
         return value
 
-    concurrency = positive("PARALLEL_CONCURRENCY", 80)
-    retries = int(env.get("AGENT_RETRY_ATTEMPTS", 0))
-    retry_concurrency = positive("AGENT_RETRY_CONCURRENCY", 4)
+    concurrency = positive("PARALLEL_CONCURRENCY")
     solo = int(
-        env.get("RUN_TASK_082_CONCURRENT", "1") == "0"
-        and any(t["id"] == "082" for t in tasks)
+        env["RUN_TASK_082_CONCURRENT"] == "0" and any(t["id"] == "082" for t in tasks)
     )
     waves = math.ceil((len(tasks) - solo) / concurrency) + solo
-    retry_solo = int(any(t["id"] == "082" for t in tasks))
-    waves += retries * (
-        math.ceil((len(tasks) - retry_solo) / retry_concurrency) + retry_solo
-    )
     per_task = (
-        positive("AGENT_TASK_TIMEOUT_SECONDS", 14400)
-        + 150 * 7  # relay readiness: 150 x (5s request + 2s sleep)
-        + 5 * positive("PROCESS_TERMINATION_GRACE_SECONDS", 10)
-        + positive("RELAY_STOP_REQUEST_TIMEOUT_SECONDS", 10)
-        + positive("AGENT_WATCHDOG_POLL_SECONDS", 5)
+        positive("AGENT_TASK_TIMEOUT_SECONDS")
+        + positive("RELAY_READY_TIMEOUT_SECONDS")
+        + 5 * positive("PROCESS_TERMINATION_GRACE_SECONDS")
+        + positive("RELAY_STOP_REQUEST_TIMEOUT_SECONDS")
+        + positive("AGENT_WATCHDOG_POLL_SECONDS")
         + 60  # local preflight margin
     )
-    stagger = float(env.get("AGENT_START_STAGGER_SECONDS", "0.25"))
-    if retries < 0 or not math.isfinite(stagger) or stagger < 0:
-        raise ValueError("retry count and start stagger must be non-negative")
-    return math.ceil(waves * per_task + len(tasks) * (1 + retries) * stagger + 300)
+    stagger = float(env["AGENT_START_STAGGER_SECONDS"])
+    if not math.isfinite(stagger) or stagger < 0:
+        raise ValueError("AGENT_START_STAGGER_SECONDS must be non-negative")
+    return math.ceil(waves * per_task + len(tasks) * stagger + 300)
 
 
 def require_campaign_lifetime(runtime: dict, seconds: int) -> None:
@@ -186,27 +189,8 @@ def read_runtime() -> dict:
     return {}
 
 
-def write_private_text(path: Path, payload: str) -> None:
-    """Atomically publish a local secret-bearing file with mode 0600."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            delete=False,
-        ) as temporary:
-            temporary_path = Path(temporary.name)
-            temporary.write(payload)
-            temporary.flush()
-            os.fsync(temporary.fileno())
-        temporary_path.chmod(0o600)
-        os.replace(temporary_path, path)
-    finally:
-        if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
+# Runtime file and token writes share the receipt writers' atomic 0600 publish.
+write_private_text = atomic_write_text
 
 
 def write_runtime_section(section: str, data: dict) -> dict:
@@ -237,16 +221,25 @@ def delete_runtime_section(section: str, sandbox_id: str) -> bool:
 # --- sandbox lifecycle ------------------------------------------------------
 
 
-def _connect(sandbox_id: str) -> Sandbox | None:
-    """Reconnect to a still-running sandbox, or None if it is gone."""
+def _connect(sandbox_id: str, section: str, campaign: str) -> Sandbox | None:
+    """Reconnect to a live sandbox that E2B's own metadata says belongs to this
+    section and campaign; None if it is gone or is not ours to reuse or kill."""
     try:
         sbx = Sandbox.connect(sandbox_id)
+        metadata = sbx.get_info().metadata or {}
         # Cheap liveness check.
         sbx.commands.run("true", timeout=15)
-        return sbx
     except Exception as exc:  # noqa: BLE001
         log(f"cannot reuse sandbox {sandbox_id}: {exc}")
         return None
+    expected = {"workload": WORKLOAD, "section": section, "campaign_id": campaign}
+    if {key: metadata.get(key) for key in expected} != expected:
+        log(
+            f"not touching sandbox {sandbox_id}: its metadata does not name "
+            f"{section} of campaign {campaign!r}"
+        )
+        return None
+    return sbx
 
 
 def reuse_or_create(
@@ -269,7 +262,7 @@ def reuse_or_create(
         and existing_template == template
         and existing.get("campaign_id") == campaign
     ):
-        sbx = _connect(sid)
+        sbx = _connect(sid, section, campaign)
         if sbx is not None:
             with contextlib.suppress(Exception):
                 sbx.set_timeout(SANDBOX_TIMEOUT_S)
@@ -286,7 +279,7 @@ def reuse_or_create(
             f"not reusing {section} sandbox {sid}: runtime template "
             f"{existing_template!r} does not match {template!r}"
         )
-        stale = _connect(sid)
+        stale = _connect(sid, section, campaign)
         if stale is not None:
             try:
                 stale.kill()
@@ -301,11 +294,7 @@ def reuse_or_create(
         timeout=SANDBOX_TIMEOUT_S,
         secure=True,
         network=sandbox_network_policy(),
-        metadata={
-            "workload": "osworld-v2-services",
-            "section": section,
-            "campaign_id": campaign,
-        },
+        metadata={"workload": WORKLOAD, "section": section, "campaign_id": campaign},
     )
     if not getattr(sbx, "traffic_access_token", None):
         sbx.kill()
@@ -317,16 +306,29 @@ def reuse_or_create(
 
 
 def rollback_launch(
-    section: str, sbx: Sandbox, created: bool, *, token_file: Path | None = None
+    section: str,
+    sbx: Sandbox,
+    created: bool,
+    *,
+    token_file: Path | None = None,
+    published: bool = False,
 ) -> None:
-    """Stop the proxy; preserve reused fleet identity and credentials for recovery."""
+    """Undo a failed launch. A section THIS launch published is retracted so a
+    fleet that just failed a gate can never be admitted; a section an earlier,
+    successful launch wrote for a reused sandbox is kept, since it is the only
+    record reuse_or_create consults and deleting it would make the next launch
+    build a second fleet beside the healthy orphan. A sandbox this launch
+    created is destroyed with its token; a reused one is left running."""
     stop_host_proxy()
+    if created or published:
+        delete_runtime_section(section, sbx.sandbox_id)
     if not created:
         log(
-            f"{section} launch failed against reused sandbox {sbx.sandbox_id}; leaving it running"
+            f"{section} launch failed against reused sandbox {sbx.sandbox_id}; "
+            "left running -- stop it with services/stop.py --campaign-id "
+            f"{os.environ.get('OSWORLD_CAMPAIGN_ID')}"
         )
         return
-    delete_runtime_section(section, sbx.sandbox_id)
     if token_file is not None:
         token_file.unlink(missing_ok=True)
     try:
@@ -531,7 +533,9 @@ def verify_host_proxy_path(sample_host: str, path: str, port: int) -> dict:
         return {"url": url, "status": None, "error": repr(exc)[:200]}
 
 
-if __name__ == "__main__":
+def main(argv: list[str] | None = None) -> int:
+    """Admission gate: refuse to start waves both fleets cannot outlast.
+    Returns the budget in seconds; raises when the fleets are too short-lived."""
     import argparse
 
     parser = argparse.ArgumentParser(
@@ -541,10 +545,26 @@ if __name__ == "__main__":
         "--check-lifetime", type=Path, required=True, metavar="MANIFEST"
     )
     parser.add_argument("--runtime", type=Path, default=RUNTIME_FILE)
-    args = parser.parse_args()
-    load_e2b_key()
-    budget = campaign_budget_seconds(
-        json.loads(args.check_lifetime.read_text())["tasks"], os.environ
+    parser.add_argument(
+        "--task-id",
+        action="append",
+        default=[],
+        help="budget only these manifest tasks (a retry wave); repeatable",
     )
+    args = parser.parse_args(argv)
+    load_e2b_key()
+    tasks = json.loads(args.check_lifetime.read_text())["tasks"]
+    if args.task_id:
+        by_id = {task["id"]: task for task in tasks}
+        unknown = [task_id for task_id in args.task_id if task_id not in by_id]
+        if unknown:
+            raise ValueError(f"task ids not in manifest: {', '.join(unknown)}")
+        tasks = [by_id[task_id] for task_id in args.task_id]
+    budget = campaign_budget_seconds(tasks, os.environ)
     require_campaign_lifetime(json.loads(args.runtime.read_text()), budget)
-    log(f"fleet lifetime admission passed: {budget}s budget")
+    log(f"fleet lifetime admission passed: {budget}s budget for {len(tasks)} task(s)")
+    return budget
+
+
+if __name__ == "__main__":
+    main()

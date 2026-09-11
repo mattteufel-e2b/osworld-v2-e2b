@@ -42,6 +42,9 @@ from urllib.request import urlopen
 # that root, but Python seeds sys.path[0] with this script's directory, so add the
 # checkout root explicitly before importing it.
 sys.path.insert(0, os.getcwd())
+from lazy_import import lazy_module  # noqa: E402
+
+lazy_module("easyocr")  # torch only if an OCR metric actually runs
 import task_loader  # noqa: E402  (checkout-local; cwd is the pinned checkout)
 from desktop_env.desktop_env import DesktopEnv  # noqa: E402
 from no_model import NoModelGuard, model_boundary_result  # noqa: E402

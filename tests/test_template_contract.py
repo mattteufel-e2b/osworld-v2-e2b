@@ -590,20 +590,33 @@ def test_task_082_uses_the_literal_canonical_port_3000():
     assert 'return f"http://localhost:{AWS_PORT}' in task
 
 
-def test_agent_receipt_records_reasoning_and_evaluator_provenance_without_keys():
-    agent = (ROOT / "runner" / "agent_runner.py").read_text()
+def test_agent_receipt_records_reasoning_and_evaluator_provenance_without_keys(
+    monkeypatch,
+):
+    from receipt_safety import base_receipt
 
-    assert '"thinking_mode": os.environ.get("M3_THINKING_MODE") or None' in agent
-    assert '"thinking_budget": _positive_int_env("M3_THINKING_BUDGET")' in agent
-    assert '"eval_model": os.environ.get("OSWORLD_EVAL_MODEL_NAME") or None' in agent
-    assert (
-        '"eval_provider": os.environ.get("OSWORLD_EVAL_MODEL_PROVIDER") or None'
-        in agent
+    monkeypatch.setenv("M3_THINKING_MODE", "budget")
+    monkeypatch.setenv("M3_THINKING_BUDGET", "2048")
+    monkeypatch.setenv("OSWORLD_EVAL_MODEL_NAME", "judge")
+    monkeypatch.setenv("OSWORLD_EVAL_MODEL_PROVIDER", "openai_compatible")
+    monkeypatch.setenv("OSWORLD_EVAL_MODEL_API_KEY", "judge-secret")
+    monkeypatch.setenv("MODEL_API_KEY", "agent-secret")
+
+    receipt = base_receipt(
+        task_id="001",
+        domain="release",
+        agent_kind="m3",
+        model="model",
+        max_steps=500,
+        port_base=0,
     )
-    assert (
-        '"api_key"'
-        not in agent.split("receipt = {", 1)[1].split("\n    }", 1)[0].lower()
-    )
+
+    assert receipt["thinking_mode"] == "budget"
+    assert receipt["thinking_budget"] == 2048
+    assert receipt["eval_model"] == "judge"
+    assert receipt["eval_provider"] == "openai_compatible"
+    assert "secret" not in json.dumps(receipt)
+    assert not any("key" in field for field in receipt)
 
 
 def test_agent_worker_creates_custom_relay_log_parent_before_redirection():
@@ -622,15 +635,6 @@ def test_agent_worker_canonicalizes_output_paths_before_entering_upstream_checko
     assert 'RESULT_DIR="$(abspath "$RESULT_DIR")"' in runner
     assert 'OUTPUT="$(abspath "$OUTPUT")"' in runner
     assert 'RELAY_LOG="$(abspath "$RELAY_LOG")"' in runner
-
-
-def test_setup_patches_terminal_none_screenshot_before_agent_runs():
-    setup = (ROOT / "runner" / "setup.sh").read_text()
-
-    assert "lib_run_single.py" in setup
-    assert "terminal observation returned screenshot=None" in setup
-    assert "if screenshot_bytes is not None:" in setup
-    assert "desktop_env/providers/__init__.py lib_run_single.py" in setup
 
 
 def test_template_build_smoke_covers_ipv4_and_ipv6_protected_ranges():

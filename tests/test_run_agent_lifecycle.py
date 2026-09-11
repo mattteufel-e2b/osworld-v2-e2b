@@ -128,11 +128,11 @@ esac
         "AGENT_KIND": "m3",
         "M3_THINKING_BUDGET": "2048",
         "M3_MAX_LLM_RETRIES": "2",
-        "EVAL_MODEL_BASE_URL": "https://judge-user:judge-secret@judge.test/v1?key=secret",
-        "EVAL_MODEL": "judge-model",
-        "EVAL_MODEL_API_KEY": "judge-sentinel-never-publish",
-        "USER_SIM_MODEL": "simulator-model",
-        "USER_SIM_API_KEY": "simulator-sentinel-never-publish",
+        "OSWORLD_EVAL_MODEL_BASE_URL": "https://judge-user:judge-secret@judge.test/v1?key=secret",
+        "OSWORLD_EVAL_MODEL_NAME": "judge-model",
+        "OSWORLD_EVAL_MODEL_API_KEY": "judge-sentinel-never-publish",
+        "OSWORLD_USER_SIM_MODEL": "simulator-model",
+        "OSWORLD_USER_SIM_API_KEY": "simulator-sentinel-never-publish",
         "OSWORLD_ROOT": str(osworld),
         "OSWORLD_TASKS_DIR": str(tasks),
         "OSWORLD_SERVICES_DIR": str(services),
@@ -310,6 +310,8 @@ def test_agent_timeout_kills_agent_and_relay_process_trees(tmp_path):
         assert receipt["steps_taken"] is None
         assert receipt["eval_model_call_attempts"] is None
         assert receipt["eval_model_successes"] is None
+        assert receipt["user_sim_call_attempts"] is None
+        assert receipt["user_sim_successes"] is None
         assert receipt["timeout_seconds"] == 1
         assert receipt["wall_clock_s"] >= 1
         assert Path(env["OUTPUT"]).stat().st_mode & 0o777 == 0o600
@@ -572,3 +574,122 @@ def test_retry_selection_procsub_survives_macos_bash_3_2(tmp_path):
     assert result.returncode == 0, (result.stdout, result.stderr)
     rows = [line for line in result.stdout.splitlines() if line]
     assert rows == ["001 release"], (rows, result.stdout, result.stderr)
+
+
+def test_signal_before_setsid_still_terminates_children(tmp_path):
+    # start_in_new_session forks a python that only later calls os.setsid();
+    # until then the child shares the runner's process group, so a group-only
+    # kill finds nothing and the old code blocked forever in `wait`. Model that
+    # window with a python3 that execs the command WITHOUT setsid.
+    env = _runner_env(tmp_path, task_timeout=60)
+    _write_executable(
+        tmp_path / "bin" / "python3",
+        """#!/bin/sh
+case "$1" in
+  */preflight.py) exit 0 ;;
+  -c) shift; shift; cd "$1"; shift; exec "$@" ;;
+  *) exec "$REAL_PYTHON" "$@" ;;
+esac
+""",
+    )
+    _write_executable(
+        tmp_path / "bin" / "uv",
+        """#!/bin/sh
+case "$*" in
+  *e2b_relay.py*) echo $$ > "$RELAY_PID_FILE" ;;
+  *) echo $$ > "$AGENT_PID_FILE" ;;
+esac
+trap '' INT TERM
+while :; do :; done
+""",
+    )
+    process = subprocess.Popen(
+        ["bash", str(ROOT / "runner" / "run_agent.sh")],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        agent_pid = _wait_for_file(Path(env["AGENT_PID_FILE"]))
+        relay_pid = _wait_for_file(Path(env["RELAY_PID_FILE"]))
+        process.send_signal(signal.SIGTERM)
+        stdout, stderr = process.communicate(timeout=10)
+    finally:
+        for name in ("AGENT_PID_FILE", "RELAY_PID_FILE"):
+            try:
+                os.kill(int(Path(env[name]).read_text().strip()), signal.SIGKILL)
+            except (OSError, ValueError):
+                pass
+        if process.poll() is None:
+            process.kill()
+        process.communicate()
+
+    assert process.returncode == 143, (stdout, stderr)
+    _assert_process_gone(agent_pid)
+    _assert_process_gone(relay_pid)
+
+
+def _coordinator_env(tmp_path, *, fleetlib_case: str) -> dict[str, str]:
+    env = _runner_env(tmp_path, task_timeout=1)
+    env.update(
+        PARALLEL_CONCURRENCY="1",
+        AGENT_RETRY_ATTEMPTS="1",
+        AGENT_START_STAGGER_SECONDS="0",
+        AGENT_WATCHDOG_POLL_SECONDS="1",
+        REQUIRE_NO_MODEL_COVERAGE="0",
+        FLEET_STOPPED_FILE=str(tmp_path / "fleets-stopped"),
+    )
+    uv = tmp_path / "bin/uv"
+    uv.write_text(
+        uv.read_text().replace(
+            'case "$*" in',
+            f"""case "$*" in
+{fleetlib_case}
+  *hostmap_proxy.py*) exec sleep 60 ;;
+  *stop.py*) touch "$FLEET_STOPPED_FILE"; exit 0 ;;""",
+        )
+    )
+    return env
+
+
+def test_coordinator_rejected_before_admission_leaves_fleets_running(tmp_path):
+    # A lifetime rejection tells the operator to reuse the fleets with a
+    # smaller manifest; tearing them down in the EXIT trap made that impossible.
+    env = _coordinator_env(tmp_path, fleetlib_case="  *fleetlib.py*) exit 1 ;;")
+    result = subprocess.run(
+        ["bash", str(ROOT / "runner/run_agent_parallel.sh")],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=20,
+    )
+    assert result.returncode == 2, (result.stdout, result.stderr)
+    assert "left running" in result.stderr
+    assert not Path(env["FLEET_STOPPED_FILE"]).exists()
+    assert not Path(env["RAW_DIR"], "workers").exists()  # nothing launched
+
+
+def test_retry_wave_is_skipped_when_fleets_cannot_outlast_it(tmp_path):
+    # The first wave is admitted; the retry wave is budgeted separately against
+    # the tasks that actually failed and skipped (not fatal) when it cannot fit.
+    env = _coordinator_env(
+        tmp_path,
+        fleetlib_case="  *--task-id*) exit 1 ;;\n  *fleetlib.py*) exit 0 ;;",
+    )
+    result = subprocess.run(
+        ["bash", str(ROOT / "runner/run_agent_parallel.sh")],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=60,
+    )
+    workers = Path(env["RAW_DIR"], "workers")
+    assert (workers / "task_001.log").exists(), (result.stdout, result.stderr)
+    assert not (workers / "task_001_retry_1.log").exists()
+    assert "skipping retry" in result.stdout + result.stderr
+    assert result.returncode == 1  # the timed-out task is still a failure
+    assert Path(env["FLEET_STOPPED_FILE"]).exists()  # admitted runs tear down

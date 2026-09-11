@@ -58,13 +58,6 @@ cleanup_all() {
         kill "$proxy_pid" 2>/dev/null || true
         wait "$proxy_pid" 2>/dev/null || true
     fi
-    if [ "${TEARDOWN_FLEETS_ON_EXIT:-1}" = "1" ]; then
-        if ! $UV python "$SERVICES_DIR/stop.py" --campaign-id "$OSWORLD_CAMPAIGN_ID" \
-            >>"$RAW_DIR/service-teardown.log" 2>&1; then
-            echo "service fleet cleanup failed; recovery state was preserved" >&2
-            status=1
-        fi
-    fi
     exit "$status"
 }
 trap cleanup_all EXIT INT TERM

@@ -18,12 +18,7 @@ from e2b_policy import require_campaign_id  # noqa: E402
 def list_campaign_sandbox_ids(campaign: str) -> set[str]:
     """List every live service sandbox carrying this campaign's metadata."""
     paginator = Sandbox.list(
-        query=SandboxQuery(
-            metadata={
-                "workload": "osworld-v2-services",
-                "campaign_id": campaign,
-            }
-        ),
+        query=SandboxQuery(metadata={"workload": fl.WORKLOAD, "campaign_id": campaign}),
         limit=100,
     )
     sandbox_ids: set[str] = set()
@@ -33,7 +28,7 @@ def list_campaign_sandbox_ids(campaign: str) -> set[str]:
             sandbox_id = getattr(sandbox, "sandbox_id", None)
             if (
                 sandbox_id
-                and metadata.get("workload") == "osworld-v2-services"
+                and metadata.get("workload") == fl.WORKLOAD
                 and metadata.get("campaign_id") == campaign
             ):
                 sandbox_ids.add(sandbox_id)

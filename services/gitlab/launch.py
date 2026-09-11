@@ -189,6 +189,7 @@ def main() -> int:
     fl.load_e2b_key()
     template_ref = fl.ensure_fleet_template()
     sbx, created = fl.reuse_or_create("gitlab", template=template_ref)
+    published = False
     try:
         fl.ensure_docker(sbx)
         fl.ensure_swap(sbx)
@@ -252,6 +253,7 @@ def main() -> int:
                 "token_file": str(TOKEN_FILE),
             },
         )
+        published = True
 
         # Exact harness URL: GET {GITLAB_URL}/api/v4/user with only the
         # PRIVATE-TOKEN — the proxy injects the sandbox traffic token.
@@ -319,7 +321,9 @@ def main() -> int:
         RECEIPT.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
         fl.log(f"receipt -> {RECEIPT}")
     except BaseException:
-        fl.rollback_launch("gitlab", sbx, created, token_file=TOKEN_FILE)
+        fl.rollback_launch(
+            "gitlab", sbx, created, token_file=TOKEN_FILE, published=published
+        )
         raise
 
     fl.stop_host_proxy()

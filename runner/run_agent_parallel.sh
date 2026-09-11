@@ -53,6 +53,7 @@ if [ "$REQUIRE_NO_MODEL_COVERAGE" != "0" ] && [ "$REQUIRE_NO_MODEL_COVERAGE" != 
     echo "REQUIRE_NO_MODEL_COVERAGE must be 0 or 1" >&2
     exit 2
 fi
+source "$HERE/worker_env.sh"
 if [[ ! "${GUEST_TEMPLATE:-}" =~ ^[a-z0-9-]+:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
     echo "GUEST_TEMPLATE must be an immutable name:build_id reference" >&2
     exit 2
@@ -73,7 +74,6 @@ if [ "$AGENT_KIND" = "m3" ] && [[ ! "${M3_MAX_LLM_RETRIES:-}" =~ ^[0-9]+$ ]]; th
     echo "M3_MAX_LLM_RETRIES must be explicit and non-negative for an M3 benchmark" >&2
     exit 2
 fi
-source "$HERE/model_env.sh"
 if [ -z "${OSWORLD_CAMPAIGN_ID:-}" ]; then echo "OSWORLD_CAMPAIGN_ID is required" >&2; exit 2; fi
 export GUEST_TEMPLATE OSWORLD_CAMPAIGN_ID MODEL_API_KEY MODEL_BASE_URL MODEL AGENT_KIND MAX_STEPS
 export M3_THINKING_MODE M3_THINKING_BUDGET M3_MAX_LLM_RETRIES
@@ -86,6 +86,7 @@ if [ -z "${E2B_API_KEY:-}" ]; then echo "E2B_API_KEY is required" >&2; exit 2; f
 mkdir -p "$RAW_DIR"
 proxy_pid=""
 worker_pids=()
+fleets_admitted=0
 cleanup_proxy() {
     local status=$?
     trap - EXIT
@@ -101,7 +102,13 @@ cleanup_proxy() {
         kill "$proxy_pid" 2>/dev/null || true
         wait "$proxy_pid" 2>/dev/null || true
     fi
-    if [ "${TEARDOWN_FLEETS_ON_EXIT:-1}" = "1" ]; then
+    # Fleets are torn down only for a run that was admitted. A rejection before
+    # that (preflight, lifetime gate) is something the operator acts on with the
+    # same fleets, so leave them running for that.
+    if [ "$fleets_admitted" -ne 1 ]; then
+        echo "service fleets for campaign $OSWORLD_CAMPAIGN_ID left running (run not admitted);" \
+            "stop them with services/stop.py --campaign-id $OSWORLD_CAMPAIGN_ID" >&2
+    elif [ "${TEARDOWN_FLEETS_ON_EXIT:-1}" = "1" ]; then
         if ! $UV python "$SERVICES_DIR/stop.py" --campaign-id "$OSWORLD_CAMPAIGN_ID" \
             >>"$RAW_DIR/service-teardown.log" 2>&1; then
             echo "service fleet cleanup failed; recovery state was preserved" >&2
@@ -127,13 +134,14 @@ if ! python3 "$HERE/preflight.py" \
     --services-dir "$SERVICES_DIR" --manifest "$MANIFEST"; then
     exit 2
 fi
+export OSWORLD_PREFLIGHT_VERIFIED=1  # workers skip the checks just made for them
 
-export PARALLEL_CONCURRENCY AGENT_RETRY_ATTEMPTS AGENT_RETRY_CONCURRENCY
-export RUN_TASK_082_CONCURRENT AGENT_START_STAGGER_SECONDS
+export PARALLEL_CONCURRENCY RUN_TASK_082_CONCURRENT AGENT_START_STAGGER_SECONDS
 if ! $UV python "$V2ROOT/services/fleetlib.py" --check-lifetime "$MANIFEST" \
     --runtime "$SERVICES_DIR/.runtime.json"; then
     exit 2
 fi
+fleets_admitted=1
 
 mkdir -p "$RAW_DIR/workers" "$(dirname "$OUTPUT")"
 RUN_NONCE="$(python3 "$HERE/prepare_agent_run.py" \
@@ -250,6 +258,19 @@ for ((attempt=1; attempt <= AGENT_RETRY_ATTEMPTS; attempt++)); do
         python3 "$HERE/retry_candidates.py" "$MANIFEST" "$RAW_DIR/workers"
     )
     if [ "${#failed_rows[@]}" -eq 0 ]; then break; fi
+    # Budget the retry wave against the tasks that actually failed, at retry
+    # concurrency with 082 solo; skipping it is not fatal, the failures stand.
+    retry_ids=()
+    for row in "${failed_rows[@]}"; do
+        read -r task_id _ <<<"$row"
+        retry_ids+=(--task-id "$task_id")
+    done
+    if ! PARALLEL_CONCURRENCY="$AGENT_RETRY_CONCURRENCY" RUN_TASK_082_CONCURRENT=0 \
+        $UV python "$V2ROOT/services/fleetlib.py" --check-lifetime "$MANIFEST" \
+        --runtime "$SERVICES_DIR/.runtime.json" "${retry_ids[@]}"; then
+        echo "skipping retry attempt $attempt: fleets cannot outlast a ${#failed_rows[@]}-task retry wave" >&2
+        break
+    fi
     echo "retrying ${#failed_rows[@]} infrastructure/path failures (attempt $attempt)"
     overall=0
     retry_batch=()

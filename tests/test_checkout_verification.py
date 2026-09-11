@@ -26,6 +26,10 @@ def test_verify_checkout_rejects_drift_without_modifying_it(tmp_path):
     assert "# host-side relay" not in result.stdout
     verify = [*setup, "--verify", str(checkout)]
     assert subprocess.run(verify, capture_output=True).returncode == 0
+    upstream_runner = subprocess.check_output(
+        ["git", "-C", str(checkout), "show", f"{PIN}:lib_run_single.py"]
+    )
+    assert (checkout / "lib_run_single.py").read_bytes() == upstream_runner
     backend = "desktop_env/evaluators/backends/openai_backend.py"
     pristine = subprocess.check_output(
         ["git", "-C", str(checkout), "show", f"{PIN}:{backend}"]
@@ -36,9 +40,23 @@ def test_verify_checkout_rejects_drift_without_modifying_it(tmp_path):
         original = target.read_bytes()
         changed = original + b"\n# unexpected modification\n"
         target.write_bytes(changed)
-        assert subprocess.run(verify, capture_output=True).returncode != 0
+        failed = subprocess.run(verify, capture_output=True, text=True)
+        assert failed.returncode != 0
+        assert "runner/setup.sh" in failed.stderr, relative  # says how to repair
         assert target.read_bytes() == changed
         target.write_bytes(original)
+    # --restore reverts every tracked file in the footprint, including a
+    # leftover edit to the evaluator backend from an earlier setup.sh version.
+    (checkout / backend).write_bytes(pristine + b"\n# legacy edit\n")
+    subprocess.run(
+        [*setup, "--restore", str(checkout)], check=True, capture_output=True
+    )
+    status = subprocess.check_output(
+        ["git", "-C", str(checkout), "status", "--porcelain"], text=True
+    )
+    assert status == ""
+    subprocess.run([*setup, str(checkout)], check=True, capture_output=True)
+    assert subprocess.run(verify, capture_output=True).returncode == 0
     subprocess.run(
         ["git", "-C", str(checkout), "checkout", "--quiet", "HEAD~1"], check=True
     )
