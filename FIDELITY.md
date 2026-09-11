@@ -15,6 +15,37 @@ Release pin: `osworld-v2-2026.08.08`. OSWorld-V2 checkout: `d578d2d4e0dc82b43e27
 This ledger separates what was verified to match a stated reference, what was recorded
 without a reference to match against, and what is excluded or unexercised outright.
 
+## September 11 release validation and recording check (runner split)
+
+After the runner split (`runner/` = benchmark path, `maintainer/` = no-model ladder,
+`tools/spikes/` = one-off probes, one shared `runner/worker_lib.sh` for relay/watchdog/teardown)
+and the `ENABLE_RECORDING` opt-in, the ladder and an agent rollout were re-run on template
+`0d796343…`, checkout `d578d2d`.
+
+**No-model ladder, all 108 tasks, 80 concurrent workers** (the coordinator's cap; strict reset
+can briefly double guest count): [receipt](out/osworld-v2-evidence/full-suite/validate-108-20260911.json).
+107 receipts, 107 unique sandboxes, zero external model calls: 105 `PATH_PASS`, one
+`MODEL_BOUNDARY_PASS` (035, the judge boundary reached and refused as designed), one `PATH_FAIL`
+(043: after a clean strict reset the second-generation guest answered 502 to every
+accessibility-tree request for ~87 s and the harness failed closed at `reset`), and 082 with no
+receipt because its worker preflight found host port 3000 taken by an unrelated local dev
+server. Task 082's upstream task file hardcodes `localhost:3000`, so its relay listener cannot be
+shifted like every other port. The aggregate gate reports **FAIL** on that receipt, as it should.
+
+A follow-up wave re-ran 043 and 082 on fresh sandboxes with the port freed:
+[receipt](out/osworld-v2-evidence/full-suite/validate-043-082-followup-20260911.json). Both
+`PATH_PASS` (043 in 33 s, 082 in 84 s), gate **PASS**. Read together, every one of the 108
+environment paths passed on this build; the 043 failure did not reproduce and is recorded as a
+transient post-reset guest-readiness fault, not a closed item.
+
+**Agent rollout with recording** (task 093, upstream M3 agent, `accounts/fireworks/models/minimax-m3`,
+500 steps, 2,048 thinking tokens, judge and simulator pointed at Fireworks MiniMax because the
+OpenAI key has no credits): [receipt](out/osworld-v2-evidence/sample-24/agent-093-recording-20260911.json).
+Path OK, 500 steps, score 0.25 matching upstream `result.txt`, no judge or simulator calls, gate **PASS**. The receipt records `recording_enabled: true` and the guest's ffmpeg capture landed as a 67 MB `recording.mp4` next to the trajectory in the raw result directory. Recording is therefore verified end to end and moves out of the excluded list below; it stays off unless a run opts in. All campaign sandboxes and both fleets were cleaned up.
+
+Unchanged from the September 10 entry: this is runtime verification on E2B, not a parity claim
+against the paper's 108-task, Claude-Sonnet-judged numbers.
+
 ## September 10 sample validation (agent construction decoupled)
 
 The [13-task receipt](out/osworld-v2-evidence/sample-24/agent-live13-m3-500-20260910.json)
@@ -213,7 +244,12 @@ full native-result parity or a passing 24-task sample.
 ## Not-certified / excluded
 
 - **VNC: absent entirely.** Headless, same as the V1 conversion; the provider's IP/port
-  tuple reports `0` for the VNC slot. Never built, never probed.
+  tuple reports `0` for the VNC slot. Never built, never probed. Live view and human
+  takeover are scoped as a separate PR in
+  [issue #2](https://github.com/mattteufel-e2b/osworld-v2-e2b/issues/2).
+- **Screen recording: opt-in, off by default as upstream; verified.** `ENABLE_RECORDING=1`
+  passes upstream's `--enable_recording` through; the September 11 task 093 rollout produced
+  the guest's `recording.mp4` alongside its trajectory (see that section).
 - **Judge, simulator, and multiphase coverage remains incomplete.** The September 8
   campaign returned responses for six of six judge calls: five on task 079 (score zero),
   and one on task 035 (invalid JSON, no score). A returned response does not establish
