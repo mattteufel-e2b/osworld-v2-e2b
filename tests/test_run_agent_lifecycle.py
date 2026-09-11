@@ -693,3 +693,67 @@ def test_retry_wave_is_skipped_when_fleets_cannot_outlast_it(tmp_path):
     assert "skipping retry" in result.stdout + result.stderr
     assert result.returncode == 1  # the timed-out task is still a failure
     assert Path(env["FLEET_STOPPED_FILE"]).exists()  # admitted runs tear down
+
+
+def _record_agent_args_instead_of_running(env: dict[str, str], tmp_path: Path) -> Path:
+    """Swap the hanging fake agent for one that records its argv and exits."""
+    args_file = tmp_path / "agent-args"
+    fake_uv = Path(env["PATH"].split(":")[0]) / "uv"
+    _write_executable(
+        fake_uv,
+        f"""#!/bin/sh
+case "$*" in
+  *e2b_relay.py*)
+    trap '' INT TERM
+    (trap '' INT TERM; while :; do :; done) &
+    wait
+    ;;
+  *)
+    echo "$*" > "{args_file}"
+    ;;
+esac
+""",
+    )
+    return args_file
+
+
+def test_launch_script_forwards_generation_settings_to_the_runner(tmp_path):
+    env = _runner_env(tmp_path, task_timeout=30)
+    args_file = _record_agent_args_instead_of_running(env, tmp_path)
+    env.update(
+        MAX_TOKENS="4096", TEMPERATURE="0.2", TOP_P="0.95", MAX_TRAJECTORY_LENGTH="5"
+    )
+    subprocess.run(
+        ["bash", str(ROOT / "runner" / "run_agent.sh")],
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=60,
+        check=False,
+    )
+    argv = args_file.read_text()
+    assert "--max-tokens 4096" in argv
+    assert "--temperature 0.2" in argv
+    assert "--top-p 0.95" in argv
+    assert "--max-trajectory-length 5" in argv
+
+
+def test_launch_script_leaves_generation_settings_to_agent_defaults_when_unset(
+    tmp_path,
+):
+    env = _runner_env(tmp_path, task_timeout=30)
+    args_file = _record_agent_args_instead_of_running(env, tmp_path)
+    for name in ("MAX_TOKENS", "TEMPERATURE", "TOP_P", "MAX_TRAJECTORY_LENGTH"):
+        env.pop(name, None)
+    subprocess.run(
+        ["bash", str(ROOT / "runner" / "run_agent.sh")],
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=60,
+        check=False,
+    )
+    argv = args_file.read_text()
+    assert "--agent-kind m3" in argv
+    for flag in ("--max-tokens", "--temperature", "--top-p", "--max-trajectory-length"):
+        assert flag not in argv, flag

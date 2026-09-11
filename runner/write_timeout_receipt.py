@@ -32,7 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--domain", required=True)
     parser.add_argument("--port-base", type=int, required=True)
     parser.add_argument("--model", required=True)
-    parser.add_argument("--agent-kind", choices=("prompt", "m3"), required=True)
+    parser.add_argument("--agent-kind", required=True)
     parser.add_argument("--max-steps", type=int, required=True)
     parser.add_argument("--timeout-seconds", type=int, required=True)
     parser.add_argument("--wall-clock-seconds", type=float, required=True)

@@ -5,13 +5,15 @@
 #     port block: control/server/CDP/VLC all shifted by the base; optional
 #     task-service listeners use OSWORLD_TASK_SERVICE_PORTS `local:guest`
 #     mappings so host ports remain unique while guest ports stay unchanged),
-#   * runs agent_runner.py (DesktopEnv on provider e2b + reference PromptAgent via
-#     an OpenAI-compatible chat-completions endpoint),
+#   * runs agent_runner.py (DesktopEnv on provider e2b + the AGENT_KIND agent
+#     built by runner/agents.py),
 #   * tears the relay (and its guest sandbox) down.
 # Receipts land in RESULT_DIR (gitignored raw). No task/evaluator text is emitted.
 #
 # Required env: TASK_ID, DOMAIN, PORT_BASE, GUEST_TEMPLATE, E2B_API_KEY,
-#               MODEL_API_KEY. Optional: MODEL_BASE_URL, MODEL, MAX_STEPS.
+#               MODEL_API_KEY. Optional: MODEL_BASE_URL, MODEL, AGENT_KIND, MAX_STEPS,
+#               and the upstream generation settings MAX_TOKENS, TEMPERATURE, TOP_P,
+#               MAX_TRAJECTORY_LENGTH (unset = the agent kind's upstream default).
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -220,6 +222,14 @@ if [ "$ready" -ne 1 ]; then
     exit 1
 fi
 
+# Upstream generation flags, forwarded only when set so agents.py keeps the
+# upstream default otherwise. (`${arr[@]+...}` keeps bash 3.2 happy under set -u.)
+generation_args=()
+for pair in MAX_TOKENS:--max-tokens TEMPERATURE:--temperature TOP_P:--top-p \
+    MAX_TRAJECTORY_LENGTH:--max-trajectory-length; do
+    name="${pair%%:*}"
+    if [ -n "${!name:-}" ]; then generation_args+=("${pair#*:}" "${!name}"); fi
+done
 start_in_new_session "$OSWORLD_ROOT" "${UV[@]}" python "$HERE/agent_runner.py" \
     --task-id "$TASK_ID" \
     --domain "$DOMAIN" \
@@ -229,7 +239,8 @@ start_in_new_session "$OSWORLD_ROOT" "${UV[@]}" python "$HERE/agent_runner.py" \
     --agent-kind "$AGENT_KIND" \
     --model "$MODEL" \
     --max-steps "$MAX_STEPS" \
-    --client-password "osworld-public-evaluation" &
+    --client-password "osworld-public-evaluation" \
+    ${generation_args[@]+"${generation_args[@]}"} &
 agent_pid=$!
 timed_out=0
 started_at=$SECONDS

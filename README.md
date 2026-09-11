@@ -99,6 +99,32 @@ Set `TEARDOWN_FLEETS_ON_EXIT=0` to retain the fleets after an admitted run as we
 Run-scoped raw trajectories, service receipts, and secrets stay in ignored paths; committed
 evidence is published only after allowlist sanitization.
 
+## Bring your own agent
+
+The workflow is upstream's: write an agent, point the runner at it, pick tasks, run, read the
+OSWorld outputs. `runner/agents.py` is the one file to edit. It constructs the agent for
+`AGENT_KIND` and holds each kind's upstream generation defaults; `agent_runner.py`, the relay
+and the receipts never look inside the agent.
+
+- `AGENT_KIND=prompt` is upstream's `PromptAgent` routed at any OpenAI-compatible
+  chat-completions endpoint (`MODEL_BASE_URL`, `MODEL_API_KEY`, `MODEL` passed verbatim).
+  `AGENT_KIND=m3` is upstream's MiniMax-M3 agent over its Anthropic Messages transport.
+- To run your own, implement upstream's `reset()` / `predict(instruction, observation)`
+  interface (see `OSWorld-V2/mm_agents/`), add a builder to `AGENT_KINDS` in `runner/agents.py`,
+  and launch with `AGENT_KIND=<your name>`. Prompts, model calls, memory and context policy live
+  in your class, as in upstream's `run_multienv_*.py` runners.
+- Generation settings mirror upstream `run.py` flags and are optional environment variables on
+  the same launch command: `MAX_TOKENS`, `TEMPERATURE`, `TOP_P`, `MAX_TRAJECTORY_LENGTH`. Unset
+  means the agent kind's upstream default; the resolved values are recorded in every receipt
+  as `agent_settings`. Observation is `screenshot` and actions are `pyautogui`, which is what
+  the E2B guest exposes today.
+
+```bash
+export AGENT_KIND=prompt MODEL="openai/gpt-4o" TEMPERATURE=0.2 MAX_TRAJECTORY_LENGTH=5
+AGENT_MANIFEST="$RUN_ROOT/full-manifest.json" MAX_STEPS=75 \
+    RAW_DIR="$RUN_ROOT/agent-raw" OUTPUT="$RUN_ROOT/agent.json" runner/run_agent_parallel.sh
+```
+
 ## Release validation (maintainers)
 
 This validates every environment path across all 108 tasks with zero external model calls,

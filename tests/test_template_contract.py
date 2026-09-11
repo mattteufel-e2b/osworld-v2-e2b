@@ -482,7 +482,7 @@ def test_openboard_snap_contract_maps_to_ubuntu_package_without_snapd():
 
 def test_agent_runner_supports_any_openai_compatible_provider_without_secret_logging():
     runner = (ROOT / "runner" / "run_agent.sh").read_text()
-    agent = (ROOT / "runner" / "agent_runner.py").read_text()
+    agent = (ROOT / "runner" / "agents.py").read_text()
 
     assert 'MODEL_BASE_URL="${MODEL_BASE_URL:-' in runner
     assert 'MODEL_API_KEY="${MODEL_API_KEY:-' in runner
@@ -495,16 +495,13 @@ def test_agent_runner_supports_any_openai_compatible_provider_without_secret_log
 
 def test_agent_runner_can_use_the_release_m3_scaffold_and_anthropic_transport():
     runner = (ROOT / "runner" / "run_agent.sh").read_text()
-    agent = (ROOT / "runner" / "agent_runner.py").read_text()
+    agent = (ROOT / "runner" / "agents.py").read_text()
 
     assert 'AGENT_KIND="${AGENT_KIND:-prompt}"' in runner
     assert 'base_url=os.environ["MODEL_BASE_URL"]' in agent
     assert 'api_key=os.environ["MODEL_API_KEY"]' in agent
     assert "from mm_agents.m3 import M3Agent" in agent
-    assert 'choices=("prompt", "m3")' in agent
     assert "M3Agent(" in agent
-    assert "max_tokens=8192" in agent
-    assert "max_trajectory_length=10" in agent
 
 
 def test_full_agent_coordinator_bounds_sandboxes_and_namespaces_task_service_ports():

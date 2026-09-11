@@ -61,11 +61,7 @@ fi
 : "${MODEL_API_KEY:?MODEL_API_KEY required}"
 : "${MODEL_BASE_URL:?MODEL_BASE_URL required}"
 : "${MODEL:?MODEL required}"
-AGENT_KIND="${AGENT_KIND:-prompt}"
-if [ "$AGENT_KIND" != "prompt" ] && [ "$AGENT_KIND" != "m3" ]; then
-    echo "AGENT_KIND must be prompt or m3" >&2
-    exit 2
-fi
+AGENT_KIND="${AGENT_KIND:-prompt}"  # validated against runner/agents.py by the worker
 if [ "$AGENT_KIND" = "m3" ] && [[ ! "${M3_THINKING_BUDGET:-}" =~ ^[1-9][0-9]*$ ]]; then
     echo "M3_THINKING_BUDGET must be explicit and positive for an M3 benchmark" >&2
     exit 2

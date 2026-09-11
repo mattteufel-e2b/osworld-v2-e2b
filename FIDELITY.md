@@ -15,6 +15,45 @@ Release pin: `osworld-v2-2026.08.08`. OSWorld-V2 checkout: `d578d2d4e0dc82b43e27
 This ledger separates what was verified to match a stated reference, what was recorded
 without a reference to match against, and what is excluded or unexercised outright.
 
+## September 10 sample validation (agent construction decoupled)
+
+The [13-task receipt](out/osworld-v2-evidence/sample-24/agent-live13-m3-500-20260910.json)
+re-ran the September 8 sample after agent construction moved into `runner/agents.py`
+(`AGENT_KIND` registry, upstream generation defaults, `--max-tokens/--temperature/--top-p/
+--max-trajectory-length` flags). Same model (`accounts/fireworks/models/minimax-m3`, upstream
+M3 agent, 500 steps, 2,048 thinking tokens, `M3_MAX_LLM_RETRIES=2`, no task retries), same
+guest template `0d796343…`. Every receipt records the resolved `agent_settings`
+(8192 tokens, temperature 0.6, trajectory 10, screenshot/pyautogui), i.e. the exact values
+the runner previously hardcoded. Judge and simulator ran upstream's defaults (OpenAI provider,
+`gpt-4o`) rather than the September 8 MiniMax overrides. 13 concurrent workers were requested;
+the campaign ran as 7 + 6 because the local host, not E2B, was memory-constrained.
+
+Twelve tasks completed evaluation on unique sandboxes and every recorded score exactly matches
+its upstream `result.txt`: 093 scored 0.86, 083 0.22, 103 0.10, and eight tasks scored zero
+(003, 015, 019, 026, 048, 053, 059, 105). Tasks 053 and 103, unscored errors on September 8,
+evaluated cleanly. Two tasks are invalid for one shared reason: the OpenAI judge key had no
+credits (`insufficient_quota`), so 035's whole-table judgment raised and 079's five VLM calls
+failed (upstream turned that into 0.01; the receipt gate refuses to attest it, as designed).
+The gate reports **FAIL** on those two, not a passing 13/13. Mean over the eleven attested
+tasks is 0.107 (September 8: 0.093 over ten); binary successes 0 in both.
+
+A separate campaign re-ran 035 and 079 with the judge and simulator pointed at Fireworks
+MiniMax (`openai_compatible`, the September 8 override):
+[receipt](out/osworld-v2-evidence/sample-24/agent-judge2-m3-500-20260910.json). Both tasks evaluated on unique sandboxes with 6/6 judge calls succeeding (035: one call, 480 steps; 079: five calls, 500 steps); both scored 0.0 and the gate reports **PASS**. 035 did not reproduce the September 8 JSON-parse failure with the same MiniMax judge; one clean run does not establish that failure is gone, so that item stays open as intermittent.
+Because its judge differs, that receipt is reported alongside the 13-task receipt, not merged into it.
+
+Public reference for the same model: the OSWorld 2.0 paper (arXiv 2606.29537, Table 3) reports
+MiniMax M3 at 4.6% binary / 22.3% partial over all 108 tasks at 500 steps with Claude Sonnet 4.6
+as judge on AWS. The E2B sample is 13 tasks, one seed, a different judge, and a Fireworks-hosted
+model, so it is a plausibility check (same order of magnitude, zero binary successes, partial
+credit on the same kinds of tasks), not a parity measurement. Per-task public results live in
+the gated `xlangai/osworld2.0-trajectory` dataset, which this account cannot read.
+
+An earlier attempt of the same campaign on September 9 lost all guests at once (relay DNS
+failures, then `Sandbox not found`) while the host laptop slept; its 11 errors carry the
+identical screenshot-502 signature and are recorded only as an infrastructure note, not as
+results. The rerun was wrapped in `caffeinate`.
+
 ## September 8 parallel sample validation
 
 The [13-task receipt](out/osworld-v2-evidence/sample-24/agent-final13-m3-500-20260908.json)

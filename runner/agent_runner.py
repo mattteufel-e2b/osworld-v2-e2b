@@ -4,15 +4,16 @@
 One invocation drives exactly one manifest task end to end: it builds a
 ``DesktopEnv`` on the ``e2b`` provider (paired to this worker's namespaced relay
 via ``OSWORLD_RELAY_PORT_BASE``), runs the pinned checkout's own
-``lib_run_single.run_single_example`` agent loop with the reference OSWorld
-``PromptAgent`` (screenshot observation, pyautogui actions), and records a
+``lib_run_single.run_single_example`` agent loop with the agent selected by
+``--agent-kind`` (screenshot observation, pyautogui actions), and records a
 redacted per-task receipt. Trajectories, screenshots and model IO stay under the
 gitignored raw dir; the receipt carries ids, path booleans, timings and the
 evaluator's partial-credit score only -- never task or evaluator text.
 
-The agent talks to an OpenAI-compatible chat-completions endpoint:
-``MODEL_BASE_URL`` + ``MODEL_API_KEY`` are honored and the model slug is passed
-verbatim. This is the V2 reference chat-completions agent. No secrets are logged.
+Agent construction and generation defaults live in ``agents.py`` (the file to
+edit for a custom agent); this runner only asks it for an agent. Credentials
+reach the agent through ``MODEL_BASE_URL`` / ``MODEL_API_KEY``. No secrets are
+logged.
 """
 
 from __future__ import annotations
@@ -35,12 +36,10 @@ from lazy_import import lazy_module  # noqa: E402
 # load it on first use instead of in every one of 80 workers at startup.
 lazy_module("easyocr")
 import lib_run_single  # noqa: E402
-import requests  # noqa: E402
 import task_loader  # noqa: E402  (checkout-local; cwd is the pinned checkout)
+from agents import AGENT_KINDS, agent_settings, build_agent  # noqa: E402
 from desktop_env.desktop_env import DesktopEnv  # noqa: E402
 from evaluator_model_calls import EvaluatorModelCallTracker  # noqa: E402
-from mm_agents.agent import PromptAgent  # noqa: E402
-from mm_agents.m3 import M3Agent  # noqa: E402
 from receipt_safety import atomic_write_json, base_receipt, public_error  # noqa: E402
 
 
@@ -56,73 +55,6 @@ def relay_state() -> dict:
     port = 14999 + _port_base()
     with urlopen(f"http://127.0.0.1:{port}/state", timeout=15) as response:
         return json.load(response)
-
-
-class CompatiblePromptAgent(PromptAgent):
-    """Reference PromptAgent routed at an OpenAI-compatible endpoint.
-
-    Reuses the parent's prompt construction, screenshot encoding and action
-    parsing verbatim; only ``call_llm`` is overridden to (a) honor
-    MODEL_BASE_URL/MODEL_API_KEY unconditionally and (b) send the model slug as
-    given so provider-specific model identifiers remain intact, with a small
-    retry on rate limits / 5xx. No secrets are logged.
-    """
-
-    def call_llm(self, payload):  # noqa: D401
-        base_url = os.environ["MODEL_BASE_URL"].rstrip("/")
-        api_url = base_url + (
-            "/chat/completions" if base_url.endswith("/v1") else "/v1/chat/completions"
-        )
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {os.environ['MODEL_API_KEY']}",
-        }
-        last_status = None
-        for attempt in range(8):
-            try:
-                response = requests.post(
-                    api_url, headers=headers, json=payload, timeout=180
-                )
-            except requests.RequestException as exc:
-                print(
-                    f"[agent] LLM transport error (attempt {attempt}): {exc}",
-                    file=sys.stderr,
-                )
-                time.sleep(min(30, 5 * (attempt + 1)))
-                continue
-            last_status = response.status_code
-            if response.status_code == 200:
-                return response.json()["choices"][0]["message"]["content"]
-            if response.status_code == 400:
-                body = (
-                    response.json()
-                    if response.headers.get("content-type", "").startswith(
-                        "application/json"
-                    )
-                    else {}
-                )
-                code = (body.get("error") or {}).get("code")
-                if code == "context_length_exceeded":
-                    payload["messages"] = [payload["messages"][0]] + payload[
-                        "messages"
-                    ][-1:]
-                    continue
-                print(
-                    f"[agent] LLM 400 (non-retryable): {str(response.text)[:200]}",
-                    file=sys.stderr,
-                )
-                return ""
-            # 429 / 5xx: back off and retry.
-            print(
-                f"[agent] LLM status {response.status_code} (attempt {attempt}); retrying",
-                file=sys.stderr,
-            )
-            time.sleep(min(45, 8 * (attempt + 1)))
-        print(
-            f"[agent] LLM exhausted retries (last status {last_status})",
-            file=sys.stderr,
-        )
-        return ""
 
 
 class _Args:
@@ -253,9 +185,15 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help="per-task receipt json (gitignored raw)",
     )
-    parser.add_argument("--agent-kind", choices=("prompt", "m3"), default="prompt")
+    parser.add_argument("--agent-kind", choices=sorted(AGENT_KINDS), default="prompt")
     parser.add_argument("--model", default="openai/gpt-4o")
     parser.add_argument("--max-steps", type=int, default=75)
+    # Generation settings mirror upstream run.py; unset means the agent kind's
+    # upstream default (see agents.py).
+    parser.add_argument("--max-tokens", type=int, default=None)
+    parser.add_argument("--temperature", type=float, default=None)
+    parser.add_argument("--top-p", type=float, default=None)
+    parser.add_argument("--max-trajectory-length", type=int, default=None)
     parser.add_argument("--sleep-after-execution", type=float, default=3.0)
     parser.add_argument("--client-password", default="osworld-public-evaluation")
     return parser.parse_args()
@@ -302,32 +240,20 @@ def main() -> int:
         wall_clock_s=None,
     )
 
-    if args.agent_kind == "m3":
-        agent = M3Agent(
-            base_url=os.environ["MODEL_BASE_URL"],
-            api_key=os.environ["MODEL_API_KEY"],
-            platform="ubuntu",
-            model=args.model,
-            max_tokens=8192,
-            top_p=None,
-            temperature=0.6,
-            action_space="pyautogui",
-            observation_type="screenshot",
-            coordinate_type="relative",
-            max_trajectory_length=10,
-            client_password=args.client_password,
-        )
-    else:
-        agent = CompatiblePromptAgent(
-            model=args.model,
-            max_tokens=1500,
-            top_p=0.9,
-            temperature=1.0,
-            action_space="pyautogui",
-            observation_type="screenshot",
-            max_trajectory_length=3,
-            client_password=args.client_password,
-        )
+    settings = agent_settings(
+        args.agent_kind,
+        max_tokens=args.max_tokens,
+        temperature=args.temperature,
+        top_p=args.top_p,
+        max_trajectory_length=args.max_trajectory_length,
+    )
+    receipt["agent_settings"] = settings
+    agent = build_agent(
+        args.agent_kind,
+        model=args.model,
+        settings=settings,
+        client_password=args.client_password,
+    )
 
     env = None
     scores: list[float] = []

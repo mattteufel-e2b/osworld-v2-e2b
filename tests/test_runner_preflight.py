@@ -319,3 +319,35 @@ def test_preflight_skips_credentials_for_no_model_validation(tmp_path, monkeypat
     preflight = _admissible_inputs(tmp_path, monkeypatch)
     monkeypatch.setenv("OSWORLD_EVAL_MODEL_MODE", "stub")
     assert preflight.main() == 0
+
+
+def test_agent_coordinator_leaves_agent_kind_validation_to_the_agent_module(tmp_path):
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_uv = fake_bin / "uv"
+    fake_uv.write_text("#!/bin/sh\nexit 0\n")
+    fake_uv.chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "GUEST_TEMPLATE": IMMUTABLE_GUEST,
+        "OSWORLD_CAMPAIGN_ID": "test-campaign",
+        "E2B_API_KEY": "dummy",
+        "MODEL_API_KEY": "dummy",
+        "MODEL_BASE_URL": "https://example.test/v1",
+        "MODEL": "test-model",
+        "AGENT_KIND": "custom",
+        "OSWORLD_SERVICES_DIR": str(tmp_path / "no-services"),
+    }
+
+    result = subprocess.run(
+        ["bash", str(ROOT / "runner" / "run_agent_parallel.sh")],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=10,
+        check=False,
+    )
+    assert result.returncode == 2, (result.stdout, result.stderr)
+    assert "AGENT_KIND must be" not in result.stderr
