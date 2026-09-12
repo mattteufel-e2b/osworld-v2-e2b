@@ -1,6 +1,6 @@
 import { Sandbox, Template, defaultBuildLogger } from 'e2b'
 import { template } from './template.js'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 
 // OSWorld 2.0 guest template. Name/geometry match the V2 conversion plan:
 // osworld-v2-gnome, 4 vCPU, 8 GB. E2B root capacity comes from the project's
@@ -8,9 +8,21 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 // only after a fresh restore proves at least the release's 100 GB maximum.
 const TAG = process.env.GNOME_TAG || 'osworld-v2-gnome'
 
-// The V2 osworld-server submodule commit vendored into files/server/.
-const OSWORLD_SERVER_COMMIT = 'a3cc3f0c64e463f020d1a44780307e9b46cbcab1'
-const LOCKFILE_RELEASE = 'osworld-v2-2026.08.08'
+type ReleaseLock = {
+  release: string
+  server_code: { commit: string }
+}
+const lock = JSON.parse(
+  readFileSync(new URL('../examples/osworld-v2/upstream.lock.json', import.meta.url), 'utf8'),
+) as ReleaseLock
+if (!/^osworld-v2-[0-9]{4}\.[0-9]{2}\.[0-9]{2}$/.test(lock.release)) {
+  throw new Error('invalid release in examples/osworld-v2/upstream.lock.json')
+}
+if (!/^[0-9a-f]{40}$/.test(lock.server_code.commit)) {
+  throw new Error('invalid server commit in examples/osworld-v2/upstream.lock.json')
+}
+const OSWORLD_SERVER_COMMIT = lock.server_code.commit
+const LOCKFILE_RELEASE = lock.release
 const MIN_ROOT_CAPACITY_GB = 100
 const PROTECTED_EGRESS_CIDRS = [
   '10.0.0.0/8',

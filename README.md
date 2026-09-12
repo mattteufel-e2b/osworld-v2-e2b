@@ -10,7 +10,9 @@ Two things are never committed here: the upstream checkout (`OSWorld-V2/`) and t
 data (`tasks/`) — OSWorld 2.0's datasets are gated upstream, so each consumer accepts the
 gate and downloads them with their own credentials. The upstream guest server
 (`xlang-ai/osworld-server`) publishes no license, so it is fetched at a pinned commit and
-patched locally (`template/fetch_server.sh` + `patches/`), never redistributed.
+patched locally (`template/fetch_server.sh` + `patches/`), never redistributed. Run the fetch
+script before template typechecking or building; it replaces the ignored generated payload with
+a fresh copy of the pin and applies every committed patch in lexical order.
 
 `FIDELITY.md` is the verification ledger: what was verified against a reference, what was
 only recorded, and what is excluded (no VNC, no ALSA kernel modules, pause/resume unused).
@@ -18,24 +20,207 @@ Receipts live in `out/osworld-v2-evidence/`.
 
 ## Quick start
 
-Prerequisites: `E2B_API_KEY=...` in `.env.local` at the repo root, `uv`, Node 20+, `git`.
+Prerequisites: `E2B_API_KEY=...` in `.env.local` at the repo root, `uv`, Node >=20.18.1,
+`npm`, `git`, and Hugging Face access to both gated OSWorld V2 datasets. Authenticate once
+with `uv run --locked hf auth login` after accepting their access gates.
 
 ```bash
 template/fetch_server.sh                    # fetch + patch the pinned guest server
-cd template && uv run --env-file ../.env.local npm run build   # guest template
-cd ../services && uv run --env-file ../.env.local --python 3.12 --with e2b==2.34.0 \
-    python build_fleet_template.py          # fleet template
+npm --prefix template ci --ignore-scripts
+uv run --env-file .env.local --locked npm --prefix template run typecheck
+uv run --env-file .env.local --locked npm --prefix template run build   # guest template
+uv run --env-file .env.local --locked \
+    python services/build_fleet_template.py                      # fleet template
 export GUEST_TEMPLATE=<name:build_id>       # from template/results/template-build.json
-export FLEET_TEMPLATE=<name:build_id>       # from out/osworld-v2-evidence/fleet-template-build.json
+export FLEET_TEMPLATE=<name:build_id>       # from out/osworld-v2-raw/builds/fleet-template-build.json
 runner/setup.sh                             # clone pinned OSWorld-V2 + apply e2b patches
-runner/validate.sh                          # environment-path validation
+uv sync --project OSWorld-V2 --locked --extra full               # real evaluator dependencies
+uv run --locked python runner/gated_data.py                     # exact gated revisions + hashes
+
+export OSWORLD_CAMPAIGN_ID="osworld-v2-$(date -u +%Y%m%dT%H%M%SZ)"
+uv run --env-file .env.local --locked python services/websites/launch.py
+uv run --env-file .env.local --locked python services/gitlab/launch.py
+```
+
+That brings up the pinned template, the checkout, gated task data, and both service fleets.
+Running the benchmark is the default next step — no separate opt-in is required. Render the
+full 108-task manifest against the pinned template, export the model endpoint (Fireworks
+shown; any OpenAI-compatible endpoint works), and launch the parallel driver:
+
+```bash
+RUN_ROOT="$(mktemp -d)"
+python3 runner/render_manifest.py --source validation/full-manifest.json \
+    --template "$GUEST_TEMPLATE" --output "$RUN_ROOT/full-manifest.json"
+
+export MODEL_API_KEY="$FIREWORKS_API_KEY"
+export MODEL_BASE_URL="https://api.fireworks.ai/inference"
+export MODEL="accounts/fireworks/models/minimax-m3"
+export AGENT_KIND=m3 M3_THINKING_BUDGET=2048 M3_MAX_LLM_RETRIES=0
+export OPENAI_API_KEY="..."                # upstream judge / simulator credentials (checked by preflight)
+
+AGENT_MANIFEST="$RUN_ROOT/full-manifest.json" PARALLEL_CONCURRENCY=80 MAX_STEPS=500 \
+    AGENT_TASK_TIMEOUT_SECONDS=28800 RAW_DIR="$RUN_ROOT/agent-raw" \
+    OUTPUT="$RUN_ROOT/agent-full.json" runner/run_agent_parallel.sh
+```
+
+The campaign receipt lands at `$OUTPUT`; watch stdout for the `AGENT RECEIPT GATE: PASS`/`FAIL`
+line, which gates on complete, attested, uniquely-sandboxed records for every task in the
+manifest. `REQUIRE_NO_MODEL_COVERAGE` defaults to `0` here, so a full benchmark run needs no
+preceding no-model receipt — that coverage gate is a maintainer-only opt-in, covered in
+"Release validation (maintainers)" below.
+
+Measured pacing on provider-served endpoints runs close to ~40 s/step, and a full-length
+rollout at the 500-step budget can then exceed the 14400 s (4 h) `AGENT_TASK_TIMEOUT_SECONDS`
+default well before the agent is actually stuck. Set `AGENT_TASK_TIMEOUT_SECONDS=28800` (8 h,
+as shown above) for full runs so genuinely long tasks aren't cut off mid-rollout.
+
+Agent credentials are separate from the upstream judge and simulator credentials. Those use
+upstream's own settings unchanged: `OSWORLD_EVAL_MODEL_PROVIDER`, `OSWORLD_EVAL_MODEL_NAME`,
+`OSWORLD_EVAL_MODEL_BASE_URL`, `OSWORLD_EVAL_MODEL_API_KEY` (or `OSWORLD_EVAL_MODEL_API_KEY_ENV`)
+for the judge, and the same names under `OSWORLD_USER_SIM_` for the simulator, which inherits
+whatever it does not override. Both default to OpenAI with `OPENAI_API_KEY`. Preflight resolves
+the keys the way upstream does and fails before any sandbox launches if one is missing, because
+upstream would otherwise turn that failure into a 0.0 score hours later. Changing these settings
+is an experiment configuration change, not runtime parity. A failed judge or simulator model call
+invalidates the run even if upstream returns zero; simulator calls cannot satisfy judge coverage.
+These rollouts are not automatically retried.
+
+Preflight verifies the actual upstream commit and exact adapter patches; on drift it prints the
+`runner/setup.sh --restore` + re-apply command that repairs the checkout. The coordinator admits
+a run only if both fleets outlast the worst-case budget of its waves (every wave charged its full
+`AGENT_TASK_TIMEOUT_SECONDS`), and re-checks before each retry wave against the tasks that
+actually failed, skipping that wave when it no longer fits. Fleets are not renewed mid-run.
+
+`run_agent_parallel.sh` stops both service fleets when an admitted run exits. A run rejected
+before admission (preflight, lifetime) leaves them running so the rejection can be acted on with
+the same fleets; stop them yourself with
+`uv run --env-file .env.local --locked python services/stop.py --campaign-id "$OSWORLD_CAMPAIGN_ID"`.
+Set `TEARDOWN_FLEETS_ON_EXIT=0` to retain the fleets after an admitted run as well.
+Run-scoped raw trajectories, service receipts, and secrets stay in ignored paths; committed
+evidence is published only after allowlist sanitization.
+
+## Bring your own agent
+
+The workflow is upstream's: write an agent, point the runner at it, pick tasks, run, read the
+OSWorld outputs. `runner/agents.py` is the one file to edit. It constructs the agent for
+`AGENT_KIND` and holds each kind's upstream generation defaults; `agent_runner.py`, the relay
+and the receipts never look inside the agent.
+
+- `AGENT_KIND=prompt` is upstream's `PromptAgent` routed at any OpenAI-compatible
+  chat-completions endpoint (`MODEL_BASE_URL`, `MODEL_API_KEY`, `MODEL` passed verbatim).
+  `AGENT_KIND=m3` is upstream's MiniMax-M3 agent over its Anthropic Messages transport.
+- To run your own, implement upstream's `reset()` / `predict(instruction, observation)`
+  interface (see `OSWorld-V2/mm_agents/` for reference), put the class under `runner/` next to
+  `agents.py` rather than inside the checkout (`setup.sh --restore` resets tracked files there),
+  add a builder to `AGENT_KINDS`, and launch with `AGENT_KIND=<your name>`. Prompts, model calls, memory and context policy live
+  in your class, as in upstream's `run_multienv_*.py` runners.
+- Generation settings mirror upstream `run.py` flags and are optional environment variables on
+  the same launch command: `MAX_TOKENS`, `TEMPERATURE`, `TOP_P`, `MAX_TRAJECTORY_LENGTH`. Unset
+  means the agent kind's upstream default; the resolved values are recorded in every receipt
+  as `agent_settings`. Observation is `screenshot` and actions are `pyautogui`, which is what
+  the E2B guest exposes today.
+- `ENABLE_RECORDING=1` is upstream's `--enable_recording`: the guest records the screen for the
+  whole rollout and `recording.mp4` lands in the task's result directory. Off by default;
+  receipts record `recording_enabled`. Live desktop view (VNC) is tracked separately in
+  [issue #2](https://github.com/mattteufel-e2b/osworld-v2-e2b/issues/2).
+
+```bash
+export AGENT_KIND=prompt MODEL="openai/gpt-4o" TEMPERATURE=0.2 MAX_TRAJECTORY_LENGTH=5
+AGENT_MANIFEST="$RUN_ROOT/full-manifest.json" MAX_STEPS=75 \
+    RAW_DIR="$RUN_ROOT/agent-raw" OUTPUT="$RUN_ROOT/agent.json" runner/run_agent_parallel.sh
+```
+
+## Release validation (maintainers)
+
+Everything in this section lives under `maintainer/` and is **not required to run the
+benchmark**. `runner/` holds only the benchmark path; `tools/spikes/` keeps the one-off
+probes that shaped the port (their evidence is cited from `FIDELITY.md`).
+
+This validates every environment path across all 108 tasks with zero external model calls,
+then optionally gates a full-model benchmark receipt on that coverage. It's how maintainers
+qualify a release before it ships — it is **not** required to run the benchmark (see Quick
+start above). When the gate is enabled, the resulting campaign receipt records
+`execution.no_model_coverage_enforced: true`, so gated and ungated runs stay distinguishable
+from the receipt alone.
+
+```bash
+RUN_ROOT="$(mktemp -d)"
+python3 runner/render_manifest.py --source validation/full-manifest.json \
+    --template "$GUEST_TEMPLATE" --output "$RUN_ROOT/full-manifest.json"
+VALIDATION_MANIFEST="$RUN_ROOT/full-manifest.json" VALIDATION_RUNS=1 \
+    PARALLEL_CONCURRENCY=24 RAW_DIR="$RUN_ROOT/no-model-raw" \
+    EVIDENCE_DIR="$RUN_ROOT/no-model-evidence" OUTPUT="$RUN_ROOT/no-model.json" \
+    maintainer/validate_parallel.sh            # all 108 tasks, zero external model calls
+```
+
+The no-model receipt distinguishes an evaluator path that returned normally (`PATH_PASS`) from one
+that propagated the intentional disabled-model sentinel (`MODEL_BOUNDARY_PASS`). Both are validated
+no-model outcomes. The full-model sample must exercise every task that either propagated that
+sentinel or attempted an evaluator-model call that an upstream metric converted into a zero score.
+
+The validation coordinators leave the fleets running so later rungs can reuse the campaign;
+stop it with the `services/stop.py` command above when you are done with it.
+
+To gate a full-model run on that coverage instead of running it ungated, set
+`REQUIRE_NO_MODEL_COVERAGE=1` and point `NO_MODEL_RECEIPT` at the receipt above — this is the
+same `run_agent_parallel.sh` invocation as Quick start, plus those two variables:
+
+```bash
+AGENT_MANIFEST="$RUN_ROOT/full-manifest.json" REQUIRE_NO_MODEL_COVERAGE=1 \
+    NO_MODEL_RECEIPT="$RUN_ROOT/no-model.json" PARALLEL_CONCURRENCY=80 MAX_STEPS=500 \
+    AGENT_TASK_TIMEOUT_SECONDS=28800 RAW_DIR="$RUN_ROOT/agent-raw" \
+    OUTPUT="$RUN_ROOT/agent-full.json" runner/run_agent_parallel.sh
+```
+
+`REQUIRE_NO_MODEL_COVERAGE=1` fails closed with `NO_MODEL_RECEIPT is required for full-agent
+coverage` unless `NO_MODEL_RECEIPT` is also set, and then runs `model_coverage.py` against it
+before any agent launches.
+
+After the all-task no-model run passes, use one fresh fleet campaign for a three-step canary and
+another for the 24-task representative sample. The sample covers selected model-based evaluator
+paths, multiphase tasks, task 082's local service, and a spread of task complexity. The runner does
+not retry completed model rollouts.
+
+```bash
+export MODEL_API_KEY="$FIREWORKS_API_KEY"
+export MODEL_BASE_URL="https://api.fireworks.ai/inference"
+export MODEL="accounts/fireworks/models/minimax-m3"
+export AGENT_KIND=m3 M3_THINKING_BUDGET=2048 M3_MAX_LLM_RETRIES=0
+export OPENAI_API_KEY="..."                # upstream judge / simulator credentials
+export NO_MODEL_RECEIPT="$RUN_ROOT/no-model.json"
+
+export OSWORLD_CAMPAIGN_ID="osworld-v2-canary-$(date -u +%Y%m%dT%H%M%SZ)"
+uv run --env-file .env.local --locked python services/websites/launch.py
+uv run --env-file .env.local --locked python services/gitlab/launch.py
+python3 runner/render_manifest.py --source validation/full-manifest.json \
+    --template "$GUEST_TEMPLATE" --output "$RUN_ROOT/canary-manifest.json" --task-id 003
+AGENT_MANIFEST="$RUN_ROOT/canary-manifest.json" REQUIRE_NO_MODEL_COVERAGE=0 \
+    PARALLEL_CONCURRENCY=1 MAX_STEPS=3 AGENT_TASK_TIMEOUT_SECONDS=900 \
+    AGENT_RETRY_ATTEMPTS=0 RAW_DIR="$RUN_ROOT/canary-raw" \
+    OUTPUT="$RUN_ROOT/canary.json" runner/run_agent_parallel.sh
+
+export M3_MAX_LLM_RETRIES=2
+export OSWORLD_CAMPAIGN_ID="osworld-v2-sample24-$(date -u +%Y%m%dT%H%M%SZ)"
+uv run --env-file .env.local --locked python services/websites/launch.py
+uv run --env-file .env.local --locked python services/gitlab/launch.py
+sample_args=()
+for task_id in 003 008 011 015 019 026 035 038 046 048 050 053 057 059 067 069 079 082 083 092 093 103 105 107; do
+    sample_args+=(--task-id "$task_id")
+done
+python3 runner/render_manifest.py --source validation/full-manifest.json \
+    --template "$GUEST_TEMPLATE" --output "$RUN_ROOT/sample24-manifest.json" "${sample_args[@]}"
+AGENT_MANIFEST="$RUN_ROOT/sample24-manifest.json" REQUIRE_NO_MODEL_COVERAGE=1 \
+    PARALLEL_CONCURRENCY=12 MAX_STEPS=500 \
+    AGENT_TASK_TIMEOUT_SECONDS=14400 AGENT_RETRY_ATTEMPTS=0 AGENT_START_STAGGER_SECONDS=1 \
+    RUN_TASK_082_CONCURRENT=1 RAW_DIR="$RUN_ROOT/sample24-raw" \
+    OUTPUT="$RUN_ROOT/sample24.json" runner/run_agent_parallel.sh
 ```
 
 Only immutable `name:build_id` references are accepted — launchers reject mutable aliases
 and never build templates at runtime. The guest build is promotable only if its exact
 immutable build restores with ≥100 GB usable root capacity. `runner/setup.sh` is idempotent
-(grep-guarded patches); `runner/setup.sh --restore` reverts its patch footprint for pin
-verification.
+(grep-guarded patches); `runner/setup.sh --verify OSWorld-V2` checks the pin and patch
+contents without modifying the checkout, and `--restore` returns it to the bare pin.
 
 ## Resource requirements
 
@@ -63,7 +248,9 @@ Don't trim below these even though measured peaks look low:
 
 Account level: the full-suite parallel drivers (80 workers) peak near 160 guest sandboxes
 (strict reset briefly holds two per worker) plus the two fleet sandboxes — sized for a
-200-concurrent-sandbox ceiling. Host needs are negligible (localhost relay + harness).
+200-concurrent-sandbox ceiling. On the host, each worker is a relay plus a Python process
+holding upstream's evaluator stack (~270 MB RSS at startup; easyocr/torch load only if an
+OCR metric runs), so budget roughly 22 GB of host RAM for 80 workers.
 
 ## Layout
 
@@ -123,7 +310,8 @@ An E2B snapshot captures memory + filesystem, persists independently of its sand
 can seed any number of new sandboxes — the same contract as QEMU's named `savevm` states.
 The name→id map lives in relay memory for the relay's lifetime; both revert paths are
 live-probed (`out/osworld-v2-evidence/snapshot-probe.json`, 12/12). Snapshots are
-deliberately never deleted — record ids from `/save` or `/state` to clean up after a run.
+deleted when the relay stops. Set `OSWORLD_RETAIN_SNAPSHOTS=1` only for an intentional debugging
+session, then delete the recorded ids from `/save` or `/state` when finished.
 The capture briefly pauses the guest (dropping CDP sockets), so `/save` re-gates on
 readiness and the relay retries WebSocket connects during the resume window.
 
@@ -137,8 +325,8 @@ Rungs run in order; PATH_PASS is never reported as task success:
 4. Snapshot save/revert probe.
 5. No-agent evaluator run (expected zeros).
 6. Small full-agent run with audited trajectories.
-7. Resource profiling (`runner/profile_resources.sh`) → `resource-requirements.json`;
+7. Resource profiling (`maintainer/profile_resources.sh`) → `resource-requirements.json`;
    run soon after the ladder while metrics are within E2B's retention window.
 
 For a full single-pass run: `VALIDATION_MANIFEST=validation/full-manifest.json`,
-`VALIDATION_RUNS=1`, a distinct `EVIDENCE_DIR`, then `runner/validate.sh`.
+`VALIDATION_RUNS=1`, a distinct `EVIDENCE_DIR`, then `maintainer/validate.sh`.

@@ -1,14 +1,22 @@
 .DS_Store
 .env
 .env.*
+!.env.example
 __pycache__/
 *.py[cod]
 node_modules/
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+.tox/
+.nox/
 .venv/
+venv/
+build/
+dist/
+*.egg-info/
 
-# Guest template build-local receipt (canonical copy: out/osworld-v2-evidence/).
+# Build-local receipt; run-scoped build receipts also live under ignored raw output.
 template/results/
 
 # Fetched upstream osworld-server payload. Upstream publishes no license, so it
@@ -18,14 +26,15 @@ template/files/server/src/
 
 # Service fleet runtime state + secrets (sandbox ids, per-sandbox traffic
 # tokens, the run-local GitLab PAT). Never commit these.
-services/.runtime.json
-services/.gitlab-token
-services/.hostmap_proxy.pid
-services/.hostmap_proxy.log
+services/**/.runtime*.json
+services/**/.*-token
+services/**/*.token
+services/**/*.pid
+services/**/*.log
 
 # Pinned upstream checkout and gated task data: downloaded per-consumer after
 # accepting the upstream dataset gate, never committed.
-OSWorld-V2/
+/OSWorld-V2/
 tasks/
 
 # Raw run outputs (trajectories, screenshots, failure traces) may quote gated

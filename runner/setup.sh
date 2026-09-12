@@ -7,44 +7,64 @@
 #
 # Checkout states (the checkout is gitignored, so its state lives on disk only):
 #   * "applied"  — setup.sh's patches present (register+classify e2b provider,
-#                  strict reset, vendored provider/manager + e2b_relay.py). This
-#                  is the NORMAL operating state between runs; the harness, relay,
-#                  and Task 12 all require it. Re-running setup.sh with no flag
-#                  restores it idempotently.
-#   * "pristine" — patch footprint reverted, matching the upstream pin exactly.
-#                  Reach it with `setup.sh --restore` (for pin verification); it
-#                  reverts only setup.sh's own files and leaves .venv/other
-#                  untracked working files intact.
+#                  strict reset, vendored provider/manager + relay/policy). This
+#                  is the NORMAL operating state between runs and the state
+#                  checked by `setup.sh --verify`. Re-running setup.sh with no
+#                  flag restores it idempotently.
+#   * "pristine" — the upstream pin with no tracked edits. Reach it with
+#                  `setup.sh --restore`: it reverts every tracked edit (setup.sh's
+#                  own patches and any drift --verify would reject, e.g. a
+#                  regenerated uv.lock) and removes only the vendored files;
+#                  .venv and other untracked working files are left intact.
 #
 # Usage:  ./setup.sh [dest-dir]            apply patches (default state)
 #         ./setup.sh --restore [dest-dir]  revert to pristine, then exit
+#         ./setup.sh --verify [dest-dir]   verify exact patched state, then exit
+#         ./setup.sh --preflight           validate local inputs and pin, then exit
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-V2ROOT="$(cd "$HERE/.." && pwd)"            # repo rootRELAY_DIR="$V2ROOT/relay"
+V2ROOT="$(cd "$HERE/.." && pwd)"            # repo root
+RELAY_DIR="$V2ROOT/relay"
 PROVIDER_DIR="$V2ROOT/provider"
 POLICY_FILE="$V2ROOT/e2b_policy.py"
 LOCKFILE="$V2ROOT/examples/osworld-v2/upstream.lock.json"
 
-# Pin: xlang-ai/OSWorld-V2 @ upstream.lock.json code.commit.
-PIN=d578d2d4e0dc82b43e270fdaa7fa89d9708cd154
-
 RESTORE=0
-if [ "${1:-}" = "--restore" ]; then RESTORE=1; shift; fi
+VERIFY=0
+PREFLIGHT=0
+if [ "${1:-}" = "--restore" ]; then
+    RESTORE=1
+    shift
+elif [ "${1:-}" = "--verify" ]; then
+    VERIFY=1
+    shift
+elif [ "${1:-}" = "--preflight" ]; then
+    PREFLIGHT=1
+    shift
+fi
 DEST="${1:-$PWD/OSWorld-V2}"
 
-# --restore returns the checkout to pristine (pin-verification state) by reverting
-# ONLY setup.sh's patch footprint: the two patched tracked files, plus the two
-# vendored untracked paths. .venv and any other untracked working files are left
-# untouched (clean is scoped, never a bare `git clean -fd`).
+# setup.sh's footprint in the checkout, declared once: the tracked files it
+# patches in place and the local files it vendors in. --verify checks exactly
+# this set; --restore reverts it. Any --verify failure prints REPAIR_HINT.
+PATCHED_TRACKED=(desktop_env/desktop_env.py desktop_env/providers/__init__.py)
+VENDORED=(
+    "desktop_env/providers/e2b/provider.py:$PROVIDER_DIR/provider.py"
+    "desktop_env/providers/e2b/manager.py:$PROVIDER_DIR/manager.py"
+    "e2b_relay.py:$RELAY_DIR/relay.py"
+    "e2b_policy.py:$POLICY_FILE"
+)
+REPAIR_HINT="repair with: runner/setup.sh --restore $DEST && runner/setup.sh $DEST"
+
 if [ "$RESTORE" -eq 1 ]; then
     if [ ! -d "$DEST/.git" ]; then
         echo "ERROR: --restore: no OSWorld-V2 checkout at $DEST" >&2
         exit 1
     fi
-    git -C "$DEST" checkout -- desktop_env/desktop_env.py desktop_env/providers/__init__.py lib_run_single.py 2>/dev/null || true
-    git -C "$DEST" clean -fdq desktop_env/providers/e2b e2b_relay.py e2b_policy.py 2>/dev/null || true
-    echo "restored pristine: $DEST (setup.sh patch footprint reverted)"
+    git -C "$DEST" checkout --quiet -- .
+    git -C "$DEST" clean -fdq desktop_env/providers/e2b "${VENDORED[@]%%:*}"
+    echo "restored pristine: $DEST (tracked edits reverted, vendored files removed)"
     git -C "$DEST" status --porcelain
     exit 0
 fi
@@ -57,34 +77,33 @@ if [ ! -f "$LOCKFILE" ]; then
     echo "ERROR: lock file not found at $LOCKFILE (moved/renamed? update setup.sh)" >&2
     exit 1
 fi
-LOCK_PIN="$(python3 - "$LOCKFILE" <<'EOF'
+python3 "$V2ROOT/services/release_lock.py" "$LOCKFILE"
+PIN="$(python3 - "$LOCKFILE" <<'EOF'
 import json, sys
 print(json.load(open(sys.argv[1]))["code"]["commit"])
 EOF
 )"
-if [ "$LOCK_PIN" != "$PIN" ]; then
-    echo "ERROR: setup.sh PIN ($PIN) != upstream.lock.json commit ($LOCK_PIN)" >&2
-    exit 1
+
+for required_file in \
+    "$RELAY_DIR/relay.py" \
+    "$PROVIDER_DIR/provider.py" \
+    "$PROVIDER_DIR/manager.py" \
+    "$POLICY_FILE" \
+    "$HERE/requirements-e2b.txt"
+do
+    if [ ! -f "$required_file" ]; then
+        echo "ERROR: required local file not found at $required_file" >&2
+        exit 1
+    fi
+done
+
+if [ "$PREFLIGHT" -eq 1 ]; then
+    echo "preflight ok: local inputs present; OSWorld-V2 pin $PIN"
+    exit 0
 fi
 
-if [ ! -d "$DEST/.git" ]; then
-    git clone https://github.com/xlang-ai/OSWorld-V2 "$DEST"
-fi
-git -C "$DEST" fetch --quiet origin "$PIN" 2>/dev/null || true
-git -C "$DEST" checkout --quiet "$PIN"
-echo "OSWorld-V2 at $DEST (pin $PIN)"
-
-# ---- provider package ----------------------------------------------------
-mkdir -p "$DEST/desktop_env/providers/e2b"
-cp "$PROVIDER_DIR/provider.py" "$PROVIDER_DIR/manager.py" "$DEST/desktop_env/providers/e2b/"
-touch "$DEST/desktop_env/providers/e2b/__init__.py"
-
-# ---- relay (runs on the host next to run.py) ------------------------------
-cp "$RELAY_DIR/relay.py" "$DEST/e2b_relay.py"
-cp "$POLICY_FILE" "$DEST/e2b_policy.py"
-
-# ---- string patches: register + classify the provider, force strict reset --
-python3 - "$DEST" <<'EOF'
+apply_adapter_patches() {
+python3 - "$1" <<'EOF'
 import sys, pathlib
 
 dest = pathlib.Path(sys.argv[1])
@@ -142,44 +161,100 @@ else:
     denv.write_text(src.replace(reset_anchor, reset_patched, 1))
     print('(c) desktop_env.py: patched (strict fresh sandbox for e2b resets)')
 
-# (d) preserve terminal actions whose final observation has no screenshot ---
-# V2's controller returns screenshot=None for DONE/FAIL. The upstream runner
-# tried to write that value as bytes before evaluating, invalidating every task
-# that terminated normally. Record no screenshot for that terminal row and
-# continue into env.evaluate(); a non-terminal None remains a hard error.
+EOF
+}
+
+if [ "$VERIFY" -eq 1 ]; then
+    if [ ! -d "$DEST/.git" ]; then
+        echo "ERROR: --verify: no OSWorld-V2 checkout at $DEST" >&2
+        exit 1
+    fi
+    ACTUAL_HEAD="$(git -C "$DEST" rev-parse HEAD)"
+    if [ "$ACTUAL_HEAD" != "$PIN" ]; then
+        echo "ERROR: OSWorld-V2 HEAD $ACTUAL_HEAD does not match pin $PIN; $REPAIR_HINT" >&2
+        exit 1
+    fi
+
+    # Exactly the patched files may differ from the pin: this also rejects any
+    # other tracked drift (a regenerated uv.lock, an edited evaluator backend).
+    EXPECTED_TRACKED="$(printf '%s\n' "${PATCHED_TRACKED[@]}" | sort)"
+    ACTUAL_TRACKED="$(git -C "$DEST" diff --name-only HEAD -- | sort)"
+    if [ "$ACTUAL_TRACKED" != "$EXPECTED_TRACKED" ]; then
+        echo "ERROR: OSWorld-V2 tracked edits do not match setup patch footprint; $REPAIR_HINT" >&2
+        git -C "$DEST" status --short --untracked-files=no >&2
+        exit 1
+    fi
+
+    EXPECTED_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/osworld-v2-verify.XXXXXX")"
+    trap 'rm -rf "$EXPECTED_ROOT"' EXIT
+    for relative in "${PATCHED_TRACKED[@]}"; do
+        mkdir -p "$EXPECTED_ROOT/$(dirname "$relative")"
+        git -C "$DEST" show "$PIN:$relative" > "$EXPECTED_ROOT/$relative"
+    done
+    apply_adapter_patches "$EXPECTED_ROOT" >/dev/null
+
+    for relative in "${PATCHED_TRACKED[@]}"; do
+        if ! cmp -s "$DEST/$relative" "$EXPECTED_ROOT/$relative"; then
+            echo "ERROR: OSWorld-V2 checkout differs from expected: $relative; $REPAIR_HINT" >&2
+            exit 1
+        fi
+    done
+    for pair in "${VENDORED[@]}"; do
+        if ! cmp -s "$DEST/${pair%%:*}" "${pair#*:}"; then
+            echo "ERROR: OSWorld-V2 checkout differs from expected: ${pair%%:*}; $REPAIR_HINT" >&2
+            exit 1
+        fi
+    done
+    if [ ! -f "$DEST/desktop_env/providers/e2b/__init__.py" ] || [ -s "$DEST/desktop_env/providers/e2b/__init__.py" ]; then
+        echo "ERROR: OSWorld-V2 checkout differs from expected: desktop_env/providers/e2b/__init__.py; $REPAIR_HINT" >&2
+        exit 1
+    fi
+    echo "verified OSWorld-V2 checkout: $DEST (pin $PIN)"
+    exit 0
+fi
+
+if [ ! -d "$DEST/.git" ]; then
+    git clone https://github.com/xlang-ai/OSWorld-V2 "$DEST"
+fi
+git -C "$DEST" fetch --quiet origin "$PIN" 2>/dev/null || true
+git -C "$DEST" checkout --quiet "$PIN"
+echo "OSWorld-V2 at $DEST (pin $PIN)"
+
+# Keep the task loop identical to upstream. Repair only the exact legacy E2B
+# screenshot patch; never discard customer edits to agent/task execution.
+python3 - "$DEST" "$PIN" <<'EOF'
+import hashlib
+import pathlib
+import subprocess
+import sys
+
+dest = pathlib.Path(sys.argv[1])
 single = dest / "lib_run_single.py"
-src = single.read_text()
-terminal_marker = 'terminal observation returned screenshot=None; evaluating final state'
-if terminal_marker in src:
-    print("(d) lib_run_single.py terminal screenshot handling: already applied")
-else:
-    old = '''                with open(os.path.join(example_result_dir, f"step_{step_idx + 1}_{action_timestamp}.png"),
-                        "wb") as _f:
-                    _f.write(obs['screenshot'])
-                with open(os.path.join(example_result_dir, "traj.jsonl"), "a") as f:'''
-    new = '''                screenshot_file = None
-                screenshot_bytes = obs.get("screenshot")
-                if screenshot_bytes is not None:
-                    screenshot_file = f"step_{step_idx + 1}_{action_timestamp}.png"
-                    with open(os.path.join(example_result_dir, screenshot_file), "wb") as _f:
-                        _f.write(screenshot_bytes)
-                elif not done:
-                    raise RuntimeError("non-terminal observation returned screenshot=None")
-                else:
-                    logger.info("terminal observation returned screenshot=None; evaluating final state")
-                with open(os.path.join(example_result_dir, "traj.jsonl"), "a") as f:'''
-    count = src.count(old)
-    assert count == 1, f"lib_run_single.py terminal screenshot anchor found {count}x, need exactly 1 (OSWorld-V2 moved?)"
-    src = src.replace(old, new, 1)
-    old_name = '"screenshot_file": f"step_{step_idx + 1}_{action_timestamp}.png"'
-    count = src.count(old_name)
-    assert count >= 1, "lib_run_single.py screenshot_file anchor missing (OSWorld-V2 moved?)"
-    single.write_text(src.replace(old_name, '"screenshot_file": screenshot_file', 1))
-    print("(d) lib_run_single.py: patched (terminal screenshot None is evaluable)")
+pristine = subprocess.check_output(
+    ["git", "-C", str(dest), "show", f"{sys.argv[2]}:lib_run_single.py"]
+)
+current = single.read_bytes()
+if current != pristine:
+    # SHA256 of the legacy patched file at upstream d578d2d (fixture in tests).
+    legacy_sha256 = "68b441de17b8d73e48c9599381dca98a7ac74f3451d8d5567bf4ba794aeacb68"
+    if hashlib.sha256(current).hexdigest() != legacy_sha256:
+        sys.exit("ERROR: lib_run_single.py has unrecognized edits; preserve your changes "
+                 "and restore this file to the upstream pin before running setup again")
+    single.write_bytes(pristine)
+    print("lib_run_single.py: restored upstream terminal observation handling")
 EOF
 
+# ---- provider package ----------------------------------------------------
+mkdir -p "$DEST/desktop_env/providers/e2b"
+cp "$PROVIDER_DIR/provider.py" "$PROVIDER_DIR/manager.py" "$DEST/desktop_env/providers/e2b/"
+touch "$DEST/desktop_env/providers/e2b/__init__.py"
+
+# ---- relay (runs on the host next to run.py) ------------------------------
+cp "$RELAY_DIR/relay.py" "$DEST/e2b_relay.py"
+cp "$POLICY_FILE" "$DEST/e2b_policy.py"
+
+# ---- string patches: register + classify the provider, force strict reset --
+apply_adapter_patches "$DEST"
+
 echo
-echo "Done. Next:"
-echo "  1. uv pip install -r $DEST/requirements.txt -r $HERE/requirements-e2b.txt   # python >=3.12"
-echo "  2. export E2B_API_KEY=... ; export GUEST_TEMPLATE=osworld-v2-gnome:<build_id>"
-echo "  3. python $DEST/e2b_relay.py   # host-side relay on 127.0.0.1:14999"
+echo "Done. Follow the Quick start in $V2ROOT/README.md to run the upstream benchmark."

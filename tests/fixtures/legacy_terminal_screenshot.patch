@@ -1,0 +1,33 @@
+diff --git a/lib_run_single.py b/lib_run_single.py
+index 247a132..e7be06d 100644
+--- a/lib_run_single.py
++++ b/lib_run_single.py
+@@ -943,9 +943,16 @@ def run_single_example(agent, env, example, max_steps, instruction, args, exampl
+             # only save for last action if multiple actions, to avoid saving too many screenshots
+             if action_index_in_step == len(actions) or done:
+                 # Save screenshot and trajectory information
+-                with open(os.path.join(example_result_dir, f"step_{step_idx + 1}_{action_timestamp}.png"),
+-                        "wb") as _f:
+-                    _f.write(obs['screenshot'])
++                screenshot_file = None
++                screenshot_bytes = obs.get("screenshot")
++                if screenshot_bytes is not None:
++                    screenshot_file = f"step_{step_idx + 1}_{action_timestamp}.png"
++                    with open(os.path.join(example_result_dir, screenshot_file), "wb") as _f:
++                        _f.write(screenshot_bytes)
++                elif not done:
++                    raise RuntimeError("non-terminal observation returned screenshot=None")
++                else:
++                    logger.info("terminal observation returned screenshot=None; evaluating final state")
+                 with open(os.path.join(example_result_dir, "traj.jsonl"), "a") as f:
+                     f.write(json.dumps({
+                         "step_num": step_idx + 1,
+@@ -955,7 +962,7 @@ def run_single_example(agent, env, example, max_steps, instruction, args, exampl
+                         "reward": reward,
+                         "done": done,
+                         "info": info,
+-                        "screenshot_file": f"step_{step_idx + 1}_{action_timestamp}.png"
++                        "screenshot_file": screenshot_file
+                     }))
+                     f.write("\n")
+                 if done:

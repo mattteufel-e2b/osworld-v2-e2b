@@ -1,0 +1,116 @@
+{
+  "execution": {
+    "host_proxy_owned_for_campaign": true,
+    "max_parallel_workers": 2,
+    "mode": "bounded-parallel-with-namespaced-task-service-ports",
+    "task_082_solo": false
+  },
+  "finished_at": "2026-09-11T21:14:53.284310+00:00",
+  "host": {
+    "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "python": "3.14.7"
+  },
+  "manifest": {
+    "description": "Complete 108-task OSWorld 2.0 environment-path validation inventory. IDs only; no gated task content. The domain label is intentionally generic because the harness records each loaded task's authoritative related_apps.",
+    "osworld_commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154",
+    "release": "osworld-v2-2026.08.08",
+    "tasks": [
+      {
+        "domain": "release",
+        "id": "043"
+      },
+      {
+        "domain": "release",
+        "id": "082"
+      }
+    ],
+    "template": "osworld-v2-gnome:0d796343-1a70-4bd3-990e-8bb469b3dd20"
+  },
+  "osworld_commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154",
+  "purpose": "environment-path validation; not an agent benchmark score",
+  "records": [
+    {
+      "domain": "release",
+      "duration_seconds": 32.8,
+      "eval_model_call_attempts": 0,
+      "evaluation_mode": "no-model-stub",
+      "evaluator_ran": true,
+      "external_model_calls": 0,
+      "finished_at": "2026-09-11T21:14:01.720337+00:00",
+      "id": "043",
+      "multiphase": false,
+      "observation": {
+        "accessibility_characters": 623198,
+        "screenshot_bytes": 64606
+      },
+      "path_status": "PATH_PASS",
+      "related_apps": [
+        "chrome",
+        "calendar"
+      ],
+      "sandbox": {
+        "generation": 2,
+        "id": "i07cfndvffoe3jn93xr1b",
+        "restricted_ingress": true,
+        "template": "osworld-v2-gnome:0d796343-1a70-4bd3-990e-8bb469b3dd20",
+        "unique_in_run": true
+      },
+      "score": 0.0,
+      "stage": "complete",
+      "started_at": "2026-09-11T21:13:28.890917+00:00",
+      "task_class": "Task043"
+    },
+    {
+      "domain": "release",
+      "duration_seconds": 84.4,
+      "eval_model_call_attempts": 0,
+      "evaluation_mode": "no-model-stub",
+      "evaluator_ran": true,
+      "external_model_calls": 0,
+      "finished_at": "2026-09-11T21:14:53.284310+00:00",
+      "id": "082",
+      "multiphase": false,
+      "observation": {
+        "accessibility_characters": 247064,
+        "screenshot_bytes": 61053
+      },
+      "path_status": "PATH_PASS",
+      "related_apps": [
+        "chrome",
+        "mailhub",
+        "terminal"
+      ],
+      "sandbox": {
+        "generation": 2,
+        "id": "i9dazy7yo871wjshpjhzb",
+        "restricted_ingress": true,
+        "template": "osworld-v2-gnome:0d796343-1a70-4bd3-990e-8bb469b3dd20",
+        "unique_in_run": true
+      },
+      "score": 0.0,
+      "stage": "complete",
+      "started_at": "2026-09-11T21:13:28.892362+00:00",
+      "task_class": "Task082"
+    }
+  ],
+  "release": "osworld-v2-2026.08.08",
+  "run_id": "f06308fd-395b-41f7-88a0-47ef07c13a27",
+  "schema_version": 1,
+  "started_at": "2026-09-11T21:13:28.890917+00:00",
+  "summary": {
+    "all_recorded_sandboxes_unique": true,
+    "eval_model_call_attempts": 0,
+    "evaluation_mode": "no-model-stub",
+    "evaluator_ran_count": 2,
+    "expected_tasks": 2,
+    "external_model_calls": 0,
+    "missing_or_invalid_task_ids": [],
+    "model_boundary_passes": 0,
+    "path_failures": 0,
+    "path_passes": 2,
+    "tasks": 2,
+    "unique_sandboxes": 2,
+    "validated_tasks": 2
+  },
+  "template": "osworld-v2-gnome:0d796343-1a70-4bd3-990e-8bb469b3dd20"
+}

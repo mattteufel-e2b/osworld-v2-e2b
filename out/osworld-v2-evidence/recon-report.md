@@ -1,11 +1,11 @@
 # OSWorld 2.0 gated-task recon report
 
 Release: `osworld-v2-2026.08.08`. Tasks dataset `xlangai/osworld_v2_tasks` @
-`2c538752e5ef2f40eccc6f546c05738ce9b4228b` (108 `task_*.py` files, matches the release manifest's
-`task_hash_manifest.task_count`). Assets dataset `xlangai/osworld_v2_assets_gated` @
-`402754cc7bd74690168c46ef0c58c375542c4afe` (1061 files, ~4.2GB, downloaded but not inventoried
-beyond directory structure — not required by the brief). Both were downloaded into
-`rewrites/osworld-v2/tasks/` (gitignored; `git status --porcelain` has zero entries under that
+`0ec2aa30344a28103a33c89c6588c3437bfcdca1` (108 `task_*.py` files, verified against
+`examples/osworld-v2/task-hashes.json`). Assets dataset `xlangai/osworld_v2_assets_gated` @
+`402754cc7bd74690168c46ef0c58c375542c4afe` (3186 payload files plus `.source.json`, ~4.2GB).
+Both were downloaded into this
+repository's ignored `tasks/` workspace (`git status --porcelain` had zero entries under that
 path). No task prompts, evaluator source, or asset content are reproduced below — counts, task
 ids, domain/app tags, and endpoint names only.
 
@@ -103,7 +103,7 @@ release; the ports are purely task-driven).
 - **Website-dependent** (calls `build_website_url`, i.e. the mocked Next.js/Caddy fleet): 33 of 108
   tasks — ids **5, 7, 8, 13, 15, 16, 18, 19, 20, 21, 31, 38, 39, 43, 46, 50, 52, 56, 57, 58, 60, 65,
   68, 69, 70, 72, 73, 81, 82, 98, 100, 101, 102**.
-- **GitLab-dependent** (references `GITLAB_URL`): 2 of 108 tasks — ids **26, 41**.
+- **GitLab-dependent** (references `GITLAB_URL`): 1 of 108 tasks — id **26**.
 
 ## 5. Twelve validation candidates
 

@@ -45,6 +45,7 @@ constraint, not a template knob.
 Exit status: 0 if every requested sandbox yielded metrics and nothing tripped a
 saturation flag; non-zero otherwise, so a verification rung can gate on it.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -118,11 +119,15 @@ def _iter_evidence_files(paths: Iterable[str | os.PathLike[str]]) -> list[Path]:
     for raw in paths:
         path = Path(raw)
         if path.is_dir():
-            files.extend(sorted(p for p in path.rglob("*") if p.suffix in {".json", ".jsonl"}))
+            files.extend(
+                sorted(p for p in path.rglob("*") if p.suffix in {".json", ".jsonl"})
+            )
         elif path.is_file():
             files.append(path)
         else:
-            print(f"[profile] warning: evidence path not found: {path}", file=sys.stderr)
+            print(
+                f"[profile] warning: evidence path not found: {path}", file=sys.stderr
+            )
     return files
 
 
@@ -172,7 +177,9 @@ def _epoch(timestamp: Any) -> float | None:
         return float(timestamp)
     if isinstance(timestamp, str):
         try:
-            return _dt.datetime.fromisoformat(timestamp.replace("Z", "+00:00")).timestamp()
+            return _dt.datetime.fromisoformat(
+                timestamp.replace("Z", "+00:00")
+            ).timestamp()
         except ValueError:
             return None
     return None
@@ -215,7 +222,9 @@ def summarize(samples: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     disk_used = col("disk_used")
     disk_total = col("disk_total")
 
-    epochs = sorted(e for e in (_epoch(s.get("timestamp")) for s in samples) if e is not None)
+    epochs = sorted(
+        e for e in (_epoch(s.get("timestamp")) for s in samples) if e is not None
+    )
     duration = (epochs[-1] - epochs[0]) if len(epochs) >= 2 else 0.0
 
     cpu_count = max(cpu_counts) if cpu_counts else 0
@@ -229,8 +238,12 @@ def summarize(samples: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         return sum(values) / len(values) if values else 0.0
 
     cpu_saturated = _max_consecutive_over(cpu_pct, _SATURATION_PCT) >= _SATURATION_RUN
-    mem_pressure = mem_total_max > 0 and mem_used_peak > _SATURATION_PCT / 100 * mem_total_max
-    disk_pressure = disk_total_max > 0 and disk_used_peak > _SATURATION_PCT / 100 * disk_total_max
+    mem_pressure = (
+        mem_total_max > 0 and mem_used_peak > _SATURATION_PCT / 100 * mem_total_max
+    )
+    disk_pressure = (
+        disk_total_max > 0 and disk_used_peak > _SATURATION_PCT / 100 * disk_total_max
+    )
 
     return {
         "sample_count": len(samples),
@@ -301,7 +314,9 @@ def recommend(aggregate: Mapping[str, Any]) -> dict[str, Any]:
 
 def aggregate_peaks(per_sandbox: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     """Combine per-sandbox summaries into worst-case peaks across the run."""
-    profiled = [s["summary"] for s in per_sandbox if s.get("summary", {}).get("sample_count")]
+    profiled = [
+        s["summary"] for s in per_sandbox if s.get("summary", {}).get("sample_count")
+    ]
     if not profiled:
         return {"profiled_sandbox_count": 0}
 
@@ -314,7 +329,9 @@ def aggregate_peaks(per_sandbox: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     return {
         "profiled_sandbox_count": len(profiled),
         "cpu_count": int(peak("cpu_count")),
-        "cpu_used_pct_of_allocation_peak": round(peak("cpu_used_pct_of_allocation_peak"), 2),
+        "cpu_used_pct_of_allocation_peak": round(
+            peak("cpu_used_pct_of_allocation_peak"), 2
+        ),
         "cpu_cores_used_peak": round(peak("cpu_cores_used_peak"), 3),
         "mem_used_bytes_peak": int(peak("mem_used_bytes_peak")),
         "mem_used_gib_peak": round(peak("mem_used_bytes_peak") / _GIB, 3),
@@ -337,7 +354,11 @@ def build_report(
 ) -> dict[str, Any]:
     aggregate = aggregate_peaks(per_sandbox)
     profiled = int(aggregate.get("profiled_sandbox_count") or 0)
-    missing = [s["sandbox_id"] for s in per_sandbox if not s.get("summary", {}).get("sample_count")]
+    missing = [
+        s["sandbox_id"]
+        for s in per_sandbox
+        if not s.get("summary", {}).get("sample_count")
+    ]
     flags = [
         name
         for name in ("cpu_saturated", "mem_pressure", "disk_pressure")
@@ -384,7 +405,10 @@ def fetch_metrics(
                 file=sys.stderr,
             )
             return []
-        print(f"[profile] error fetching metrics for {sandbox_id}: {name}: {exc}", file=sys.stderr)
+        print(
+            f"[profile] error fetching metrics for {sandbox_id}: {name}: {exc}",
+            file=sys.stderr,
+        )
         return []
 
     samples: list[dict[str, Any]] = []
@@ -456,10 +480,14 @@ def _human_summary(report: Mapping[str, Any]) -> str:
             f"{rec['disk_peak_used_gib']} GiB must fit tier capacity."
         )
     if report.get("sandboxes_without_metrics"):
-        lines.append(f"  WARNING no metrics for: {', '.join(report['sandboxes_without_metrics'])}")
+        lines.append(
+            f"  WARNING no metrics for: {', '.join(report['sandboxes_without_metrics'])}"
+        )
     if report.get("flags"):
         lines.append(f"  WARNING saturation flags: {', '.join(report['flags'])}")
-    lines.append(f"  resource_requirements_complete={report['resource_requirements_complete']}")
+    lines.append(
+        f"  resource_requirements_complete={report['resource_requirements_complete']}"
+    )
     return "\n".join(lines)
 
 
@@ -481,7 +509,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Profile E2B workload resource use (CPU/RAM/DISK) from sandbox metrics.",
     )
-    parser.add_argument("--sandbox-id", action="append", default=[], help="explicit sandbox id")
+    parser.add_argument(
+        "--sandbox-id", action="append", default=[], help="explicit sandbox id"
+    )
     parser.add_argument(
         "--from-evidence",
         action="append",
@@ -528,7 +558,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     for sandbox_id in ids:
         samples = fetch_metrics(sandbox_id)
         per_sandbox.append(
-            {"sandbox_id": sandbox_id, "summary": summarize(samples), "samples": samples}
+            {
+                "sandbox_id": sandbox_id,
+                "summary": summarize(samples),
+                "samples": samples,
+            }
         )
 
     report = build_report(per_sandbox, _now_iso(), ids)

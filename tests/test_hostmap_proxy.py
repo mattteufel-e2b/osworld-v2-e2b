@@ -35,7 +35,10 @@ def test_upstream_open_retries_transient_transport_failure():
 def test_upstream_redirects_are_returned_to_the_client_for_cookie_fidelity():
     redirect_handler = hostmap_proxy._NoRedirect()
 
-    assert redirect_handler.redirect_request(None, None, 302, "Found", {}, "https://next") is None
+    assert (
+        redirect_handler.redirect_request(None, None, 302, "Found", {}, "https://next")
+        is None
+    )
 
 
 def test_absolute_site_urls_are_rewritten_to_the_incoming_proxy_authority():
@@ -54,6 +57,48 @@ def test_absolute_site_urls_are_rewritten_to_the_incoming_proxy_authority():
 
     assert b"http://overleaf.127.0.0.1.nip.io:8090/user/activate" in rewritten
     assert location == "http://overleaf.127.0.0.1.nip.io:8090/project"
+
+
+def test_guest_routes_load_traffic_tokens_for_authenticated_ingress(tmp_path):
+    runtime_file = tmp_path / "runtime.json"
+    runtime_file.write_text(
+        json.dumps(
+            {
+                "websites": {
+                    "traffic_token": "websites-traffic-token",
+                    "host_suffix": "127.0.0.1.nip.io",
+                    "sites": {
+                        "mailhub": {
+                            "ingress_host": "13001-websites.e2b.app",
+                            "port": 13001,
+                        }
+                    },
+                },
+                "gitlab": {
+                    "traffic_token": "gitlab-traffic-token",
+                    "host": "gitlab.127.0.0.1.nip.io",
+                    "ingress_host": "8929-gitlab.e2b.app",
+                    "port": 8929,
+                },
+            }
+        )
+    )
+
+    with patch.object(hostmap_proxy, "RUNTIME_FILE", runtime_file):
+        rules = hostmap_proxy._load_rules()
+
+    assert rules["mailhub.127.0.0.1.nip.io"] == {
+        "ingress_host": "13001-websites.e2b.app",
+        "traffic_token": "websites-traffic-token",
+        "sandbox_id": None,
+        "port": 13001,
+    }
+    assert rules["gitlab.127.0.0.1.nip.io"] == {
+        "ingress_host": "8929-gitlab.e2b.app",
+        "traffic_token": "gitlab-traffic-token",
+        "sandbox_id": None,
+        "port": 8929,
+    }
 
 
 def test_large_body_can_use_authenticated_e2b_command_bridge():

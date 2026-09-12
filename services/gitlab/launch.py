@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import secrets
+import shlex
 import sys
 import time
 from datetime import UTC, datetime
@@ -40,7 +41,7 @@ REPO_DIR = "/root/gitlab"
 GITLAB_SUBDOMAIN = "gitlab"
 GITLAB_PORT = 8929  # distinct sandbox port the fanout publishes for GitLab
 TOKEN_FILE = fl.SERVICES_DIR / ".gitlab-token"
-RECEIPT = fl.REPO_ROOT / "out" / "osworld-v2-evidence" / "services-gitlab.json"
+RECEIPT = fl.REPO_ROOT / "out" / "osworld-v2-raw" / "services" / "gitlab.json"
 LOCKFILE = fl.REPO_ROOT / "examples" / "osworld-v2" / "upstream.lock.json"
 
 HEALTH_CAP_S = 12 * 60  # GitLab boot is typically 3-5 min; cap at 12.
@@ -51,12 +52,11 @@ def gitlab_url() -> str:
 
 
 def gitlab_pin() -> str:
-    """Read the pinned commit straight from the lock file (no hardcoded
-    duplicate here): examples/osworld-v2/upstream.lock.json gitlab_code.commit."""
-    return json.loads(LOCKFILE.read_text())["gitlab_code"]["commit"]
+    """Validate the release lock and return its immutable GitLab commit."""
+    return fl.release_lock()["gitlab_code"]["commit"]
 
 
-def clone_repo(sbx) -> None:
+def clone_repo(sbx, commit: str) -> None:
     check = sbx.commands.run(
         f"test -d {REPO_DIR}/.git && echo yes || echo no", user="root", timeout=15
     )
@@ -64,8 +64,7 @@ def clone_repo(sbx) -> None:
         fl.run(sbx, f"git clone {REPO_URL} {REPO_DIR}", timeout=120)
     else:
         fl.log("gitlab repo already cloned")
-    commit = gitlab_pin()
-    fl.run(sbx, f"git -C {REPO_DIR} checkout {commit}", timeout=30)
+    fl.run(sbx, f"git -C {REPO_DIR} checkout --detach {commit}", timeout=30)
     fl.log(f"gitlab repo pinned to {commit}")
 
 
@@ -95,8 +94,14 @@ def write_fanout(sbx) -> None:
     sbx.files.write(f"{REPO_DIR}/fanout.conf", conf)
     compose = (
         "services:\n"
+        "  gitlab:\n"
+        f"    image: {fl.service_image('gitlab')}\n"
+        "  gitlab-init-token:\n"
+        f"    image: {fl.service_image('gitlab_init')}\n"
+        "  gitlab-runner:\n"
+        f"    image: {fl.service_image('gitlab_runner')}\n"
         "  fleet_fanout:\n"
-        "    image: nginx:alpine\n"
+        f"    image: {fl.service_image('fanout')}\n"
         "    depends_on:\n"
         "      - gitlab\n"
         "    volumes:\n"
@@ -109,21 +114,24 @@ def write_fanout(sbx) -> None:
 
 
 def compose_up(sbx, token: str) -> None:
-    envs = f"GITLAB_URL={gitlab_url()} GITLAB_PRIVATE_TOKEN={token}"
+    envs = {"GITLAB_URL": gitlab_url(), "GITLAB_PRIVATE_TOKEN": token}
     cmd = (
-        f"cd {REPO_DIR} && {envs} "
+        f"cd {REPO_DIR} && "
         f"docker compose -f docker-compose.yml -f docker-compose.fanout.yml up -d "
         f"&& echo COMPOSE_OK || echo COMPOSE_FAIL"
     )
     # Detached: the gitlab-ce image pull is large; poll the log instead of holding
     # the exec channel open.
-    already = fl.poll_cmd(sbx, "grep -qs COMPOSE_OK /var/log/compose.log && echo done || echo no")
+    already = fl.poll_cmd(
+        sbx, "grep -qs COMPOSE_OK /var/log/compose.log && echo done || echo no"
+    )
     if "done" not in (already or ""):
         sbx.commands.run(
-            f"sh -c '{cmd}' > /var/log/compose.log 2>&1",
+            f"sh -c {shlex.quote(cmd)} > /var/log/compose.log 2>&1",
             user="root",
             background=True,
             timeout=0,
+            envs=envs,
         )
     deadline = time.time() + 900  # image pull + container create
     while time.time() < deadline:
@@ -135,6 +143,15 @@ def compose_up(sbx, token: str) -> None:
             full = fl.poll_cmd(sbx, "tail -60 /var/log/compose.log") or ""
             raise RuntimeError(f"gitlab compose up failed:\n{full[-3000:]}")
         time.sleep(15)
+    # The compose process can finish during the last sleep. Observe that final
+    # state before declaring a timeout and tearing down a healthy sandbox.
+    out = fl.poll_cmd(sbx, "tail -3 /var/log/compose.log 2>/dev/null") or ""
+    if "COMPOSE_OK" in out:
+        fl.log("gitlab compose up (containers created; GitLab still initializing)")
+        return
+    if "COMPOSE_FAIL" in out:
+        full = fl.poll_cmd(sbx, "tail -60 /var/log/compose.log") or ""
+        raise RuntimeError(f"gitlab compose up failed:\n{full[-3000:]}")
     raise TimeoutError("gitlab compose up did not create containers in time")
 
 
@@ -149,7 +166,9 @@ def wait_api_ready(sbx, token: str) -> float:
             fl.poll_cmd(
                 sbx,
                 f"curl -s -o /dev/null -w '%{{http_code}}' "
-                f"-H 'PRIVATE-TOKEN: {token}' http://localhost:{GITLAB_PORT}/api/v4/user",
+                f'-H "PRIVATE-TOKEN: $GITLAB_PRIVATE_TOKEN" '
+                f"http://localhost:{GITLAB_PORT}/api/v4/user",
+                envs={"GITLAB_PRIVATE_TOKEN": token},
             )
             or ""
         ).strip()
@@ -159,69 +178,83 @@ def wait_api_ready(sbx, token: str) -> float:
         if code == "200":
             return round(time.time() - t0, 1)
         time.sleep(15)
-    raise TimeoutError(f"gitlab API did not reach 200 within {HEALTH_CAP_S}s (last={last})")
+    raise TimeoutError(
+        f"gitlab API did not reach 200 within {HEALTH_CAP_S}s (last={last})"
+    )
 
 
 def main() -> int:
+    commit = gitlab_pin()
+    campaign = fl.campaign_id()
     fl.load_e2b_key()
     template_ref = fl.ensure_fleet_template()
     sbx, created = fl.reuse_or_create("gitlab", template=template_ref)
-    fl.ensure_docker(sbx)
-    fl.ensure_swap(sbx)
+    published = False
+    try:
+        fl.ensure_docker(sbx)
+        fl.ensure_swap(sbx)
 
-    # Reuse the token across reruns if one already exists (so the same PAT keeps
-    # working for the already-running GitLab); else mint a fresh one.
-    existing = fl.read_runtime().get("gitlab", {})
-    token = existing.get("private_token") or ("glpat-" + secrets.token_hex(20))
+        # Reuse the token across reruns if one already exists (so the same PAT keeps
+        # working for the already-running GitLab); else mint a fresh one.
+        existing = fl.read_runtime().get("gitlab", {})
+        token = existing.get("private_token") or ("glpat-" + secrets.token_hex(20))
 
-    clone_repo(sbx)
-    write_fanout(sbx)
-    compose_up(sbx, token)
-    ready_secs = wait_api_ready(sbx, token)
+        clone_repo(sbx, commit)
+        write_fanout(sbx)
+        compose_up(sbx, token)
+        ready_secs = wait_api_ready(sbx, token)
 
-    ingress = sbx.get_host(GITLAB_PORT)
-    # Host-path verification through E2B ingress: the restricted-ingress gate
-    # requires the sandbox traffic token (exactly what the Host-mapping proxy
-    # injects), plus the GitLab PRIVATE-TOKEN for the API itself.
-    api = requests.get(
-        f"https://{ingress}/api/v4/user",
-        headers={
-            "PRIVATE-TOKEN": token,
-            "e2b-traffic-access-token": sbx.traffic_access_token,
-        },
-        timeout=30,
-    )
-    fl.log(f"host ingress /api/v4/user -> {api.status_code}")
+        ingress = sbx.get_host(GITLAB_PORT)
+        api = requests.get(
+            f"https://{ingress}/api/v4/user",
+            headers={
+                "PRIVATE-TOKEN": token,
+                "e2b-traffic-access-token": sbx.traffic_access_token,
+            },
+            timeout=30,
+        )
+        unauthenticated = requests.get(
+            f"https://{ingress}/api/v4/user",
+            headers={"PRIVATE-TOKEN": token},
+            timeout=30,
+        )
+        fl.log(f"host ingress /api/v4/user -> {api.status_code}")
+        fl.log(
+            f"unauthenticated host ingress /api/v4/user -> {unauthenticated.status_code}"
+        )
+        fl.require_restricted_ingress(
+            "GitLab",
+            authenticated_status=api.status_code,
+            unauthenticated_status=unauthenticated.status_code,
+        )
 
-    TOKEN_FILE.write_text(token + "\n")
-    TOKEN_FILE.chmod(0o600)
+        proxy_status = fl.restart_host_proxy()
+        if not proxy_status.get("running"):
+            raise RuntimeError("host proxy failed to start")
+        public_port = proxy_status["port"]
+        public_url = f"http://{GITLAB_SUBDOMAIN}.{fl.HOST_SUFFIX}:{public_port}"
 
-    proxy_status = fl.restart_host_proxy()
-    # The harness reads GITLAB_URL verbatim (gitlab.py: os.getenv('GITLAB_URL')),
-    # so it must carry the host-proxy port. GitLab's own external_url (set in the
-    # compose env) stays PORT-LESS so its internal nginx binds :80 and the fanout
-    # -> gitlab:80 keeps working.
-    public_port = proxy_status["port"]
-    public_url = f"http://{GITLAB_SUBDOMAIN}.{fl.HOST_SUFFIX}:{public_port}"
+        # The proxy reads its route and traffic credential from the runtime file,
+        # so publish provisionally, exercise the exact harness URL, and roll back
+        # the section if any later gate fails.
+        fl.write_runtime_section(
+            "gitlab",
+            {
+                "sandbox_id": sbx.sandbox_id,
+                "campaign_id": campaign,
+                "template": template_ref,
+                "traffic_token": sbx.traffic_access_token,
+                "host": f"{GITLAB_SUBDOMAIN}.{fl.HOST_SUFFIX}",
+                "ingress_host": ingress,
+                "port": GITLAB_PORT,
+                "url": public_url,
+                "external_url": gitlab_url(),
+                "private_token": token,
+                "token_file": str(TOKEN_FILE),
+            },
+        )
+        published = True
 
-    fl.write_runtime_section(
-        "gitlab",
-        {
-            "sandbox_id": sbx.sandbox_id,
-            "template": template_ref,
-            "traffic_token": sbx.traffic_access_token,
-            "host": f"{GITLAB_SUBDOMAIN}.{fl.HOST_SUFFIX}",
-            "ingress_host": ingress,
-            "port": GITLAB_PORT,
-            "url": public_url,  # harness-facing, port-suffixed
-            "external_url": gitlab_url(),  # GitLab's own external_url (port-less)
-            "private_token": token,
-            "token_file": str(TOKEN_FILE),
-        },
-    )
-
-    proxy_path_check = None
-    if proxy_status.get("running"):
         # Exact harness URL: GET {GITLAB_URL}/api/v4/user with only the
         # PRIVATE-TOKEN — the proxy injects the sandbox traffic token.
         import urllib.request
@@ -238,49 +271,62 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001
             proxy_path_check = {"url": url, "status": None, "error": repr(exc)[:200]}
         fl.log(f"harness-URL /api/v4/user -> {proxy_path_check}")
+        if proxy_path_check.get("status") != 200:
+            raise RuntimeError("harness URL GitLab API check failed")
 
-    prior = {}
-    if RECEIPT.is_file():
-        try:
-            prior = json.loads(RECEIPT.read_text())
-        except json.JSONDecodeError:
-            prior = {}
-    runs = list(prior.get("runs", []))
-    runs.append(
-        {
-            "at": datetime.now(UTC).isoformat(),
+        fl.write_private_text(TOKEN_FILE, token + "\n")
+        prior = {}
+        if RECEIPT.is_file():
+            try:
+                prior = json.loads(RECEIPT.read_text())
+            except json.JSONDecodeError:
+                prior = {}
+        runs = list(prior.get("runs", []))
+        runs.append(
+            {
+                "at": datetime.now(UTC).isoformat(),
+                "sandbox_created_this_run": created,
+                "api_ready_seconds": ready_secs,
+            }
+        )
+
+        receipt = {
+            "schema_version": 2,
+            "generated_at": datetime.now(UTC).isoformat(),
+            "sandbox_id": sbx.sandbox_id,
+            "campaign_id": campaign,
+            "template": template_ref,
             "sandbox_created_this_run": created,
+            "sandbox_memory_mb": fl.FLEET_MEMORY_MB,
+            "restricted_ingress": True,
+            "repo": {"url": REPO_URL, "commit": commit},
+            "gitlab_image": fl.service_image("gitlab"),
+            "gitlab_url": public_url,
+            "gitlab_external_url": gitlab_url(),
+            "gitlab_port": GITLAB_PORT,
+            "ingress_host": ingress,
+            "first_boot_api_ready_seconds": prior.get(
+                "first_boot_api_ready_seconds", ready_secs
+            ),
             "api_ready_seconds": ready_secs,
+            "host_ingress_api_status": api.status_code,
+            "unauthenticated_host_ingress_api_status": unauthenticated.status_code,
+            "host_proxy": proxy_status,
+            "harness_url_api_check": proxy_path_check,
+            "token_file": str(TOKEN_FILE),
+            "token_committed": False,
+            "runs": runs,
         }
-    )
+        RECEIPT.parent.mkdir(parents=True, exist_ok=True)
+        RECEIPT.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+        fl.log(f"receipt -> {RECEIPT}")
+    except BaseException:
+        fl.rollback_launch(
+            "gitlab", sbx, created, token_file=TOKEN_FILE, published=published
+        )
+        raise
 
-    receipt = {
-        "schema_version": 2,
-        "generated_at": datetime.now(UTC).isoformat(),
-        "sandbox_id": sbx.sandbox_id,
-        "template": template_ref,
-        "sandbox_created_this_run": created,
-        "sandbox_memory_mb": fl.FLEET_MEMORY_MB,
-        "restricted_ingress": True,
-        "repo": {"url": REPO_URL},
-        "gitlab_image": "gitlab/gitlab-ce:18.7.0-ce.0",
-        "gitlab_url": public_url,
-        "gitlab_external_url": gitlab_url(),
-        "gitlab_port": GITLAB_PORT,
-        "ingress_host": ingress,
-        "first_boot_api_ready_seconds": prior.get("first_boot_api_ready_seconds", ready_secs),
-        "api_ready_seconds": ready_secs,
-        "host_ingress_api_status": api.status_code,
-        "host_proxy": proxy_status,
-        "harness_url_api_check": proxy_path_check,
-        "token_file": str(TOKEN_FILE),
-        "token_committed": False,
-        "runs": runs,
-    }
-    RECEIPT.parent.mkdir(parents=True, exist_ok=True)
-    RECEIPT.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
-    fl.log(f"receipt -> {RECEIPT}")
-
+    fl.stop_host_proxy()
     print(f"GITLAB_URL={public_url}")
     print(f"GITLAB_TOKEN_FILE={TOKEN_FILE}")
     return 0

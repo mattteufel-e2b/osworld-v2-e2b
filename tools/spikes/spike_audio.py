@@ -8,7 +8,7 @@ devices absent and snd-dummy unloadable (recorded, not fatal)?
 
 Run:
     export E2B_API_KEY=$(grep '^E2B_API_KEY=' .env.local | cut -d= -f2)
-    uv run --with e2b python runner/spike_audio.py
+    uv run --with e2b python tools/spikes/spike_audio.py
 
 Writes out/osworld-v2-evidence/spike-audio.json.
 
@@ -32,7 +32,7 @@ from pathlib import Path
 
 from e2b import Sandbox
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 OUT_PATH = REPO_ROOT / "out" / "osworld-v2-evidence" / "spike-audio.json"
 
 # (name, command, run-as-user, timeout-seconds)
