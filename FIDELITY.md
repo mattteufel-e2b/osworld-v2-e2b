@@ -26,8 +26,9 @@ and the `ENABLE_RECORDING` opt-in, the ladder and an agent rollout were re-run o
 can briefly double guest count): [receipt](out/osworld-v2-evidence/full-suite/validate-108-20260911.json).
 107 receipts, 107 unique sandboxes, zero external model calls: 105 `PATH_PASS`, one
 `MODEL_BOUNDARY_PASS` (035, the judge boundary reached and refused as designed), one `PATH_FAIL`
-(043: after a clean strict reset the second-generation guest answered 502 to every
-accessibility-tree request for ~87 s and the harness failed closed at `reset`), and 082 with no
+(043: the receipt records `cause: environment/reset`; the gitignored worker log shows the
+second-generation guest answering 502 to every accessibility-tree request for ~87 s before the
+harness failed closed), and 082 with no
 receipt because its worker preflight found host port 3000 taken by an unrelated local dev
 server. Task 082's upstream task file hardcodes `localhost:3000`, so its relay listener cannot be
 shifted like every other port. The aggregate gate reports **FAIL** on that receipt, as it should.
@@ -39,8 +40,8 @@ environment paths passed on this build; the 043 failure did not reproduce and is
 transient post-reset guest-readiness fault, not a closed item.
 
 **Agent rollout with recording** (task 093, upstream M3 agent, `accounts/fireworks/models/minimax-m3`,
-500 steps, 2,048 thinking tokens, judge and simulator pointed at Fireworks MiniMax because the
-OpenAI key has no credits): [receipt](out/osworld-v2-evidence/sample-24/agent-093-recording-20260911.json).
+500 steps, 2,048 thinking tokens, judge pointed at Fireworks MiniMax because the OpenAI key has
+no credits; the simulator inherits judge settings upstream, so the receipt shows it unset): [receipt](out/osworld-v2-evidence/sample-24/agent-093-recording-20260911.json).
 Path OK, 500 steps, score 0.25 matching upstream `result.txt`, no judge or simulator calls, gate **PASS**. The receipt records `recording_enabled: true` and the guest's ffmpeg capture landed as a 67 MB `recording.mp4` next to the trajectory in the raw result directory. Recording is therefore verified end to end and moves out of the excluded list below; it stays off unless a run opts in. All campaign sandboxes and both fleets were cleaned up.
 
 Unchanged from the September 10 entry: this is runtime verification on E2B, not a parity claim

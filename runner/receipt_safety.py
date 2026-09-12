@@ -93,6 +93,7 @@ def base_receipt(
     model: str,
     max_steps: int,
     port_base: int,
+    recording_enabled: bool | None = None,
 ) -> dict:
     """The run-configuration fields every per-task receipt carries, whether it
     is written by agent_runner.py or by the shell watchdog on a timeout. One
@@ -109,9 +110,14 @@ def base_receipt(
         "m3_max_llm_retries": (
             nonnegative_int_env("M3_MAX_LLM_RETRIES") if agent_kind == "m3" else None
         ),
-        # Screen recording is upstream's --enable_recording opt-in; the launch
-        # script exports ENABLE_RECORDING=1 when a run asked for it.
-        "recording_enabled": os.environ.get("ENABLE_RECORDING") == "1",
+        # Screen recording is upstream's --enable_recording opt-in. The agent
+        # runner passes what it actually asked DesktopEnv for; the timeout
+        # writer falls back to the ENABLE_RECORDING the launch script exported.
+        "recording_enabled": (
+            recording_enabled
+            if recording_enabled is not None
+            else os.environ.get("ENABLE_RECORDING") == "1"
+        ),
         "eval_model": os.environ.get("OSWORLD_EVAL_MODEL_NAME") or None,
         "eval_provider": os.environ.get("OSWORLD_EVAL_MODEL_PROVIDER") or None,
         "eval_model_transport": public_transport(

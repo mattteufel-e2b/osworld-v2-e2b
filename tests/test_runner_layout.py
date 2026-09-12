@@ -48,7 +48,6 @@ SPIKE_FILES = {
     "snapshot_probe.py",
     "spike_audio.py",
     "spike_ingress.py",
-    "wave.sh",
 }
 
 

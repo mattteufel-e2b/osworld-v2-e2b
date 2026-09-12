@@ -32,7 +32,7 @@ from pathlib import Path
 
 from e2b import Sandbox
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 OUT_PATH = REPO_ROOT / "out" / "osworld-v2-evidence" / "spike-audio.json"
 
 # (name, command, run-as-user, timeout-seconds)

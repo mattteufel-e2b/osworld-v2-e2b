@@ -68,3 +68,25 @@ def test_shared_library_parses_and_exports_the_worker_uv_command():
     assert result.returncode == 0, result.stderr
     assert "uv run --locked --extra full --python 3.12" in result.stdout
     assert "defined" in result.stdout
+
+
+def test_wait_for_rollout_zero_means_no_deadline():
+    # validate.sh runs every manifest task inside one harness process, so it
+    # must not inherit the per-task deadline; 0 disables it.
+    script = f"""
+source "{LIB}"
+AGENT_WATCHDOG_POLL_SECONDS=1
+(sleep 2; exit 7) &
+rollout_pid=$!
+wait_for_rollout 0
+echo "status=$?"
+"""
+    result = subprocess.run(
+        ["bash", "-c", script], text=True, capture_output=True, check=False
+    )
+    assert "status=7" in result.stdout, (result.stdout, result.stderr)
+    assert "deadline" not in result.stderr
+
+
+def test_sequential_validator_runs_the_whole_manifest_without_a_per_task_deadline():
+    assert "wait_for_rollout 0" in (ROOT / "maintainer" / "validate.sh").read_text()

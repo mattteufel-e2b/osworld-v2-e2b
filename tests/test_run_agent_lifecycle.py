@@ -821,3 +821,19 @@ def test_path_task_worker_signal_kills_harness_and_relay_process_trees(tmp_path)
         _assert_process_gone(pid)
     for process_group in _recorded_process_groups(env):
         _assert_process_group_gone(process_group)
+
+
+def test_launch_script_rejects_a_non_boolean_recording_value(tmp_path):
+    env = _runner_env(tmp_path, task_timeout=30)
+    env["ENABLE_RECORDING"] = "yes"
+    result = subprocess.run(
+        ["bash", str(ROOT / "runner" / "run_agent.sh")],
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=60,
+        check=False,
+    )
+    assert result.returncode == 2
+    assert "ENABLE_RECORDING must be 0 or 1" in result.stderr
+    assert not Path(env["RELAY_PID_FILE"]).exists()

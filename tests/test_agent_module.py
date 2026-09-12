@@ -247,3 +247,5 @@ def test_agent_runner_exposes_upstream_recording_opt_in():
     assert '"--enable-recording"' in runner
     assert "force_disable_recording=not args.enable_recording" in runner
     assert "force_disable_recording=True" not in runner
+    # The receipt attests what the runner actually did, not what the shell exported.
+    assert "recording_enabled=args.enable_recording" in runner

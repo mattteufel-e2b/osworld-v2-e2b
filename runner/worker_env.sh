@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Per-task runtime knobs, sourced by run_agent.sh (which enforces them) and by
-# run_agent_parallel.sh (which budgets fleet lifetime from them). One place for
+# Per-task runtime knobs, sourced by worker_lib.sh (every relay-driving worker
+# enforces them) and by run_agent_parallel.sh (which budgets fleet lifetime from
+# them). One place for
 # the defaults, so the admission gate can never budget with a value the worker
 # no longer uses.
 AGENT_TASK_TIMEOUT_SECONDS="${AGENT_TASK_TIMEOUT_SECONDS:-14400}"

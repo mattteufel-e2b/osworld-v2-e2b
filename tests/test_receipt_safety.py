@@ -124,3 +124,20 @@ def test_base_receipt_records_screen_recording_opt_in(monkeypatch):
         port_base=0,
     )
     assert receipt["recording_enabled"] is True
+
+
+def test_base_receipt_prefers_the_explicit_recording_flag_over_the_environment(
+    monkeypatch,
+):
+    monkeypatch.setenv("OSWORLD_RUN_NONCE", "nonce-1")
+    monkeypatch.setenv("ENABLE_RECORDING", "1")
+    receipt = receipt_safety.base_receipt(
+        task_id="001",
+        domain="release",
+        agent_kind="m3",
+        model="m",
+        max_steps=1,
+        port_base=0,
+        recording_enabled=False,
+    )
+    assert receipt["recording_enabled"] is False

@@ -20,7 +20,7 @@ from urllib.request import Request, urlopen
 CONTROL = "http://127.0.0.1:14999"
 GUEST = "http://127.0.0.1:15000"
 MARKER = "/home/user/snapshot-probe-marker"
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 OUT = REPO_ROOT / "out" / "osworld-v2-evidence" / "snapshot-probe.json"
 
 

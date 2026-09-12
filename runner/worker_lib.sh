@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Shared worker lifecycle for every script that drives one OSWorld-V2 rollout
 # through its own namespaced E2B relay: runner/run_agent.sh (the benchmark path)
-# and the maintainer validation wrappers. Source it after setting HERE; it
-# defines functions and a few exported variables and runs nothing on its own.
+# and the maintainer validation wrappers. Sourcing it defines functions and path
+# variables and sources worker_env.sh, which validates the timeout knobs and
+# exits 2 on an invalid value; it starts no process.
 #
 # What lives here, once:
 #   * repo/checkout/task/service path resolution and the worker `uv run` command,
@@ -208,14 +209,15 @@ install_worker_traps() {
 
 # wait_for_rollout TIMEOUT_SECONDS: wait for rollout_pid, polling every
 # AGENT_WATCHDOG_POLL_SECONDS. Returns the rollout's exit status, or 124 after
-# terminating its process group at the deadline. A leader that exits cleanly
-# must not leave helpers running in its session either.
+# terminating its process group at the deadline; 0 means no deadline (a rollout
+# that bounds itself, e.g. a whole-manifest harness). A leader that exits
+# cleanly must not leave helpers running in its session either.
 wait_for_rollout() {
     local timeout_seconds="$1"
     local started_at=$SECONDS
     local process_group="$rollout_pid"
     while kill -0 "$rollout_pid" 2>/dev/null; do
-        if [ $((SECONDS - started_at)) -ge "$timeout_seconds" ]; then
+        if [ "$timeout_seconds" -gt 0 ] && [ $((SECONDS - started_at)) -ge "$timeout_seconds" ]; then
             echo "rollout exceeded ${timeout_seconds}s deadline" >&2
             terminate_process_group "$process_group"
             rollout_pid=""

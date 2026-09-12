@@ -57,10 +57,7 @@ PY
 rm -f "$OUTPUT" "${OUTPUT%.json}.jsonl"
 
 install_worker_traps
-if ! start_relay "$RELAY_LOG"; then
-    echo "[task $TASK_ID] relay did not become ready on $CONTROL_PORT" >&2
-    exit 1
-fi
+start_relay "$RELAY_LOG" || exit 1
 
 start_in_new_session "$OSWORLD_ROOT" "${WORKER_UV[@]}" python "$HERE/harness.py" \
     --osworld-root "$OSWORLD_ROOT" \

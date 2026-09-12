@@ -26,6 +26,10 @@ MAX_STEPS="${MAX_STEPS:-75}"
 : "${TASK_ID:?TASK_ID required}"
 : "${DOMAIN:?DOMAIN required}"
 : "${PORT_BASE:?PORT_BASE required}"
+if [[ ! "${ENABLE_RECORDING:-0}" =~ ^[01]$ ]]; then
+    echo "ENABLE_RECORDING must be 0 or 1 (got: '$ENABLE_RECORDING')" >&2
+    exit 2
+fi
 
 require_immutable_guest_template
 require_campaign_id
@@ -72,10 +76,7 @@ export_fleet_wiring
 echo "[task ${TASK_ID}/${DOMAIN}] port_base=${PORT_BASE} control=${CONTROL_PORT} agent=${AGENT_KIND} model=${MODEL}"
 
 install_worker_traps
-if ! start_relay "$RELAY_LOG"; then
-    echo "[task ${TASK_ID}] relay did not become ready" >&2
-    exit 1
-fi
+start_relay "$RELAY_LOG" || exit 1
 
 # Upstream generation flags, forwarded only when set so agents.py keeps the
 # upstream default otherwise. (`${arr[@]+...}` keeps bash 3.2 happy under set -u.)
@@ -105,7 +106,6 @@ started_at=$SECONDS
 wait_for_rollout "$AGENT_TASK_TIMEOUT_SECONDS"
 status=$?
 if [ "$status" -eq 124 ]; then
-    echo "[task ${TASK_ID}] exceeded ${AGENT_TASK_TIMEOUT_SECONDS}s deadline" >&2
     # agent_runner publishes its receipt atomically, so a non-empty OUTPUT is a
     # complete result that finished just as the deadline fired — keep it.
     if [ -s "$OUTPUT" ]; then

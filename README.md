@@ -119,6 +119,10 @@ and the receipts never look inside the agent.
   means the agent kind's upstream default; the resolved values are recorded in every receipt
   as `agent_settings`. Observation is `screenshot` and actions are `pyautogui`, which is what
   the E2B guest exposes today.
+- `ENABLE_RECORDING=1` is upstream's `--enable_recording`: the guest records the screen for the
+  whole rollout and `recording.mp4` lands in the task's result directory. Off by default;
+  receipts record `recording_enabled`. Live desktop view (VNC) is tracked separately in
+  [issue #2](https://github.com/mattteufel-e2b/osworld-v2-e2b/issues/2).
 
 ```bash
 export AGENT_KIND=prompt MODEL="openai/gpt-4o" TEMPERATURE=0.2 MAX_TRAJECTORY_LENGTH=5
@@ -131,6 +135,7 @@ AGENT_MANIFEST="$RUN_ROOT/full-manifest.json" MAX_STEPS=75 \
 Everything in this section lives under `maintainer/` and is **not required to run the
 benchmark**. `runner/` holds only the benchmark path; `tools/spikes/` keeps the one-off
 probes that shaped the port (their evidence is cited from `FIDELITY.md`).
+
 This validates every environment path across all 108 tasks with zero external model calls,
 then optionally gates a full-model benchmark receipt on that coverage. It's how maintainers
 qualify a release before it ships — it is **not** required to run the benchmark (see Quick

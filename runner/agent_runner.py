@@ -227,6 +227,7 @@ def main() -> int:
         model=args.model,
         max_steps=args.max_steps,
         port_base=port_base,
+        recording_enabled=args.enable_recording,
     )
     receipt.update(
         multiphase=multiphase,

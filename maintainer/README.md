@@ -1,9 +1,7 @@
 # Maintainer validation ladder
 
-Maintainer-only: not required to run the benchmark; see the repository
-README "Quick start" for that path, which lives entirely under `runner/`.
-
-These scripts qualify a guest template build before it ships: they exercise every
+Maintainer-only: not required to run the benchmark (that path lives entirely under
+`runner/`). These scripts qualify a guest template build before it ships: they exercise every
 environment path of all 108 tasks with **no model calls** (`OSWORLD_EVAL_MODEL_MODE=stub`),
 fail closed at any evaluator model boundary, and produce the no-model receipt that the
 optional `REQUIRE_NO_MODEL_COVERAGE=1` gate in `runner/run_agent_parallel.sh` consumes.

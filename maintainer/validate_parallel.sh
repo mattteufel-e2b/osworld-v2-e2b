@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Maintainer-only release validation: the full 108-task OSWorld-V2
 # environment-path run with no model calls, bounded E2B concurrency. Not needed
-# to run the benchmark (see README "Quick start"); it qualifies a template build. A worker can briefly own two sandboxes during strict reset, so
-# 80 workers peak near 160 guest sandboxes; the two service sandboxes and retry
-# headroom remain below the account's 200-concurrent-sandbox ceiling.
+# to run the benchmark (see README "Quick start"); it qualifies a template build.
+# A worker can briefly own two sandboxes during strict reset, so 80 workers peak
+# near 160 guest sandboxes; the two service sandboxes and retry headroom remain
+# below the account's 200-concurrent-sandbox ceiling.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

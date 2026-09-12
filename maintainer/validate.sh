@@ -107,7 +107,9 @@ for run_number in $(seq 1 "$RUNS"); do
         --raw-dir "$RAW_DIR" \
         --output "$output" &
     rollout_pid=$!
-    wait_for_rollout "$AGENT_TASK_TIMEOUT_SECONDS"
+    # One harness process runs every manifest task and bounds each with its own
+    # TASK_TIMEOUT_SECONDS, so no per-task deadline applies here.
+    wait_for_rollout 0
     status=$?
     [ "$status" -eq 0 ] || overall=1
     shutdown_relay

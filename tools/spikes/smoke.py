@@ -39,7 +39,7 @@ PORT3000 = "http://127.0.0.1:3000"
 PORT8000 = "http://127.0.0.1:8000"
 # smoke.py lives at tools/spikes/; evidence lands at the repo's
 # out/osworld-v2-evidence/ so the receipt sits with the other V2 evidence.
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 EVIDENCE_DIR = REPO_ROOT / "out" / "osworld-v2-evidence"
 SCREENS_DIR = EVIDENCE_DIR / "smoke-screens"
 
