@@ -366,6 +366,29 @@ def test_retry_wave_is_skipped_when_fleets_cannot_outlast_it(tmp_path):
     assert Path(env["FLEET_STOPPED_FILE"]).exists()  # admitted runs tear down
 
 
+def test_retry_wave_writes_retries_json_from_its_own_task_list(tmp_path):
+    # The coordinator writes the wave's own task list to retries.json, not a
+    # glob over receipt files aggregate_agent.py would otherwise have to infer
+    # retries from. The fleet lifetime check must pass here (opposite of
+    # test_retry_wave_is_skipped_when_fleets_cannot_outlast_it) so the retry
+    # wave actually runs.
+    env = _coordinator_env(tmp_path, fleetlib_case="  *fleetlib.py*) exit 0 ;;")
+    result = subprocess.run(
+        ["bash", str(ROOT / "runner/run_agent_parallel.sh")],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=60,
+    )
+    workers = Path(env["RAW_DIR"], "workers")
+    retries = json.loads((workers / "retries.json").read_text())
+    assert retries == [{"attempt": 1, "task_ids": ["001"]}], (
+        result.stdout,
+        result.stderr,
+    )
+
+
 def _coordinator_env_recording_agent_args(
     tmp_path: Path,
 ) -> tuple[dict[str, str], Path]:

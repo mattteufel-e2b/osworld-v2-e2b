@@ -191,14 +191,16 @@ def aggregate(
         "unique_sandboxes": len(set(sandbox_ids)),
         "all_recorded_sandboxes_unique": len(set(sandbox_ids)) == len(sandbox_ids),
     }
-    # run_agent_parallel.sh copies the pre-retry receipt to
-    # task_<id>_before_retry_<n>.json before overwriting it, so the worker dir
-    # is the ground truth for whether the retry wave replaced any receipt.
+    # run_agent_parallel.sh writes the wave's own task list to retries.json
+    # after each retry wave; that is the ground truth for what was retried,
+    # not a glob over receipt files that stale attempt files (or a retry that
+    # produced no receipt) would otherwise mislead.
+    retry_waves = []
+    retries_path = worker_dir / "retries.json"
+    if retries_path.exists():
+        retry_waves = json.loads(retries_path.read_text())
     retried_task_ids = sorted(
-        {
-            path.name[len("task_") :].split("_before_retry_")[0]
-            for path in worker_dir.glob("task_*_before_retry_*.json")
-        }
+        {tid for wave in retry_waves for tid in wave.get("task_ids", [])}
     )
     run = {
         "schema_version": 2,
@@ -235,6 +237,7 @@ def aggregate(
             "task_082_concurrent": task_082_concurrent,
             "host_proxy_owned_for_campaign": True,
             "retried_task_ids": retried_task_ids,
+            "retry_waves": retry_waves,
             "implicit_retries": bool(retried_task_ids),
             "no_model_coverage_enforced": no_model_coverage_enforced,
         },

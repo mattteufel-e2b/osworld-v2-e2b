@@ -431,7 +431,9 @@ def test_agent_aggregate_allows_zero_evaluator_calls_for_non_boundary_task(tmp_p
 
 def test_execution_block_reports_actual_retries(tmp_path):
     manifest, workers = _inputs(tmp_path)
-    (workers / "task_001_before_retry_1.json").write_text("{}")
+    (workers / "retries.json").write_text(
+        json.dumps([{"attempt": 1, "task_ids": ["001"]}])
+    )
 
     run, ok = aggregate(
         manifest,
@@ -460,6 +462,50 @@ def test_execution_block_reports_actual_retries(tmp_path):
     assert run["execution"]["retried_task_ids"] == ["001"]
     assert run["execution"]["implicit_retries"] is True
     assert run["execution"]["no_model_coverage_enforced"] is True
+    assert run["execution"]["retry_waves"] == [{"attempt": 1, "task_ids": ["001"]}]
+
+
+def test_retries_come_from_the_wave_list_not_stale_files(tmp_path):
+    manifest, workers = _inputs(tmp_path)
+    manifest_data = json.loads(manifest.read_text())
+    manifest_data["tasks"].append({"id": "002", "domain": "release"})
+    manifest.write_text(json.dumps(manifest_data))
+    record = json.loads((workers / "task_001.json").read_text())
+    record["id"] = "002"
+    record["sandbox_id"] = "sandbox-2"
+    (workers / "task_002.json").write_text(json.dumps(record))
+    # stale, from an old run that shared this worker dir
+    (workers / "task_002_before_retry_1.json").write_text("{}")
+    (workers / "retries.json").write_text(
+        json.dumps([{"attempt": 1, "task_ids": ["001"]}])
+    )
+
+    run, ok = aggregate(
+        manifest,
+        workers,
+        model="model",
+        agent_kind="m3",
+        model_transport="https://example.test/v1",
+        eval_model="judge",
+        eval_provider="openai_compatible",
+        eval_transport="https://example.test/v1",
+        user_sim_model="simulator",
+        user_sim_provider="openai_compatible",
+        user_sim_transport="https://example.test/v1",
+        max_steps=500,
+        concurrency=1,
+        thinking_mode=None,
+        thinking_budget=2048,
+        m3_max_llm_retries=2,
+        task_082_concurrent=True,
+        run_nonce="run-nonce-1",
+        campaign_id="campaign-1",
+        required_eval_model_ids=set(),
+        no_model_coverage_enforced=False,
+    )
+
+    assert run["execution"]["retried_task_ids"] == ["001"]
+    assert run["execution"]["retry_waves"] == [{"attempt": 1, "task_ids": ["001"]}]
 
 
 def test_execution_block_without_retries(tmp_path):

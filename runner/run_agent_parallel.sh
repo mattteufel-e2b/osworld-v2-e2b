@@ -321,6 +321,17 @@ for ((attempt=1; attempt <= AGENT_RETRY_ATTEMPTS; attempt++)); do
         echo "skipping retry attempt $attempt: fleets cannot outlast a ${#failed_rows[@]}-task retry wave" >&2
         break
     fi
+    python3 - "$RAW_DIR/workers/retries.json" "$attempt" "${failed_rows[@]}" <<'PY'
+import json, sys
+path, attempt, rows = sys.argv[1], int(sys.argv[2]), sys.argv[3:]
+try:
+    waves = json.load(open(path))
+except (FileNotFoundError, json.JSONDecodeError):
+    waves = []
+waves.append({"attempt": attempt, "task_ids": [row.split()[0] for row in rows]})
+json.dump(waves, open(path, "w"), indent=2)
+PY
+
     echo "retrying ${#failed_rows[@]} infrastructure/path failures (attempt $attempt)"
     overall=0
     retry_batch=()
