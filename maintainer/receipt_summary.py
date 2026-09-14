@@ -24,7 +24,9 @@ IDENTITY_FIELDS = (
     "finished_at",
 )
 GATE_FIELDS = (
+    "evaluation_mode",
     "path_passes",
+    "path_failures",
     "model_boundary_passes",
     "unique_sandboxes",
     "all_recorded_sandboxes_unique",
@@ -58,7 +60,8 @@ def summarize(receipt: dict, source_name: str) -> dict:
         if isinstance(record, dict) and isinstance(record.get("id"), str)
     }
     summary["task_count"] = len(tasks)
-    summary["tasks"] = dict(sorted(tasks.items()))
+    # Not "tasks": the source receipt uses that key for an integer count.
+    summary["task_statuses"] = dict(sorted(tasks.items()))
     return summary
 
 

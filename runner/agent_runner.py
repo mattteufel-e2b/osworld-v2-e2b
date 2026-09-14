@@ -260,15 +260,14 @@ def main() -> int:
         sandbox_generation=None,
         wall_clock_s=None,
     )
-    # Armed as soon as there is a receipt to record the outcome in: a task file
-    # or an agent constructor that hangs or raises is inside the deadline and
-    # inside the try below, not ahead of them.
-    _install_signal_handlers(args.deadline_seconds)
-
     env = None
     multiphase = False
     scores: list[float] = []
     start = time.monotonic()
+    # Armed as the last statement before the try, with the receipt already
+    # seeded above: a task file or an agent constructor that hangs or raises is
+    # inside the deadline and inside the try below, not ahead of them.
+    _install_signal_handlers(args.deadline_seconds)
     try:
         task_path = (args.tasks_dir / f"task_{args.task_id}.py").resolve()
         example = task_loader.load_task_from_file(str(task_path))

@@ -616,6 +616,14 @@ class GuestManager:
         source = self._snapshots.get(snapshot_name) if snapshot_name else None
         return await self.replace(source)
 
+    def request_stop(self) -> None:
+        """Mark the manager stopped from any thread, without the event loop.
+
+        Bridge.stop() calls this before it signals the loop, so a create still
+        in flight reaps its own sandbox as soon as it returns instead of
+        finishing readiness and proxy install first."""
+        self._stopped = True
+
     async def stop(self) -> None:
         async with self._lock:
             self._stopped = True
@@ -795,6 +803,9 @@ class Bridge:
         if self._stopped:
             return
         self._stopped = True
+        # Before the signal and the join: an in-flight create must reap the
+        # sandbox it is building rather than hand it over to a stopping bridge.
+        self._manager.request_stop()
         loop, thread, stop_event = self._loop, self._thread, self._stop_event
         if thread is None:
             self.clean_stop = True  # nothing was ever running

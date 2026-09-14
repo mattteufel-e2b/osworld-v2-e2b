@@ -911,21 +911,35 @@ class BridgeThreadTests(BridgeTestCase):
         self.addCleanup(setattr, FakeSandbox, "create_gate", None)
         self.addCleanup(gate.set)
 
-        def interrupt(*_args, **_kwargs):
-            # Interrupt with the first guest mid-create, then release it so the
-            # loop thread can unwind.
-            self.assertTrue(gate.entered.wait(timeout=5))
+        def release_once_stopping():
+            # Hold the create until stop() has marked the manager stopped, so
+            # the create returns into the reap path every run.
+            deadline = time.monotonic() + 5
+            while not b._manager._stopped and time.monotonic() < deadline:
+                time.sleep(0.005)
             gate.set()
+
+        def interrupt(*_args, **_kwargs):
+            self.assertTrue(gate.entered.wait(timeout=5))  # first guest mid-create
+            threading.Thread(target=release_once_stopping, daemon=True).start()
             raise KeyboardInterrupt
 
-        with patch.object(b._ready, "wait", side_effect=interrupt):
-            with self.assertRaises(KeyboardInterrupt):
-                b.start()
+        with self.assertLogs(bridge.logger, level="WARNING") as logs:
+            with patch.object(b._ready, "wait", side_effect=interrupt):
+                with self.assertRaises(KeyboardInterrupt):
+                    b.start()
 
         b._thread.join(timeout=5)
         self.assertFalse(b._thread.is_alive())
         self.assertEqual(len(FakeSandbox.created), 1)
         self.assertTrue(FakeSandbox.created[0].killed)
+        # Reaped by the create itself: no readiness wait, no proxy install, no
+        # guest handed to a bridge that is already stopping.
+        self.assertTrue(
+            any("reaped just-created sandbox" in line for line in logs.output),
+            logs.output,
+        )
+        self.assertIsNone(b._manager._guest)
         self.assertFalse(b.started)
         b.stop()  # a second stop is a no-op
 

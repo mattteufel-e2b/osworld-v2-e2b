@@ -6,7 +6,9 @@
   "release": "osworld-v2-2026.08.08",
   "started_at": "2026-09-14T21:32:53.320975+00:00",
   "finished_at": "2026-09-14T21:47:35.734105+00:00",
+  "evaluation_mode": "no-model-stub",
   "path_passes": 107,
+  "path_failures": 0,
   "model_boundary_passes": 1,
   "unique_sandboxes": 108,
   "all_recorded_sandboxes_unique": true,
@@ -14,7 +16,7 @@
   "eval_model_call_attempts": 1,
   "host_proxy_owned_for_campaign": true,
   "task_count": 108,
-  "tasks": {
+  "task_statuses": {
     "001": "PATH_PASS",
     "002": "PATH_PASS",
     "003": "PATH_PASS",
