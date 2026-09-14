@@ -20,7 +20,9 @@ logger = logging.getLogger("desktopenv.providers.e2b")
 # up with whichever relay this DesktopEnv is paired to. Default 0 reproduces the
 # original single-instance addresses byte-for-byte.
 PORT_BASE = int(os.environ.get("OSWORLD_RELAY_PORT_BASE", "0"))
-CONTROL_URL = os.environ.get("E2B_RELAY_CONTROL_URL", f"http://127.0.0.1:{14999 + PORT_BASE}")
+CONTROL_URL = os.environ.get(
+    "E2B_RELAY_CONTROL_URL", f"http://127.0.0.1:{14999 + PORT_BASE}"
+)
 # /reset and /save mutate the guest: a reset is sandbox create + up to the
 # relay's GUEST_READY_TIMEOUT_S of readiness polling, and a save is a full
 # memory+filesystem snapshot capture plus the post-resume readiness gate. Both
@@ -67,7 +69,9 @@ class E2BProvider(Provider):
             state.get("root_capacity_bytes"),
         )
 
-    def start_emulator(self, path_to_vm: str, headless: bool, os_type: str = None, *args, **kwargs):
+    def start_emulator(
+        self, path_to_vm: str, headless: bool, os_type: str = None, *args, **kwargs
+    ):
         state = _control("/health")
         logger.info("E2B guest ready: %s", state["sandbox_id"])
 
@@ -76,14 +80,19 @@ class E2BProvider(Provider):
         # headless, so 0 is intentionally returned for the unavailable VNC port.
         # The remapped server/CDP/VLC ports carry PORT_BASE so this tuple matches
         # the paired relay's namespaced listeners.
-        return f"127.0.0.1:{15000 + PORT_BASE}:{19222 + PORT_BASE}:0:{18080 + PORT_BASE}"
+        return (
+            f"127.0.0.1:{15000 + PORT_BASE}:{19222 + PORT_BASE}:0:{18080 + PORT_BASE}"
+        )
 
     def save_state(self, path_to_vm: str, snapshot_name: str):
         # E2B snapshots capture the exact running state (memory + filesystem)
         # and can seed any number of new sandboxes, matching QEMU's named
         # mid-run snapshots. The sandbox pauses briefly and resumes.
         state = _control(
-            "/save", method="POST", timeout=MUTATION_TIMEOUT_S, payload={"name": snapshot_name}
+            "/save",
+            method="POST",
+            timeout=MUTATION_TIMEOUT_S,
+            payload={"name": snapshot_name},
         )
         logger.info("E2B snapshot saved: %s -> %s", snapshot_name, state["snapshot_id"])
 
@@ -92,7 +101,10 @@ class E2BProvider(Provider):
         # other name (e.g. OSWorld's default "init_state") means the template
         # base state via a fresh sandbox.
         state = _control(
-            "/reset", method="POST", timeout=MUTATION_TIMEOUT_S, payload={"snapshot": snapshot_name}
+            "/reset",
+            method="POST",
+            timeout=MUTATION_TIMEOUT_S,
+            payload={"snapshot": snapshot_name},
         )
         logger.info(
             "E2B guest replaced: %s (generation %s, source %s)",

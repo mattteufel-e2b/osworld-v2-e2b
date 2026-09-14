@@ -231,6 +231,10 @@ export const template = Template({ fileContextPath: filesDir })
   .runCmd('ln -sfn /usr/local/bin/google-chrome /usr/bin/google-chrome')
   .copy('socat-shim.sh', '/usr/local/bin/socat', { mode: 0o755 })
   .copy('iptables-owner-compat.sh', '/usr/local/sbin/iptables', { mode: 0o755 })
+  // Task setup is unattended, and the E2B base image owns configuration such
+  // as sshd_config. Package upgrades must retain that image-managed state
+  // instead of waiting forever for a ucf prompt.
+  .copy('apt-get-noninteractive.sh', '/usr/local/sbin/apt-get', { mode: 0o755 })
   // Keep the Host-normalizing CDP listener present even after GUI relaunches.
   .runCmd("printf '[Unit]\\nDescription=OSWorld CDP host-normalizing proxy\\nAfter=network.target\\n[Service]\\nUser=user\\nExecStart=/usr/bin/python3 /opt/osworld-server/cdp_hostfix.py\\nRestart=always\\n[Install]\\nWantedBy=multi-user.target\\n' > /etc/systemd/system/osworld-cdp.service")
   // ---- VLC Lua HTTP interface :8080 (baked; matches full install) ---------

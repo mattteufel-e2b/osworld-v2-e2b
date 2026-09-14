@@ -1,0 +1,38 @@
+--- a/src/http_routes.py
++++ b/src/http_routes.py
+@@ -48,0 +49,20 @@
++def _process_has_exact_path_argument(path: Path) -> bool:
++    """Return true when a live Linux process was launched with this file.
++
++    Some applications keep a generic title while asynchronously loading a
++    large document (Shotcut reports ``Untitled - Shotcut``). In that case the
++    exact argv path is stronger evidence than waiting forever for a title that
++    never contains the filename.
++    """
++    if platform.system() != "Linux":
++        return False
++    needle = os.fsencode(str(path))
++    for cmdline in Path("/proc").glob("[0-9]*/cmdline"):
++        try:
++            if needle in cmdline.read_bytes().split(b"\0"):
++                return True
++        except (OSError, PermissionError):
++            continue
++    return False
++
++
+@@ -635,0 +656,6 @@
++
++                    # Allow the desktop app a short launch grace, then accept
++                    # an exact argv match when its window title is generic.
++                    if time.time() - start_time >= 5 and _process_has_exact_path_argument(path_obj):
++                        window_found = True
++                        break
+@@ -762,0 +789,7 @@
++            # Nothing drains stderr while recording, so keep it near-silent:
++            # default banner + per-half-second stats fill the 64KB pipe buffer in
++            # minutes and block ffmpeg's write, silently freezing the capture.
++            "-hide_banner",
++            "-nostats",
++            "-loglevel",
++            "error",

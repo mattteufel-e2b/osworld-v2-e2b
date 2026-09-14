@@ -4,6 +4,7 @@ The profiler lives in the repo-root `tools/` dir (deliberately outside the
 vended `src/env_registry` package so it stays copy-portable per bench). Load it
 by path so the tests do not depend on it being importable as a package.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -50,7 +51,9 @@ def test_harvest_from_nested_sandbox_object_not_task_id():
 
 
 def test_harvest_top_level_sandbox_id():
-    assert prof.harvest_sandbox_ids({"sandbox_id": REAL_ID2, "template": "x"}) == [REAL_ID2]
+    assert prof.harvest_sandbox_ids({"sandbox_id": REAL_ID2, "template": "x"}) == [
+        REAL_ID2
+    ]
 
 
 def test_harvest_dedups_and_orders():
@@ -67,8 +70,10 @@ def test_load_ids_from_evidence_json_and_jsonl(tmp_path):
     single.write_text(json.dumps({"sandbox_id": REAL_ID}))
     lines = tmp_path / "validate.jsonl"
     lines.write_text(
-        json.dumps({"id": "003", "sandbox": {"id": REAL_ID}}) + "\n"  # dup of smoke id
-        + json.dumps({"id": "004", "sandbox": {"id": REAL_ID2}}) + "\n"
+        json.dumps({"id": "003", "sandbox": {"id": REAL_ID}})
+        + "\n"  # dup of smoke id
+        + json.dumps({"id": "004", "sandbox": {"id": REAL_ID2}})
+        + "\n"
     )
     ids = prof.load_ids_from_evidence([tmp_path])
     assert ids == [REAL_ID, REAL_ID2]
@@ -81,7 +86,9 @@ def test_load_ids_ignores_missing_path(capsys):
 # --- summarize -----------------------------------------------------------------
 
 
-def _sample(pct, mem_used, disk_used, ts, cpu_count=2, mem_total=4 * _GIB, disk_total=10 * _GIB):
+def _sample(
+    pct, mem_used, disk_used, ts, cpu_count=2, mem_total=4 * _GIB, disk_total=10 * _GIB
+):
     return {
         "cpu_count": cpu_count,
         "cpu_used_pct": pct,
@@ -142,8 +149,12 @@ def test_summarize_memory_and_disk_pressure():
 
 def test_recommend_ram_uses_plus_1gib_when_larger():
     # peak 2 GiB: 1.25x = 2.5 GiB, peak+1GiB = 3 GiB -> pick 3 GiB = 3072 MiB
-    agg = {"mem_used_bytes_peak": 2 * _GIB, "disk_used_gib_peak": 1, "disk_total_gib": 10,
-           "cpu_count": 2}
+    agg = {
+        "mem_used_bytes_peak": 2 * _GIB,
+        "disk_used_gib_peak": 1,
+        "disk_total_gib": 10,
+        "cpu_count": 2,
+    }
     rec = prof.recommend(agg)
     assert rec["recommended_memory_mib"] == 3072
     assert rec["recommended_memory_gib"] == 3.0
@@ -182,7 +193,12 @@ def test_aggregate_takes_worst_case_across_sandboxes():
 
 def test_aggregate_empty():
     assert prof.aggregate_peaks([])["profiled_sandbox_count"] == 0
-    assert prof.aggregate_peaks([{"summary": {"sample_count": 0}}])["profiled_sandbox_count"] == 0
+    assert (
+        prof.aggregate_peaks([{"summary": {"sample_count": 0}}])[
+            "profiled_sandbox_count"
+        ]
+        == 0
+    )
 
 
 def test_build_report_complete_when_all_profiled_no_flags():

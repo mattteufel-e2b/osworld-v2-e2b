@@ -21,7 +21,9 @@ distinct sandbox port per site, and the Host-mapping proxy maps an incoming
 from __future__ import annotations
 
 import contextlib
+from datetime import datetime, timezone
 import json
+import math
 import os
 import subprocess
 import sys
@@ -31,20 +33,30 @@ from pathlib import Path
 from e2b import Sandbox
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from e2b_policy import require_immutable_template_ref, sandbox_network_policy  # noqa: E402
+from e2b_policy import (  # noqa: E402
+    require_campaign_id,
+    require_immutable_template_ref,
+    sandbox_network_policy,
+)
+from runner.receipt_safety import atomic_write_text  # noqa: E402
+from services.release_lock import validate_release_lock  # noqa: E402
 
 SERVICES_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SERVICES_DIR.parents[1]
+REPO_ROOT = SERVICES_DIR.parent
 RUNTIME_FILE = SERVICES_DIR / ".runtime.json"
 PROXY_SCRIPT = SERVICES_DIR / "hostmap_proxy.py"
 PROXY_PIDFILE = SERVICES_DIR / ".hostmap_proxy.pid"
+UPSTREAM_LOCK = REPO_ROOT / "examples" / "osworld-v2" / "upstream.lock.json"
 
 # Wildcard-DNS suffix: <name>.127.0.0.1.nip.io resolves to 127.0.0.1 on both the
 # OSWorld host and inside a guest sandbox (verified in the website receipt), so
 # site URLs land on the loopback Host-mapping proxy without any /etc/hosts edits.
 HOST_SUFFIX = "127.0.0.1.nip.io"
 
-SANDBOX_TIMEOUT_S = int(os.environ.get("FLEET_SANDBOX_TIMEOUT_S", str(6 * 3600)))
+# Must outlast the longest supported campaign: fleet timeouts are set only at
+# create / launcher start and nothing refreshes them mid-run, so a multi-wave
+# 108-task campaign (waves bounded by AGENT_TASK_TIMEOUT_SECONDS=4h) has to fit.
+SANDBOX_TIMEOUT_S = int(os.environ.get("FLEET_SANDBOX_TIMEOUT_S", str(24 * 3600)))
 
 # The E2B SDK sets vCPU/RAM at template-build time (not per-create), so the
 # fleet's 4 vCPU / 8192 MB sizing lives in this reusable base template. Docker is
@@ -52,6 +64,30 @@ SANDBOX_TIMEOUT_S = int(os.environ.get("FLEET_SANDBOX_TIMEOUT_S", str(6 * 3600))
 FLEET_TEMPLATE_NAME = os.environ.get("FLEET_TEMPLATE_NAME", "osworld-v2-fleet-base")
 FLEET_CPU = 4
 FLEET_MEMORY_MB = 8192
+
+# Stamped on every fleet sandbox; the only ownership record that survives a
+# lost or rewritten services/.runtime.json (stop.py lists by it, reuse checks it).
+WORKLOAD = "osworld-v2-services"
+
+
+def release_lock() -> dict:
+    """Return the validated release lock used by all service launchers."""
+    return validate_release_lock(UPSTREAM_LOCK)
+
+
+def service_image(name: str) -> str:
+    """Return a digest-pinned wrapper image from the validated release lock."""
+    return release_lock()["service_images"][name]
+
+
+def require_restricted_ingress(
+    label: str, *, authenticated_status: int, unauthenticated_status: int
+) -> None:
+    """Require a working token-authenticated path and a blocked public path."""
+    if authenticated_status != 200:
+        raise RuntimeError(f"{label} authenticated ingress check failed")
+    if unauthenticated_status != 403:
+        raise RuntimeError(f"{label} unauthenticated ingress check failed")
 
 
 def ensure_fleet_template() -> str:
@@ -88,6 +124,59 @@ def log(msg: str) -> None:
     print(f"[fleet] {msg}", file=sys.stderr, flush=True)
 
 
+def campaign_id() -> str:
+    return require_campaign_id(os.environ.get("OSWORLD_CAMPAIGN_ID"))
+
+
+def campaign_budget_seconds(tasks: list[dict], env: dict) -> int:
+    """Worst-case seconds to run `tasks` once: every wave charged its full
+    per-task ceiling plus relay start-up, teardown and a local margin.
+
+    Every knob comes from the coordinator's environment with no fallback here,
+    so this can never budget with a default the shell no longer uses. A retry
+    wave is budgeted by a separate call against the tasks that actually failed.
+    """
+
+    def positive(name):
+        value = int(env[name])
+        if value <= 0:
+            raise ValueError(f"{name} must be positive")
+        return value
+
+    concurrency = positive("PARALLEL_CONCURRENCY")
+    solo = int(
+        env["RUN_TASK_082_CONCURRENT"] == "0" and any(t["id"] == "082" for t in tasks)
+    )
+    waves = math.ceil((len(tasks) - solo) / concurrency) + solo
+    per_task = (
+        positive("AGENT_TASK_TIMEOUT_SECONDS")
+        + positive("RELAY_READY_TIMEOUT_SECONDS")
+        + 5 * positive("PROCESS_TERMINATION_GRACE_SECONDS")
+        + positive("RELAY_STOP_REQUEST_TIMEOUT_SECONDS")
+        + positive("AGENT_WATCHDOG_POLL_SECONDS")
+        + 60  # local preflight margin
+    )
+    stagger = float(env["AGENT_START_STAGGER_SECONDS"])
+    if not math.isfinite(stagger) or stagger < 0:
+        raise ValueError("AGENT_START_STAGGER_SECONDS must be non-negative")
+    return math.ceil(waves * per_task + len(tasks) * stagger + 300)
+
+
+def require_campaign_lifetime(runtime: dict, seconds: int) -> None:
+    """Read existing expiry; never resume or extend a stateful fleet implicitly."""
+    for section in ("websites", "gitlab"):
+        entry = runtime[section]
+        if entry.get("campaign_id") != campaign_id():
+            raise RuntimeError(f"{section} belongs to a different campaign")
+        info = Sandbox.get_info(sandbox_id=entry["sandbox_id"])
+        remaining = (info.end_at - datetime.now(timezone.utc)).total_seconds()
+        if remaining < seconds:
+            raise RuntimeError(
+                f"{section} has {remaining:.0f}s remaining; campaign needs {seconds}s. "
+                "Use fresh fleets, higher concurrency, or a smaller manifest."
+            )
+
+
 # --- runtime file -----------------------------------------------------------
 
 
@@ -100,29 +189,62 @@ def read_runtime() -> dict:
     return {}
 
 
+# Runtime file and token writes share the receipt writers' atomic 0600 publish.
+write_private_text = atomic_write_text
+
+
 def write_runtime_section(section: str, data: dict) -> dict:
     runtime = read_runtime()
     runtime[section] = data
-    RUNTIME_FILE.write_text(json.dumps(runtime, indent=2, sort_keys=True) + "\n")
+    write_private_text(
+        RUNTIME_FILE, json.dumps(runtime, indent=2, sort_keys=True) + "\n"
+    )
     return runtime
+
+
+def delete_runtime_section(section: str, sandbox_id: str) -> bool:
+    """Remove only the runtime entry that still names the failed sandbox."""
+    runtime = read_runtime()
+    current = runtime.get(section)
+    if not isinstance(current, dict) or current.get("sandbox_id") != sandbox_id:
+        return False
+    del runtime[section]
+    if runtime:
+        write_private_text(
+            RUNTIME_FILE, json.dumps(runtime, indent=2, sort_keys=True) + "\n"
+        )
+    else:
+        RUNTIME_FILE.unlink(missing_ok=True)
+    return True
 
 
 # --- sandbox lifecycle ------------------------------------------------------
 
 
-def _connect(sandbox_id: str) -> Sandbox | None:
-    """Reconnect to a still-running sandbox, or None if it is gone."""
+def _connect(sandbox_id: str, section: str, campaign: str) -> Sandbox | None:
+    """Reconnect to a live sandbox that E2B's own metadata says belongs to this
+    section and campaign; None if it is gone or is not ours to reuse or kill."""
     try:
         sbx = Sandbox.connect(sandbox_id)
+        metadata = sbx.get_info().metadata or {}
         # Cheap liveness check.
         sbx.commands.run("true", timeout=15)
-        return sbx
     except Exception as exc:  # noqa: BLE001
         log(f"cannot reuse sandbox {sandbox_id}: {exc}")
         return None
+    expected = {"workload": WORKLOAD, "section": section, "campaign_id": campaign}
+    if {key: metadata.get(key) for key in expected} != expected:
+        log(
+            f"not touching sandbox {sandbox_id}: its metadata does not name "
+            f"{section} of campaign {campaign!r}"
+        )
+        return None
+    return sbx
 
 
-def reuse_or_create(section: str, *, template: str | None = None) -> tuple[Sandbox, bool]:
+def reuse_or_create(
+    section: str, *, template: str | None = None
+) -> tuple[Sandbox, bool]:
     """Return (sandbox, created). Reuse the sandbox recorded for `section` in the
     runtime file if it is still alive, otherwise create a fresh restricted-ingress
     sandbox from the sized fleet template and extend its timeout. vCPU/RAM come
@@ -131,21 +253,40 @@ def reuse_or_create(section: str, *, template: str | None = None) -> tuple[Sandb
         template or os.environ.get("FLEET_TEMPLATE"),
         "FLEET_TEMPLATE",
     )
+    campaign = campaign_id()
     existing = read_runtime().get(section, {})
     sid = existing.get("sandbox_id")
     existing_template = existing.get("template")
-    if sid and existing_template == template:
-        sbx = _connect(sid)
+    if (
+        sid
+        and existing_template == template
+        and existing.get("campaign_id") == campaign
+    ):
+        sbx = _connect(sid, section, campaign)
         if sbx is not None:
             with contextlib.suppress(Exception):
                 sbx.set_timeout(SANDBOX_TIMEOUT_S)
             log(f"reusing {section} sandbox {sid}")
             return sbx, False
     elif sid:
+        if existing.get("campaign_id") != campaign:
+            raise RuntimeError(
+                f"service runtime {section} sandbox {sid} belongs to campaign "
+                f"{existing.get('campaign_id')!r}, not {campaign!r}; stop that "
+                "campaign first with services/stop.py"
+            )
         log(
             f"not reusing {section} sandbox {sid}: runtime template "
             f"{existing_template!r} does not match {template!r}"
         )
+        stale = _connect(sid, section, campaign)
+        if stale is not None:
+            try:
+                stale.kill()
+                log(f"killed stale {section} sandbox {sid}")
+            except Exception as exc:  # noqa: BLE001
+                log(f"could not kill stale {section} sandbox {sid}: {exc}")
+        delete_runtime_section(section, sid)
 
     log(f"creating {section} sandbox from {template}")
     sbx = Sandbox.create(
@@ -153,16 +294,57 @@ def reuse_or_create(section: str, *, template: str | None = None) -> tuple[Sandb
         timeout=SANDBOX_TIMEOUT_S,
         secure=True,
         network=sandbox_network_policy(),
-        metadata={"workload": "osworld-v2-services", "section": section},
+        metadata={"workload": WORKLOAD, "section": section, "campaign_id": campaign},
     )
     if not getattr(sbx, "traffic_access_token", None):
         sbx.kill()
-        raise RuntimeError("E2B did not return a traffic access token for the fleet sandbox")
+        raise RuntimeError(
+            "E2B did not return a traffic access token for the fleet sandbox"
+        )
     log(f"created {section} sandbox {sbx.sandbox_id}")
     return sbx, True
 
 
-def run(sbx: Sandbox, cmd: str, *, timeout: int = 120, check: bool = True, quiet: bool = False):
+def rollback_launch(
+    section: str,
+    sbx: Sandbox,
+    created: bool,
+    *,
+    token_file: Path | None = None,
+    published: bool = False,
+) -> None:
+    """Undo a failed launch. A section THIS launch published is retracted so a
+    fleet that just failed a gate can never be admitted; a section an earlier,
+    successful launch wrote for a reused sandbox is kept, since it is the only
+    record reuse_or_create consults and deleting it would make the next launch
+    build a second fleet beside the healthy orphan. A sandbox this launch
+    created is destroyed with its token; a reused one is left running."""
+    stop_host_proxy()
+    if created or published:
+        delete_runtime_section(section, sbx.sandbox_id)
+    if not created:
+        log(
+            f"{section} launch failed against reused sandbox {sbx.sandbox_id}; "
+            "left running -- stop it with services/stop.py --campaign-id "
+            f"{os.environ.get('OSWORLD_CAMPAIGN_ID')}"
+        )
+        return
+    if token_file is not None:
+        token_file.unlink(missing_ok=True)
+    try:
+        sbx.kill()
+    except Exception as exc:  # noqa: BLE001
+        log(f"could not kill failed {section} sandbox: {exc}")
+
+
+def run(
+    sbx: Sandbox,
+    cmd: str,
+    *,
+    timeout: int = 120,
+    check: bool = True,
+    quiet: bool = False,
+):
     if not quiet:
         log(f"$ {cmd if len(cmd) < 160 else cmd[:157] + '...'}")
     res = sbx.commands.run(cmd, user="root", timeout=timeout)
@@ -177,7 +359,9 @@ def run(sbx: Sandbox, cmd: str, *, timeout: int = 120, check: bool = True, quiet
 def ensure_swap(sbx: Sandbox, gb: int = 8) -> None:
     """Add a swap file so a heavy parallel docker build can't OOM-kill the box
     (23 web images in 8 GB RAM otherwise wedges envd). Idempotent."""
-    have = sbx.commands.run("swapon --show=NAME --noheadings | head -1", user="root", timeout=20)
+    have = sbx.commands.run(
+        "swapon --show=NAME --noheadings | head -1", user="root", timeout=20
+    )
     if (have.stdout or "").strip():
         return
     log(f"adding {gb}G swap")
@@ -189,14 +373,28 @@ def ensure_swap(sbx: Sandbox, gb: int = 8) -> None:
     )
 
 
-def poll_cmd(sbx: Sandbox, cmd: str, *, timeout: int = 30, retries: int = 6) -> str | None:
+def poll_cmd(
+    sbx: Sandbox,
+    cmd: str,
+    *,
+    timeout: int = 30,
+    retries: int = 6,
+    envs: dict[str, str] | None = None,
+) -> str | None:
     """Run a short command tolerating transient envd unresponsiveness (the
     command daemon can stall while a 23-image docker build saturates the box).
     Returns stdout, or None if every attempt timed out."""
     for _ in range(retries):
         try:
             return (
-                sbx.commands.run(cmd, user="root", timeout=timeout, request_timeout=90).stdout or ""
+                sbx.commands.run(
+                    cmd,
+                    user="root",
+                    timeout=timeout,
+                    request_timeout=90,
+                    envs=envs,
+                ).stdout
+                or ""
             )
         except Exception:  # noqa: BLE001
             time.sleep(15)
@@ -229,18 +427,29 @@ def ensure_docker(sbx: Sandbox) -> float:
     )
     if "up" not in (up.stdout or ""):
         log("starting dockerd")
-        run(sbx, "nohup dockerd >/var/log/dockerd.log 2>&1 & disown", timeout=30, check=False)
+        run(
+            sbx,
+            "nohup dockerd >/var/log/dockerd.log 2>&1 & disown",
+            timeout=30,
+            check=False,
+        )
         deadline = time.time() + 90
         while time.time() < deadline:
             chk = sbx.commands.run(
-                "docker info >/dev/null 2>&1 && echo up || echo down", user="root", timeout=30
+                "docker info >/dev/null 2>&1 && echo up || echo down",
+                user="root",
+                timeout=30,
             )
             if "up" in (chk.stdout or ""):
                 break
             time.sleep(3)
         else:
-            tail = sbx.commands.run("tail -30 /var/log/dockerd.log", user="root", timeout=15)
-            raise RuntimeError(f"dockerd did not come up:\n{tail.stdout}\n{tail.stderr}")
+            tail = sbx.commands.run(
+                "tail -30 /var/log/dockerd.log", user="root", timeout=15
+            )
+            raise RuntimeError(
+                f"dockerd did not come up:\n{tail.stdout}\n{tail.stderr}"
+            )
     log(f"docker ready in {time.time() - t0:.0f}s")
     return time.time() - t0
 
@@ -254,13 +463,7 @@ def restart_host_proxy() -> dict:
     PermissionError is reported (not fatal) — the functional guest-side proxy is
     installed as root inside the guest by the relay at session start."""
     # Stop any previous instance.
-    if PROXY_PIDFILE.is_file():
-        try:
-            old = int(PROXY_PIDFILE.read_text().strip())
-            os.kill(old, 15)
-        except (ProcessLookupError, ValueError):
-            pass
-        PROXY_PIDFILE.unlink(missing_ok=True)
+    stop_host_proxy()
 
     ports_env = os.environ.get("HOSTMAP_PORT", "8090")
     ports = [int(p) for p in ports_env.split(",") if p.strip()]
@@ -301,6 +504,19 @@ def restart_host_proxy() -> dict:
     return {"running": bound, "port": advertised, "ports": ports, "pid": proc.pid}
 
 
+def stop_host_proxy() -> None:
+    """Stop only the launcher-owned proxy recorded by its exact pid file."""
+    if not PROXY_PIDFILE.is_file():
+        return
+    try:
+        old = int(PROXY_PIDFILE.read_text().strip())
+        os.kill(old, 15)
+    except (ProcessLookupError, ValueError):
+        pass
+    finally:
+        PROXY_PIDFILE.unlink(missing_ok=True)
+
+
 def verify_host_proxy_path(sample_host: str, path: str, port: int) -> dict:
     """Drive the full Host-mapping proxy path from the host: GET
     http://<sample_host>:<port><path>. nip.io resolves <sample_host> to
@@ -315,3 +531,40 @@ def verify_host_proxy_path(sample_host: str, path: str, port: int) -> dict:
             return {"url": url, "status": resp.status, "body_prefix": body}
     except Exception as exc:  # noqa: BLE001
         return {"url": url, "status": None, "error": repr(exc)[:200]}
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Admission gate: refuse to start waves both fleets cannot outlast.
+    Returns the budget in seconds; raises when the fleets are too short-lived."""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Check fleet lifetime before launching agents"
+    )
+    parser.add_argument(
+        "--check-lifetime", type=Path, required=True, metavar="MANIFEST"
+    )
+    parser.add_argument("--runtime", type=Path, default=RUNTIME_FILE)
+    parser.add_argument(
+        "--task-id",
+        action="append",
+        default=[],
+        help="budget only these manifest tasks (a retry wave); repeatable",
+    )
+    args = parser.parse_args(argv)
+    load_e2b_key()
+    tasks = json.loads(args.check_lifetime.read_text())["tasks"]
+    if args.task_id:
+        by_id = {task["id"]: task for task in tasks}
+        unknown = [task_id for task_id in args.task_id if task_id not in by_id]
+        if unknown:
+            raise ValueError(f"task ids not in manifest: {', '.join(unknown)}")
+        tasks = [by_id[task_id] for task_id in args.task_id]
+    budget = campaign_budget_seconds(tasks, os.environ)
+    require_campaign_lifetime(json.loads(args.runtime.read_text()), budget)
+    log(f"fleet lifetime admission passed: {budget}s budget for {len(tasks)} task(s)")
+    return budget
+
+
+if __name__ == "__main__":
+    main()

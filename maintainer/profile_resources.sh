@@ -17,7 +17,8 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-V2ROOT="$(cd "$HERE/.." && pwd)"            # repo rootREPO_ROOT="$V2ROOT"
+V2ROOT="$(cd "$HERE/.." && pwd)"            # repo root
+REPO_ROOT="$V2ROOT"
 EVIDENCE_DIR="${EVIDENCE_DIR:-$REPO_ROOT/out/osworld-v2-evidence}"
 OUT="${RESOURCE_REPORT:-$EVIDENCE_DIR/resource-requirements.json}"
 TOOL="$REPO_ROOT/tools/profile_e2b_resources.py"

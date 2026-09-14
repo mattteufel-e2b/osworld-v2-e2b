@@ -1,0 +1,34 @@
+{
+  "tasks": 36,
+  "scored_native_matches": 34,
+  "scored": 34,
+  "trajectory_entries": 16588,
+  "action_steps": 16565,
+  "thinking_turns": 16565,
+  "ask_user_turns": 23,
+  "empty_user_answers": 0,
+  "png_files": 16566,
+  "corrupt_pngs": 1,
+  "missing_refs": 0,
+  "uniform_pngs": 0,
+  "trajectory_errors": 0,
+  "screenshot_sizes": [
+    [
+      1920,
+      1080
+    ]
+  ],
+  "judge_attempts": 9,
+  "judge_successes": 9,
+  "sim_attempts": 3,
+  "sim_successes": 3,
+  "native_command_failures": 350,
+  "tasks_with_native_command_failures": 25,
+  "native_command_status_failure_messages": 21,
+  "long_keypress_actions": 343,
+  "model_inputs": 16589,
+  "model_responses": 16589,
+  "model_empty": 0,
+  "model_exceptions": 0,
+  "model_parse_empty": 23
+}

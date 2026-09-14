@@ -1,0 +1,13 @@
+{
+  "kind": "Native M3 runtime-log audit; counts predict-level events, not SDK transport retries or billed requests",
+  "records": [
+    {
+      "task": "048",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 1
+    }
+  ]
+}

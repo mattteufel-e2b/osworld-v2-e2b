@@ -1,0 +1,152 @@
+{
+  "description": "Targeted 36-task full-inference verification sample from the pinned 108-task OSWorld 2.0 release. IDs only; no gated task content.",
+  "osworld_commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154",
+  "release": "osworld-v2-2026.08.08",
+  "tasks": [
+    {
+      "domain": "release",
+      "id": "003"
+    },
+    {
+      "domain": "release",
+      "id": "007"
+    },
+    {
+      "domain": "release",
+      "id": "008"
+    },
+    {
+      "domain": "release",
+      "id": "011"
+    },
+    {
+      "domain": "release",
+      "id": "015"
+    },
+    {
+      "domain": "release",
+      "id": "019"
+    },
+    {
+      "domain": "release",
+      "id": "023"
+    },
+    {
+      "domain": "release",
+      "id": "024"
+    },
+    {
+      "domain": "release",
+      "id": "025"
+    },
+    {
+      "domain": "release",
+      "id": "026"
+    },
+    {
+      "domain": "release",
+      "id": "031"
+    },
+    {
+      "domain": "release",
+      "id": "034"
+    },
+    {
+      "domain": "release",
+      "id": "035"
+    },
+    {
+      "domain": "release",
+      "id": "038"
+    },
+    {
+      "domain": "release",
+      "id": "041"
+    },
+    {
+      "domain": "release",
+      "id": "046"
+    },
+    {
+      "domain": "release",
+      "id": "048"
+    },
+    {
+      "domain": "release",
+      "id": "050"
+    },
+    {
+      "domain": "release",
+      "id": "053"
+    },
+    {
+      "domain": "release",
+      "id": "057"
+    },
+    {
+      "domain": "release",
+      "id": "059"
+    },
+    {
+      "domain": "release",
+      "id": "067"
+    },
+    {
+      "domain": "release",
+      "id": "069"
+    },
+    {
+      "domain": "release",
+      "id": "074"
+    },
+    {
+      "domain": "release",
+      "id": "078"
+    },
+    {
+      "domain": "release",
+      "id": "079"
+    },
+    {
+      "domain": "release",
+      "id": "082"
+    },
+    {
+      "domain": "release",
+      "id": "083"
+    },
+    {
+      "domain": "release",
+      "id": "087"
+    },
+    {
+      "domain": "release",
+      "id": "092"
+    },
+    {
+      "domain": "release",
+      "id": "093"
+    },
+    {
+      "domain": "release",
+      "id": "095"
+    },
+    {
+      "domain": "release",
+      "id": "098"
+    },
+    {
+      "domain": "release",
+      "id": "103"
+    },
+    {
+      "domain": "release",
+      "id": "105"
+    },
+    {
+      "domain": "release",
+      "id": "107"
+    }
+  ],
+  "template": "osworld-v2-gnome:0d796343-1a70-4bd3-990e-8bb469b3dd20"
+}

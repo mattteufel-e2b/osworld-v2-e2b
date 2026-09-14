@@ -1,144 +1,80 @@
 # OSWorld 2.0 on E2B
 
-Run the OSWorld 2.0 benchmark (`xlang-ai/OSWorld-V2`) on E2B sandboxes instead of
-QEMU/VMware/AWS virtual machines: an Ubuntu 22.04 GNOME guest as an immutable E2B Template,
-OSWorld's provider contract implemented at the sandbox boundary, a localhost relay that owns
-all E2B credentials, and container-lane service fleets (mocked websites, GitLab) in their own
-sandboxes. The pinned release is `examples/osworld-v2/upstream.lock.json`.
+Run OSWorld 2.0 agents and benchmarks on E2B Firecracker sandboxes. This repo adapts the
+upstream desktop environment to E2B while keeping OSWorld's tasks, agents, and evaluators.
+It includes a desktop template, the E2B provider, service fleets, and a parallel runner.
 
-Two things are never committed here: the upstream checkout (`OSWorld-V2/`) and the gated task
-data (`tasks/`) — OSWorld 2.0's datasets are gated upstream, so each consumer accepts the
-gate and downloads them with their own credentials. The upstream guest server
-(`xlang-ai/osworld-server`) publishes no license, so it is fetched at a pinned commit and
-patched locally (`template/fetch_server.sh` + `patches/`), never redistributed.
-
-`FIDELITY.md` is the verification ledger: what was verified against a reference, what was
-only recorded, and what is excluded (no VNC, no ALSA kernel modules, pause/resume unused).
-Receipts live in `out/osworld-v2-evidence/`.
+The port is experimental. See the [verified results and known limitations](docs/pr-1-verification.md).
 
 ## Quick start
 
-Prerequisites: `E2B_API_KEY=...` in `.env.local` at the repo root, `uv`, Node 20+, `git`.
+Use Bash from the repository root. You need `uv`, Node >=20.18.1, `npm`, `git`, FFmpeg,
+ImageMagick, `.env.local` containing `E2B_API_KEY=...`, and access to the gated OSWorld task and asset
+datasets. Authenticate with `uv run --locked hf auth login`. See
+[resource requirements](docs/runtime.md#resource-requirements) before building.
+
+**1. Build the templates and download OSWorld.**
 
 ```bash
-template/fetch_server.sh                    # fetch + patch the pinned guest server
-cd template && uv run --env-file ../.env.local npm run build   # guest template
-cd ../services && uv run --env-file ../.env.local --python 3.12 --with e2b==2.34.0 \
-    python build_fleet_template.py          # fleet template
-export GUEST_TEMPLATE=<name:build_id>       # from template/results/template-build.json
-export FLEET_TEMPLATE=<name:build_id>       # from out/osworld-v2-evidence/fleet-template-build.json
-runner/setup.sh                             # clone pinned OSWorld-V2 + apply e2b patches
-runner/validate.sh                          # environment-path validation
+template/fetch_server.sh
+npm --prefix template ci --ignore-scripts
+uv run --env-file .env.local --locked npm --prefix template run typecheck
+uv run --env-file .env.local --locked npm --prefix template run build
+uv run --env-file .env.local --locked python services/build_fleet_template.py
+
+export GUEST_TEMPLATE="$(python3 -c 'import json; print(json.load(open("template/results/template-build.json"))["reference"])')"
+export FLEET_TEMPLATE="$(python3 -c 'import json; print(json.load(open("out/osworld-v2-raw/builds/fleet-template-build.json"))["reference"])')"
+runner/setup.sh
+uv sync --project OSWorld-V2 --locked --extra full --python 3.12
+uv run --locked python runner/gated_data.py
 ```
 
-Only immutable `name:build_id` references are accepted — launchers reject mutable aliases
-and never build templates at runtime. The guest build is promotable only if its exact
-immutable build restores with ≥100 GB usable root capacity. `runner/setup.sh` is idempotent
-(grep-guarded patches); `runner/setup.sh --restore` reverts its patch footprint for pin
-verification.
+**2. Start the services and select tasks.**
 
-## Resource requirements
+```bash
+export OSWORLD_CAMPAIGN_ID="osworld-v2-$(date -u +%Y%m%dT%H%M%SZ)"
+uv run --env-file .env.local --locked python services/websites/launch.py
+uv run --env-file .env.local --locked python services/gitlab/launch.py
 
-What the validated builds allocate, and what real runs actually used
-(`out/osworld-v2-evidence/sample-24/resource-live-*.json` — live agent-run profile via E2B's
-sandbox-metrics API; 15 sandboxes, no CPU/memory/disk saturation flags):
+RUN_ROOT="$(mktemp -d)"
+python3 runner/render_manifest.py --source validation/full-manifest.json \
+    --template "$GUEST_TEMPLATE" --output "$RUN_ROOT/full-manifest.json"
+```
 
-| Sandbox | vCPU | RAM | Disk (root) | Measured peaks |
-| --- | --- | --- | --- | --- |
-| Guest (one per task/worker) | 4 | 8 GB | ≥100 GB usable | 1.5 cores, 0.8 GiB RAM, ~7 GiB disk |
-| Fleet ×2 (websites, GitLab) | 4 | 8 GB (+8 GB swap at launch) | same entitlement | first compose build is the heavy phase (~524 s) |
+This selects all 108 tasks. Add `--task-id 003` (repeat for more IDs) to select a subset.
 
-Don't trim below these even though measured peaks look low:
+**3. Configure your model and run.**
 
-- **8 GB guest RAM is the validated floor** — at 4 GB, `chrome_open_tabs` tasks (3 heavy
-  sites at once) thrash and leave CDP unresponsive for minutes (upstream's reference VM has
-  16 GB). The ~0.8 GiB measured peak is the desktop baseline between browser-heavy phases.
-- **100 GB root is a release contract, not observed usage** — 18 tasks declare
-  `volume_size` of 32–100 GB (`validation/volume-requirements.json`), and the relay fails
-  task setup if the live root is undersized. The build gate enforces ≥100 GB on restore.
-- **4 vCPU matches upstream's t3.xlarge reference**; measured peak was 1.5 cores with no
-  saturation, so this has headroom rather than slack to cut.
-- **Fleet swap is required once**: the websites fleet's first-boot compose build (23 images)
-  OOM-wedges an 8 GB sandbox without it; launchers add it idempotently.
+This example uses Fireworks M3 for the agent and OpenAI for judging and user simulation.
+Export your keys in the shell. For other providers, including AWS Mantle, see
+[model configuration](docs/configuration.md#judge-and-user-simulator-configuration).
 
-Account level: the full-suite parallel drivers (80 workers) peak near 160 guest sandboxes
-(strict reset briefly holds two per worker) plus the two fleet sandboxes — sized for a
-200-concurrent-sandbox ceiling. Host needs are negligible (localhost relay + harness).
+```bash
+export MODEL_API_KEY="..."                 # your Fireworks API key
+export MODEL_BASE_URL="https://api.fireworks.ai/inference"
+export MODEL="accounts/fireworks/models/minimax-m3"
+export AGENT_KIND=m3 M3_THINKING_BUDGET=2048 M3_MAX_LLM_RETRIES=0
+export OPENAI_API_KEY="..."                # judge and user simulator
 
-## Layout
+AGENT_MANIFEST="$RUN_ROOT/full-manifest.json" PARALLEL_CONCURRENCY=80 MAX_STEPS=500 \
+    AGENT_TASK_TIMEOUT_SECONDS=28800 RAW_DIR="$RUN_ROOT/agent-raw" \
+    OUTPUT="$RUN_ROOT/agent-full.json" runner/run_agent_parallel.sh
+```
 
-- **`template/`** — guest Template source: GNOME under Xvfb + software GL, pinned/held
-  application installs, baked first-run-modal suppression, the guest server payload.
-- **`provider/`** — OSWorld provider ABC against E2B; `volume_size` maps to minimum root
-  filesystem capacity (18 tasks request 32–100 GB, `validation/volume-requirements.json`).
-- **`relay/`** — localhost bridge: token-authenticated proxying (HTTP + WebSocket), CDP
-  Host fixups, snapshot save/revert, timeout heartbeat. Port map: `server 5000`,
-  `CDP 9222`, `VLC 8080`, plus `OSWORLD_TASK_SERVICE_PORTS` entries (`port` or
-  `local:guest` for collision-free parallel workers).
-- **`runner/`** — pinned-checkout setup, the verification-ladder scripts, and parallel
-  drivers (`validate_parallel.sh`, `run_agent_parallel.sh`; default 80 workers stays under a
-  200-concurrent-sandbox ceiling since strict reset can briefly hold two guests per worker).
-  `profile_resources.sh` wraps the standalone profiler in `tools/`.
-- **`services/`** — website/GitLab fleet launchers; each fleet runs docker-compose inside
-  one sandbox, launched per campaign for per-run isolation.
-- **`validation/`** — task manifests (10-task sample, full 108-task release) referencing
-  gated tasks by id only.
+Concurrency defaults to and is capped at **80**. Results are in `$RUN_ROOT/agent-full.json`;
+trajectories are in `$RUN_ROOT/agent-raw`. Admitted runs stop their service fleets on exit.
+See [run configuration](docs/configuration.md) for cleanup, recording, and result interpretation.
 
-## QEMU → E2B mapping
+## Use your own agent
 
-The relay owns all sandbox objects; the vendored provider only dials the relay on localhost.
+Register your agent in [`runner/agents.py`](runner/agents.py), implementing upstream's
+`reset()` and `predict(instruction, observation)` interface, then select it with `AGENT_KIND`.
+You can also use the included `prompt` agent with an OpenAI-compatible endpoint.
+See [agent configuration and examples](docs/configuration.md#bring-your-own-agent).
 
-| OSWorld provider hook | QEMU semantics | E2B implementation |
-| --- | --- | --- |
-| `get_vm_path` | path to a `.qcow2` | immutable `GUEST_TEMPLATE` ref, validated fail-closed |
-| `start_emulator` | boot the VM | relay creates the guest; provider gates on `/health` |
-| `get_ip_address` | IP + `server:cdp:vnc:vlc` ports | `127.0.0.1:15000:19222:0:18080` (+`OSWORLD_RELAY_PORT_BASE`); VNC slot 0 (headless) |
-| `save_state` | named `savevm` | `create_snapshot()` (memory + filesystem); `/save` returns after the resumed guest answers |
-| `revert_to_snapshot` | in-place `loadvm` | destroy-and-recreate: saved name → new sandbox from its snapshot id; unsaved name (`init_state`) → fresh sandbox from the template |
-| `prepare/finalize_volume` | size the root disk | requested GB asserted against the live root (`df`), fail-closed; not an E2B persistent Volume |
-| `stop_emulator` | power off | relay `/stop` kills the guest |
+## Documentation
 
-Key decisions: a fresh template sandbox *is* `init_state` (the start command boots the
-desktop fresh, and upstream never explicitly saves one); `setup.sh` patches in **strict
-reset** so every task and setup retry gets a unique sandbox; **pause/resume is deliberately
-unused** (multi-hour tasks with scheduled events and live CDP sockets don't tolerate clock
-jumps) — liveness comes from the timeout heartbeat instead.
-
-## Networking
-
-Every sandbox (guest and fleet) is created through the shared, unit-tested `e2b_policy.py`:
-secure envd, authenticated ingress (`allow_public_traffic: false`; the relay injects the
-per-sandbox traffic token, strips it from responses, and binds only `127.0.0.1`), and public
-egress with protected ranges denied (RFC1918, link-local/cloud-metadata, CGNAT, benchmark,
-multicast, reserved, IPv6 equivalents). `template/build.ts` verifies the applied policy on
-the freshly restored build. E2B ingress rejects overridden Host headers, so fleet sites get
-one sandbox port each, with Host-mapping proxies routing `<site>.127.0.0.1.nip.io` to the
-right ingress port + token (guest port 8080 stays reserved for VLC). `SANDBOX_TIMEOUT_S`
-(default 1 h) is an *idle* ceiling: the heartbeat re-arms it while guest traffic flows, so
-active multi-hour tasks survive and abandoned guests expire.
-
-## Snapshots
-
-An E2B snapshot captures memory + filesystem, persists independently of its sandbox, and
-can seed any number of new sandboxes — the same contract as QEMU's named `savevm` states.
-The name→id map lives in relay memory for the relay's lifetime; both revert paths are
-live-probed (`out/osworld-v2-evidence/snapshot-probe.json`, 12/12). Snapshots are
-deliberately never deleted — record ids from `/save` or `/state` to clean up after a run.
-The capture briefly pauses the guest (dropping CDP sockets), so `/save` re-gates on
-readiness and the relay retries WebSocket connects during the resume window.
-
-## Verification ladder
-
-Rungs run in order; PATH_PASS is never reported as task success:
-
-1. Static checks (typecheck, compile, relay unit tests).
-2. Live desktop smoke (windows present, first-run modals absent, non-empty a11y tree).
-3. Two-pass environment-path validation with fresh-sandbox-per-task proof.
-4. Snapshot save/revert probe.
-5. No-agent evaluator run (expected zeros).
-6. Small full-agent run with audited trajectories.
-7. Resource profiling (`runner/profile_resources.sh`) → `resource-requirements.json`;
-   run soon after the ladder while metrics are within E2B's retention window.
-
-For a full single-pass run: `VALIDATION_MANIFEST=validation/full-manifest.json`,
-`VALIDATION_RUNS=1`, a distinct `EVIDENCE_DIR`, then `runner/validate.sh`.
+- [Agent, judge, and run configuration](docs/configuration.md)
+- [Runtime, resources, networking, and snapshots](docs/runtime.md)
+- [Maintainer validation](maintainer/README.md)
+- [Verification evidence](FIDELITY.md) and [known issues](docs/pr-1-verification.md)

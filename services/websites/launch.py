@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stand up the OSWorld-V2 website fleet in a long-lived E2B sandbox.
 
-Clones Task-Web/OSWorld-web@v2026.08.08 (with submodules) inside the sandbox,
+Clones the release-locked Task-Web/OSWorld-web commit (with submodules) inside the sandbox,
 generates the compose file, adds a per-site Host-injecting nginx fanout so each
 site is reachable on a DISTINCT sandbox port (required because E2B ingress
 rejects an overridden Host header — see the receipt's addressing_evidence), then
@@ -22,6 +22,7 @@ Run:
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 import time
@@ -34,12 +35,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import fleetlib as fl  # noqa: E402
 
 REPO_URL = "https://github.com/Task-Web/OSWorld-web"
-REPO_TAG = "v2026.08.08"
 REPO_DIR = "/root/OSWorld-web"
 CADDY_SCHEME = "http://"
 FANOUT_BASE_PORT = 13001
 
-RECEIPT = fl.REPO_ROOT / "out" / "osworld-v2-evidence" / "services-websites.json"
+RECEIPT = fl.REPO_ROOT / "out" / "osworld-v2-raw" / "services" / "websites.json"
 
 # Sites exposing the /api/state control plane at the pinned tag (from the repo's
 # scripts/verify-control-plane.mjs). Used as the readiness gate.
@@ -69,7 +69,12 @@ CONTROL_PLANE_SITES = [
 ]
 
 
-def clone_repo(sbx) -> None:
+def websites_pin() -> str:
+    """Validate the release lock and return its immutable websites commit."""
+    return fl.release_lock()["websites_code"]["commit"]
+
+
+def clone_repo(sbx, commit: str) -> None:
     check = sbx.commands.run(
         f"test -d {REPO_DIR}/.git && echo yes || echo no", user="root", timeout=15
     )
@@ -80,13 +85,17 @@ def clone_repo(sbx) -> None:
             'git config --global url."https://github.com/".insteadOf "git@github.com:"',
             timeout=15,
         )
-        fl.run(
-            sbx,
-            f"git clone --branch {REPO_TAG} --recurse-submodules {REPO_URL} {REPO_DIR}",
-            timeout=900,
-        )
+        fl.run(sbx, f"git clone {REPO_URL} {REPO_DIR}", timeout=900)
     else:
         fl.log("OSWorld-web already cloned")
+    fl.run(sbx, f"git -C {REPO_DIR} checkout --detach {commit}", timeout=60)
+    fl.run(
+        sbx,
+        f"git -C {REPO_DIR} submodule sync --recursive && "
+        f"git -C {REPO_DIR} submodule update --init --recursive",
+        timeout=900,
+    )
+    fl.log(f"OSWorld-web repo pinned to {commit}")
     fl.run(sbx, f"cd {REPO_DIR} && bash gen-compose.sh", timeout=60)
 
 
@@ -94,7 +103,11 @@ def enumerate_sites(sbx) -> dict[str, int]:
     """Parse every web-compose.yml caddy label to get the full subdomain set
     (includes multi-host sites like studio.streamview and overleaf), then assign
     a deterministic distinct port per subdomain."""
-    res = fl.run(sbx, rf"grep -rhoE 'caddy: *\"[^\"]+\"' {REPO_DIR}/*/web-compose.yml", timeout=30)
+    res = fl.run(
+        sbx,
+        rf"grep -rhoE 'caddy: *\"[^\"]+\"' {REPO_DIR}/*/web-compose.yml",
+        timeout=30,
+    )
     subs: set[str] = set()
     for line in res.stdout.splitlines():
         for host in re.findall(r"\}([a-z0-9.-]+)\.\$\{HOST_SUFFIX", line):
@@ -144,7 +157,7 @@ def write_fanout(sbx, ports: dict[str, int]) -> None:
     compose = (
         "services:\n"
         "  fleet_fanout:\n"
-        "    image: nginx:alpine\n"
+        f"    image: {fl.service_image('fanout')}\n"
         "    depends_on:\n"
         "      - caddy\n"
         "    networks:\n"
@@ -168,7 +181,9 @@ def compose_up(sbx) -> float:
         f"docker compose -f docker-compose.yml -f docker-compose.fanout.yml up -d --build "
         f"&& echo COMPOSE_OK || echo COMPOSE_FAIL"
     )
-    already = fl.poll_cmd(sbx, "grep -qs COMPOSE_OK /var/log/compose.log && echo done || echo no")
+    already = fl.poll_cmd(
+        sbx, "grep -qs COMPOSE_OK /var/log/compose.log && echo done || echo no"
+    )
     if "done" not in (already or ""):
         # Detached: the 23-image build streams for tens of minutes (and saturates
         # the box), so run it in the background and poll the redirected log rather
@@ -239,7 +254,12 @@ def probe_host_ingress(sbx, ports: dict[str, int], token: str) -> dict:
     port = ports["mailhub"]
     ingress = sbx.get_host(port)
     headers = {"e2b-traffic-access-token": token}
-    ok = requests.get(f"https://{ingress}/api/state?cookie=hostprobe", headers=headers, timeout=30)
+    ok = requests.get(
+        f"https://{ingress}/api/state?cookie=hostprobe", headers=headers, timeout=30
+    )
+    unauthenticated = requests.get(
+        f"https://{ingress}/api/state?cookie=unauthenticated", timeout=30
+    )
     passthrough_host = "mailhub." + fl.HOST_SUFFIX
     caddy_host = sbx.get_host(80)
     try:
@@ -260,6 +280,7 @@ def probe_host_ingress(sbx, ports: dict[str, int], token: str) -> dict:
             "status": ok.status_code,
             "body_prefix": ok.text[:120],
         },
+        "unauthenticated_probe": {"status": unauthenticated.status_code},
         "caddy_passthrough_probe": {
             "description": "override HTTP Host to the site name while connecting to the "
             "Caddy ingress host; if ingress forwarded it, single-port routing "
@@ -271,7 +292,9 @@ def probe_host_ingress(sbx, ports: dict[str, int], token: str) -> dict:
     }
 
 
-V2_CHECKOUT = fl.REPO_ROOT / "rewrites" / "osworld-v2" / "OSWorld-V2"
+def v2_checkout() -> Path:
+    """The pinned OSWorld-V2 checkout; same override the runner scripts honor."""
+    return Path(os.environ.get("OSWORLD_ROOT") or (fl.REPO_ROOT / "OSWorld-V2"))
 
 
 def verify_via_v2_builder(public_suffix: str, site: str = "mailhub") -> dict:
@@ -283,7 +306,7 @@ def verify_via_v2_builder(public_suffix: str, site: str = "mailhub") -> dict:
 
     snippet = (
         "import os, sys, json\n"
-        f"sys.path.insert(0, {str(V2_CHECKOUT)!r})\n"
+        f"sys.path.insert(0, {str(v2_checkout())!r})\n"
         f"os.environ['WEBSITE_HOST_SUFFIX'] = {public_suffix!r}\n"
         "from desktop_env.controllers.website import build_website_url\n"
         "import requests\n"
@@ -322,107 +345,142 @@ def verify_via_v2_builder(public_suffix: str, site: str = "mailhub") -> dict:
     try:
         return json.loads(res.stdout.strip().splitlines()[-1])
     except Exception:  # noqa: BLE001
-        return {"status": None, "error": f"builder subprocess failed: {res.stderr[-300:]}"}
+        return {
+            "status": None,
+            "error": f"builder subprocess failed: {res.stderr[-300:]}",
+        }
+
+
+def require_v2_builder_success(result: dict) -> None:
+    if result.get("status") != 200:
+        raise RuntimeError("V2 website routing check failed")
 
 
 def main() -> int:
+    checkout = v2_checkout()
+    if not (checkout / "desktop_env" / "controllers" / "website.py").is_file():
+        raise SystemExit(
+            f"ERROR: pinned OSWorld-V2 checkout missing at {checkout}; run "
+            "runner/setup.sh (or export OSWORLD_ROOT) before launching the "
+            "websites fleet — the post-build URL check requires it"
+        )
+    commit = websites_pin()
+    campaign = fl.campaign_id()
     fl.load_e2b_key()
     template_ref = fl.ensure_fleet_template()
     sbx, created = fl.reuse_or_create("websites", template=template_ref)
-    docker_secs = fl.ensure_docker(sbx)
-    fl.ensure_swap(sbx)
-    clone_repo(sbx)
-    ports = enumerate_sites(sbx)
-    write_fanout(sbx, ports)
-    build_secs = compose_up(sbx)
-    recreate_fanout(sbx)
-    timings = wait_ready(sbx, ports)
+    published = False
+    try:
+        docker_secs = fl.ensure_docker(sbx)
+        fl.ensure_swap(sbx)
+        clone_repo(sbx, commit)
+        ports = enumerate_sites(sbx)
+        write_fanout(sbx, ports)
+        build_secs = compose_up(sbx)
+        recreate_fanout(sbx)
+        timings = wait_ready(sbx, ports)
 
-    token = sbx.traffic_access_token
-    site_map = {
-        sub: {"port": port, "ingress_host": sbx.get_host(port)} for sub, port in ports.items()
-    }
-    host_evidence = probe_host_ingress(sbx, ports, token)
+        token = sbx.traffic_access_token
+        site_map = {
+            sub: {"port": port, "ingress_host": sbx.get_host(port)}
+            for sub, port in ports.items()
+        }
+        host_evidence = probe_host_ingress(sbx, ports, token)
+        fl.require_restricted_ingress(
+            "website",
+            authenticated_status=host_evidence["per_port_probe"]["status"],
+            unauthenticated_status=host_evidence["unauthenticated_probe"]["status"],
+        )
 
-    proxy_status = fl.restart_host_proxy()
-    # WEBSITE_HOST_SUFFIX must carry the host-proxy port: V2's build_website_url
-    # does host = f"{path}.{HOST_SUFFIX}" with NO port, so a bare suffix yields a
-    # :80 URL that is refused here. The port rides in the suffix so the f-string
-    # composes a valid host:port authority.
-    public_port = proxy_status["port"]
-    public_suffix = f"{fl.HOST_SUFFIX}:{public_port}"
+        proxy_status = fl.restart_host_proxy()
+        if not proxy_status.get("running"):
+            raise RuntimeError("host proxy failed to start")
+        # WEBSITE_HOST_SUFFIX must carry the host-proxy port: V2's build_website_url
+        # does host = f"{path}.{HOST_SUFFIX}" with NO port, so a bare suffix yields a
+        # :80 URL that is refused here. The port rides in the suffix so the f-string
+        # composes a valid host:port authority.
+        public_port = proxy_status["port"]
+        public_suffix = f"{fl.HOST_SUFFIX}:{public_port}"
 
-    fl.write_runtime_section(
-        "websites",
-        {
-            "sandbox_id": sbx.sandbox_id,
-            "template": template_ref,
-            "traffic_token": token,
-            "host_suffix": fl.HOST_SUFFIX,  # port-less; used for routing/fanout Host
-            "public_host_suffix": public_suffix,  # port-suffixed; what the harness consumes
-            "caddy_ingress_host": sbx.get_host(80),
-            "mode": "per-port-fanout",
-            "sites": site_map,
-        },
-    )
+        fl.write_runtime_section(
+            "websites",
+            {
+                "sandbox_id": sbx.sandbox_id,
+                "campaign_id": campaign,
+                "template": template_ref,
+                "traffic_token": token,
+                "host_suffix": fl.HOST_SUFFIX,  # port-less; used for routing/fanout Host
+                "public_host_suffix": public_suffix,
+                "caddy_ingress_host": sbx.get_host(80),
+                "mode": "per-port-fanout",
+                "sites": site_map,
+            },
+        )
+        published = True
 
-    proxy_path_check = None
-    v2_builder_check = None
-    if proxy_status.get("running"):
         proxy_path_check = fl.verify_host_proxy_path(
             f"mailhub.{fl.HOST_SUFFIX}", "/api/state?cookie=proxycheck", public_port
         )
+        if proxy_path_check.get("status") != 200:
+            raise RuntimeError("host proxy website path check failed")
         fl.log(f"host proxy path check: {proxy_path_check}")
         v2_builder_check = verify_via_v2_builder(public_suffix, "mailhub")
+        require_v2_builder_success(v2_builder_check)
         fl.log(f"V2 build_website_url check: {v2_builder_check}")
 
-    # Preserve first-boot timing across reuse (MINOR review item): keep a runs log.
-    prior = {}
-    if RECEIPT.is_file():
-        try:
-            prior = json.loads(RECEIPT.read_text())
-        except json.JSONDecodeError:
-            prior = {}
-    runs = list(prior.get("runs", []))
-    runs.append(
-        {
-            "at": datetime.now(UTC).isoformat(),
+        # Preserve first-boot timing across reuse while publishing only after all
+        # direct, proxy, and V2 URL-builder gates succeed.
+        prior = {}
+        if RECEIPT.is_file():
+            try:
+                prior = json.loads(RECEIPT.read_text())
+            except json.JSONDecodeError:
+                prior = {}
+        runs = list(prior.get("runs", []))
+        runs.append(
+            {
+                "at": datetime.now(UTC).isoformat(),
+                "sandbox_created_this_run": created,
+                "compose_build_seconds": round(build_secs, 1),
+            }
+        )
+
+        receipt = {
+            "schema_version": 2,
+            "generated_at": datetime.now(UTC).isoformat(),
+            "sandbox_id": sbx.sandbox_id,
+            "campaign_id": campaign,
+            "template": template_ref,
             "sandbox_created_this_run": created,
+            "sandbox_cpu": fl.FLEET_CPU,
+            "sandbox_memory_mb": fl.FLEET_MEMORY_MB,
+            "restricted_ingress": True,
+            "repo": {"url": REPO_URL, "commit": commit},
+            "website_host_suffix": public_suffix,
+            "website_host_suffix_portless": fl.HOST_SUFFIX,
+            "addressing_mode": "per-port-fanout",
+            "addressing_evidence": host_evidence,
+            "docker_start_seconds": round(docker_secs, 1),
+            "first_boot_compose_build_seconds": prior.get(
+                "first_boot_compose_build_seconds", round(build_secs, 1)
+            ),
             "compose_build_seconds": round(build_secs, 1),
+            "site_port_map": {sub: info["port"] for sub, info in site_map.items()},
+            "control_plane_readiness_seconds": timings,
+            "host_proxy": proxy_status,
+            "host_proxy_path_check": proxy_path_check,
+            "v2_build_website_url_check": v2_builder_check,
+            "guest_proxy_evidence": prior.get("guest_proxy_evidence"),
+            "runs": runs,
         }
-    )
+        RECEIPT.parent.mkdir(parents=True, exist_ok=True)
+        RECEIPT.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+        fl.log(f"receipt -> {RECEIPT}")
+    except BaseException:
+        fl.rollback_launch("websites", sbx, created, published=published)
+        raise
 
-    receipt = {
-        "schema_version": 2,
-        "generated_at": datetime.now(UTC).isoformat(),
-        "sandbox_id": sbx.sandbox_id,
-        "template": template_ref,
-        "sandbox_created_this_run": created,
-        "sandbox_cpu": fl.FLEET_CPU,
-        "sandbox_memory_mb": fl.FLEET_MEMORY_MB,
-        "restricted_ingress": True,
-        "repo": {"url": REPO_URL, "tag": REPO_TAG},
-        "website_host_suffix": public_suffix,
-        "website_host_suffix_portless": fl.HOST_SUFFIX,
-        "addressing_mode": "per-port-fanout",
-        "addressing_evidence": host_evidence,
-        "docker_start_seconds": round(docker_secs, 1),
-        "first_boot_compose_build_seconds": prior.get(
-            "first_boot_compose_build_seconds", round(build_secs, 1)
-        ),
-        "compose_build_seconds": round(build_secs, 1),
-        "site_port_map": {sub: info["port"] for sub, info in site_map.items()},
-        "control_plane_readiness_seconds": timings,
-        "host_proxy": proxy_status,
-        "host_proxy_path_check": proxy_path_check,
-        "v2_build_website_url_check": v2_builder_check,
-        "guest_proxy_evidence": prior.get("guest_proxy_evidence"),
-        "runs": runs,
-    }
-    RECEIPT.parent.mkdir(parents=True, exist_ok=True)
-    RECEIPT.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
-    fl.log(f"receipt -> {RECEIPT}")
-
+    fl.stop_host_proxy()
     print(f"WEBSITE_HOST_SUFFIX={public_suffix}")
     return 0
 

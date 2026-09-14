@@ -1,0 +1,41 @@
+[
+  {
+    "id": "048",
+    "path_status": "OK",
+    "receipt_score": 0.0,
+    "upstream_score": 0.0,
+    "score_matches_upstream": true,
+    "trajectory_rows": 500,
+    "actual_action_steps": 499,
+    "receipt_steps": 499,
+    "thinking_turns": 499,
+    "ask_user_turns": 1,
+    "empty_user_answers": 0,
+    "user_answer_characters": [
+      210
+    ],
+    "screenshots": 499,
+    "unique_screenshot_files": 356,
+    "uniform_screenshots": [],
+    "screenshot_sizes": [
+      [
+        1920,
+        1080
+      ]
+    ],
+    "invalid_screenshots": [],
+    "missing_screenshot_refs": [],
+    "trajectory_errors": [],
+    "phase_results": [],
+    "eval_model_call_attempts": 0,
+    "eval_model_successes": 0,
+    "user_sim_call_attempts": 0,
+    "user_sim_successes": 0,
+    "sandbox_generation": 2,
+    "wall_clock_s": 7008.8,
+    "native_command_failure_messages": 2,
+    "native_command_status_failure_messages": 0,
+    "actions_over_900_keypress_calls": 2,
+    "largest_keypress_action": 1176
+  }
+]

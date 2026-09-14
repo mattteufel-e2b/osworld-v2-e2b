@@ -1,0 +1,23 @@
+{
+  "main_campaign": {
+    "campaign_id": "osworld-full36-20260913-naqma7sp",
+    "additional_kills": [],
+    "remaining_sandbox_ids": [],
+    "scope": "all API-listed states, campaign metadata restricted"
+  },
+  "local_ports": {
+    "checked_ports": 146,
+    "unavailable_ports": [],
+    "service_runtime_exists": false,
+    "gitlab_token_exists": false,
+    "scope": "after campaign teardown; shared proxy, task082, and all four namespaced ports for every worker"
+  },
+  "linux_runner": {
+    "sandbox_id": "i7jucxom67og91a9z4d71",
+    "killed_after_artifact_download": true
+  },
+  "local_processes": {
+    "remaining_processes_referencing_campaign_path": [],
+    "scope": "process command lines containing the private campaign directory"
+  }
+}

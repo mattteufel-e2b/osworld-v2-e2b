@@ -25,6 +25,10 @@ pygame==2.6.1
 fastapi==0.115.6
 uvicorn==0.34.0
 websockets==14.1
+# Starlette 0.41.3's WSGI bridge calls anyio.from_thread. AnyIO 4.15.0
+# removed that package-level export, causing every Flask-backed route to return
+# HTTP 500. Keep the last compatible release pinned with the rest of this stack.
+anyio==4.14.2
 # aiohttp: guest-side CDP host-normalizing proxy (cdp_hostfix.py), which the
 # /usr/local/bin/socat shim substitutes for the 9222->1337 forward.
 aiohttp==3.14.1

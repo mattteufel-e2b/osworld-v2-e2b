@@ -4,51 +4,43 @@
 One invocation drives exactly one manifest task end to end: it builds a
 ``DesktopEnv`` on the ``e2b`` provider (paired to this worker's namespaced relay
 via ``OSWORLD_RELAY_PORT_BASE``), runs the pinned checkout's own
-``lib_run_single.run_single_example`` agent loop with the reference OSWorld
-``PromptAgent`` (screenshot observation, pyautogui actions), and records a
+``lib_run_single.run_single_example`` agent loop with the agent selected by
+``--agent-kind`` (screenshot observation, pyautogui actions), and records a
 redacted per-task receipt. Trajectories, screenshots and model IO stay under the
 gitignored raw dir; the receipt carries ids, path booleans, timings and the
 evaluator's partial-credit score only -- never task or evaluator text.
 
-The agent talks to an OpenAI-compatible chat-completions endpoint:
-``OPENAI_BASE_URL`` + ``OPENAI_API_KEY`` are honored and the model slug is passed
-verbatim. This is the V2 reference chat-completions agent. No secrets are logged.
+Agent construction and generation defaults live in ``agents.py`` (the file to
+edit for a custom agent); this runner only asks it for an agent. Credentials
+reach the agent through ``MODEL_BASE_URL`` / ``MODEL_API_KEY``. No secrets are
+logged.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 import time
-import types
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.request import urlopen
 
 
-def _stub(name: str, package: bool = False) -> None:
-    module = types.ModuleType(name)
-    if package:
-        module.__path__ = []
-    module.__getattr__ = lambda attr: type(attr, (), {})
-    sys.modules[name] = module
-
-
-# Heavy optional evaluator deps (torch via easyocr, acoustid): stub so an
-# evaluator that references one still RUNS instead of raising ImportError. Same
-# policy as the no-agent harness.
-for dependency in ["easyocr", "acoustid"]:
-    _stub(dependency, package=True)
-
 sys.path.insert(0, os.getcwd())
+from lazy_import import lazy_module  # noqa: E402
+
+# easyocr (and torch behind it) serves one OCR metric no release task uses;
+# load it on first use instead of in every one of 80 workers at startup.
+lazy_module("easyocr")
 import lib_run_single  # noqa: E402
-import requests  # noqa: E402
 import task_loader  # noqa: E402  (checkout-local; cwd is the pinned checkout)
+from agents import AGENT_KINDS, agent_settings, build_agent  # noqa: E402
 from desktop_env.desktop_env import DesktopEnv  # noqa: E402
-from mm_agents.agent import PromptAgent  # noqa: E402
-from mm_agents.m3 import M3Agent  # noqa: E402
+from evaluator_model_calls import EvaluatorModelCallTracker  # noqa: E402
+from receipt_safety import atomic_write_json, base_receipt, public_error  # noqa: E402
 
 
 def utc_now() -> str:
@@ -59,69 +51,10 @@ def _port_base() -> int:
     return int(os.environ.get("OSWORLD_RELAY_PORT_BASE", "0"))
 
 
-def _positive_int_env(name: str) -> int | None:
-    raw = os.environ.get(name, "").strip()
-    return int(raw) if raw.isdigit() and int(raw) > 0 else None
-
-
 def relay_state() -> dict:
     port = 14999 + _port_base()
     with urlopen(f"http://127.0.0.1:{port}/state", timeout=15) as response:
         return json.load(response)
-
-
-class CompatiblePromptAgent(PromptAgent):
-    """Reference PromptAgent routed at an OpenAI-compatible endpoint.
-
-    Reuses the parent's prompt construction, screenshot encoding and action
-    parsing verbatim; only ``call_llm`` is overridden to (a) honor
-    OPENAI_BASE_URL/OPENAI_API_KEY unconditionally and (b) send the model slug as
-    given so provider-specific model identifiers remain intact, with a small
-    retry on rate limits / 5xx. No secrets are logged.
-    """
-
-    def call_llm(self, payload):  # noqa: D401
-        base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
-        api_url = base_url + (
-            "/chat/completions" if base_url.endswith("/v1") else "/v1/chat/completions"
-        )
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}",
-        }
-        last_status = None
-        for attempt in range(8):
-            try:
-                response = requests.post(api_url, headers=headers, json=payload, timeout=180)
-            except requests.RequestException as exc:
-                print(f"[agent] LLM transport error (attempt {attempt}): {exc}", file=sys.stderr)
-                time.sleep(min(30, 5 * (attempt + 1)))
-                continue
-            last_status = response.status_code
-            if response.status_code == 200:
-                return response.json()["choices"][0]["message"]["content"]
-            if response.status_code == 400:
-                body = (
-                    response.json()
-                    if response.headers.get("content-type", "").startswith("application/json")
-                    else {}
-                )
-                code = (body.get("error") or {}).get("code")
-                if code == "context_length_exceeded":
-                    payload["messages"] = [payload["messages"][0]] + payload["messages"][-1:]
-                    continue
-                print(
-                    f"[agent] LLM 400 (non-retryable): {str(response.text)[:200]}", file=sys.stderr
-                )
-                return ""
-            # 429 / 5xx: back off and retry.
-            print(
-                f"[agent] LLM status {response.status_code} (attempt {attempt}); retrying",
-                file=sys.stderr,
-            )
-            time.sleep(min(45, 8 * (attempt + 1)))
-        print(f"[agent] LLM exhausted retries (last status {last_status})", file=sys.stderr)
-        return ""
 
 
 class _Args:
@@ -162,7 +95,9 @@ def _classify_stage_and_cause(
         )
     ):
         cause = "transport"
-    elif any(w in detail for w in ("cdp", "playwright", "websocket", "connect_over_cdp")):
+    elif any(
+        w in detail for w in ("cdp", "playwright", "websocket", "connect_over_cdp")
+    ):
         cause = "chrome-cdp"
     elif "environmentsetuperror" in detail:
         cause = "environment-setup"
@@ -182,6 +117,8 @@ def _read_score(result_dir: Path) -> tuple[float | None, bool | None]:
     if result_txt.exists():
         try:
             score = float(result_txt.read_text().strip())
+            if not math.isfinite(score):
+                score = None
         except ValueError:
             score = None
     # A dict-returning evaluator writes result.json; inspect KEYS only (not
@@ -243,18 +180,36 @@ def parse_args() -> argparse.Namespace:
         "--result-dir", type=Path, required=True, help="raw trajectory dir (gitignored)"
     )
     parser.add_argument(
-        "--output", type=Path, required=True, help="per-task receipt json (gitignored raw)"
+        "--output",
+        type=Path,
+        required=True,
+        help="per-task receipt json (gitignored raw)",
     )
-    parser.add_argument("--agent-kind", choices=("prompt", "m3"), default="prompt")
+    parser.add_argument("--agent-kind", choices=sorted(AGENT_KINDS), default="prompt")
     parser.add_argument("--model", default="openai/gpt-4o")
     parser.add_argument("--max-steps", type=int, default=75)
+    # Generation settings mirror upstream run.py; unset means the agent kind's
+    # upstream default (see agents.py).
+    parser.add_argument("--max-tokens", type=int, default=None)
+    parser.add_argument("--temperature", type=float, default=None)
+    parser.add_argument("--top-p", type=float, default=None)
+    parser.add_argument("--max-trajectory-length", type=int, default=None)
     parser.add_argument("--sleep-after-execution", type=float, default=3.0)
+    # Upstream's --enable_recording: the guest records the screen with ffmpeg
+    # for the whole rollout and the mp4 lands in the raw result dir. Off by
+    # default there and here.
+    parser.add_argument("--enable-recording", action="store_true")
     parser.add_argument("--client-password", default="osworld-public-evaluation")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    run_nonce = os.environ.get("OSWORLD_RUN_NONCE")
+    if not run_nonce:
+        raise RuntimeError("OSWORLD_RUN_NONCE is required")
+    evaluator_model_calls = EvaluatorModelCallTracker()
+    evaluator_model_calls.install()
     port_base = _port_base()
     result_dir = args.result_dir.resolve()
     result_dir.mkdir(parents=True, exist_ok=True)
@@ -265,62 +220,45 @@ def main() -> int:
     phases = getattr(example, "get_phases", None)
     multiphase = callable(phases) and bool(phases())
 
-    template_ref = os.environ.get("GUEST_TEMPLATE", "")
-    receipt = {
-        "id": args.task_id,
-        "domain": args.domain,
-        "agent_kind": args.agent_kind,
-        "model": args.model,
-        "model_transport": os.environ.get("MODEL_BASE_URL") or None,
-        "thinking_mode": os.environ.get("M3_THINKING_MODE") or None,
-        "thinking_budget": _positive_int_env("M3_THINKING_BUDGET"),
-        "eval_model": os.environ.get("OSWORLD_EVAL_MODEL_NAME") or None,
-        "eval_provider": os.environ.get("OSWORLD_EVAL_MODEL_PROVIDER") or None,
-        "eval_model_transport": os.environ.get("OSWORLD_EVAL_MODEL_BASE_URL") or None,
-        "user_sim_model": os.environ.get("OSWORLD_USER_SIM_MODEL") or None,
-        "user_sim_provider": os.environ.get("OSWORLD_USER_SIM_PROVIDER") or None,
-        "user_sim_transport": os.environ.get("OSWORLD_USER_SIM_BASE_URL") or None,
-        "port_base": port_base,
-        "control_port": 14999 + port_base,
-        "template": template_ref,
-        "multiphase": multiphase,
-        "max_steps": args.max_steps,
-        "started_at": utc_now(),
-        "transport_ok": False,
-        "evaluator_ran": False,
-        "path_status": None,
-        "steps_taken": 0,
-        "score": None,
-        "judge_used": None,
-        "sandbox_id": None,
-        "sandbox_generation": None,
-        "wall_clock_s": None,
-    }
+    receipt = base_receipt(
+        task_id=args.task_id,
+        domain=args.domain,
+        agent_kind=args.agent_kind,
+        model=args.model,
+        max_steps=args.max_steps,
+        port_base=port_base,
+        recording_enabled=args.enable_recording,
+    )
+    receipt.update(
+        multiphase=multiphase,
+        started_at=utc_now(),
+        transport_ok=False,
+        evaluator_ran=False,
+        path_status=None,
+        steps_taken=0,
+        score=None,
+        judge_used=None,
+        eval_model_call_attempts=0,
+        eval_model_successes=0,
+        sandbox_id=None,
+        sandbox_generation=None,
+        wall_clock_s=None,
+    )
 
-    if args.agent_kind == "m3":
-        agent = M3Agent(
-            platform="ubuntu",
-            model=args.model,
-            max_tokens=8192,
-            top_p=None,
-            temperature=0.6,
-            action_space="pyautogui",
-            observation_type="screenshot",
-            coordinate_type="relative",
-            max_trajectory_length=10,
-            client_password=args.client_password,
-        )
-    else:
-        agent = CompatiblePromptAgent(
-            model=args.model,
-            max_tokens=1500,
-            top_p=0.9,
-            temperature=1.0,
-            action_space="pyautogui",
-            observation_type="screenshot",
-            max_trajectory_length=3,
-            client_password=args.client_password,
-        )
+    settings = agent_settings(
+        args.agent_kind,
+        max_tokens=args.max_tokens,
+        temperature=args.temperature,
+        top_p=args.top_p,
+        max_trajectory_length=args.max_trajectory_length,
+    )
+    receipt["agent_settings"] = settings
+    agent = build_agent(
+        args.agent_kind,
+        model=args.model,
+        settings=settings,
+        client_password=args.client_password,
+    )
 
     env = None
     scores: list[float] = []
@@ -336,7 +274,7 @@ def main() -> int:
             screen_size=(1920, 1080),
             headless=True,
             enable_proxy=False,
-            force_disable_recording=True,
+            force_disable_recording=not args.enable_recording,
         )
         lib_run_single.run_single_example(
             agent,
@@ -350,12 +288,12 @@ def main() -> int:
         )
         receipt["path_status"] = "OK"
     except BaseException as error:  # noqa: BLE001 -- record and classify, never leak text
-        stage, cause, transport_ok, evaluator_ran = _classify_stage_and_cause(result_dir, error)
+        stage, cause, transport_ok, evaluator_ran = _classify_stage_and_cause(
+            result_dir, error
+        )
         receipt["path_status"] = "ERROR"
         receipt["error_cause"] = cause
-        receipt["error_detail"] = (
-            f"{type(error).__name__}: {str(error).splitlines()[0] if str(error) else ''}"[:180]
-        )
+        receipt.update(public_error(error))
         receipt["transport_ok"] = transport_ok
         receipt["evaluator_ran"] = evaluator_ran
         import traceback
@@ -387,9 +325,21 @@ def main() -> int:
         receipt["transport_ok"] = True
         receipt["evaluator_ran"] = (result_dir / "result.txt").exists() or multiphase
     receipt["judge_used"] = judge_used
+    receipt["eval_model_call_attempts"] = evaluator_model_calls.call_attempts
+    receipt["eval_model_successes"] = evaluator_model_calls.successes
+    receipt["user_sim_call_attempts"] = evaluator_model_calls.user_sim_call_attempts
+    receipt["user_sim_successes"] = evaluator_model_calls.user_sim_successes
+    if (
+        evaluator_model_calls.call_attempts != evaluator_model_calls.successes
+        or evaluator_model_calls.user_sim_call_attempts
+        != evaluator_model_calls.user_sim_successes
+    ):
+        # Upstream metrics may convert a transport exception to zero. Keep the
+        # original score artifact, but do not attest or resample that rollout.
+        receipt["path_status"] = "ERROR"
+        receipt["error_cause"] = "evaluator-or-agent"
 
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+    atomic_write_json(args.output, receipt)
     # Redacted one-liner to stderr (safe: ids + booleans + score only).
     print(
         json.dumps(

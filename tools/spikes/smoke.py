@@ -37,9 +37,9 @@ CDP = "http://127.0.0.1:19222"
 CONTROL = "http://127.0.0.1:14999"
 PORT3000 = "http://127.0.0.1:3000"
 PORT8000 = "http://127.0.0.1:8000"
-# smoke.py lives at runner/; evidence lands at the repo's
+# smoke.py lives at tools/spikes/; evidence lands at the repo's
 # out/osworld-v2-evidence/ so the receipt sits with the other V2 evidence.
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 EVIDENCE_DIR = REPO_ROOT / "out" / "osworld-v2-evidence"
 SCREENS_DIR = EVIDENCE_DIR / "smoke-screens"
 
@@ -74,7 +74,9 @@ def accessibility():
 
 
 def launch(command, wait_seconds):
-    status, body = request(f"{RELAY}/setup/launch", method="POST", data={"command": command})
+    status, body = request(
+        f"{RELAY}/setup/launch", method="POST", data={"command": command}
+    )
     if status != 200:
         raise RuntimeError(f"launch failed with HTTP {status}: {body[:500]!r}")
     time.sleep(wait_seconds)
@@ -107,7 +109,9 @@ def execute(command):
 def screenshot(name):
     status, body = request(f"{RELAY}/screenshot")
     if status != 200 or not body.startswith(b"\x89PNG"):
-        raise RuntimeError(f"invalid screenshot {name}: HTTP {status}, {len(body)} bytes")
+        raise RuntimeError(
+            f"invalid screenshot {name}: HTTP {status}, {len(body)} bytes"
+        )
     (SCREENS_DIR / name).write_bytes(body)
     return len(body)
 
@@ -121,7 +125,9 @@ def named_dialog_absent(tree, names):
     alternatives = "|".join(re.escape(name) for name in names)
     return (
         re.search(
-            rf'<(?:dialog|frame|alert|window)[^>]*name="(?:{alternatives})"', tree, re.IGNORECASE
+            rf'<(?:dialog|frame|alert|window)[^>]*name="(?:{alternatives})"',
+            tree,
+            re.IGNORECASE,
         )
         is None
     )
@@ -155,7 +161,9 @@ def visible_dialog_present(tree, names, roles=("dialog", "alert", "window")):
 
 def visible_window_present(tree, needle, roles=("frame", "application", "window")):
     role_alt = "|".join(roles)
-    for match in re.finditer(rf'<(?:{role_alt})[^>]*\sname="([^"]*)"[^>]*>', tree, re.IGNORECASE):
+    for match in re.finditer(
+        rf'<(?:{role_alt})[^>]*\sname="([^"]*)"[^>]*>', tree, re.IGNORECASE
+    ):
         if needle.lower() in match.group(1).lower() and _tag_is_showing(match.group(0)):
             return True
     return False
@@ -284,7 +292,9 @@ if [ -e /dev/kvm ]; then echo kvm=present; else echo kvm=absent; fi"""
     version_response = execute(version_command)
     if version_response.get("returncode") != 0:
         raise RuntimeError(f"version query failed: {version_response}")
-    versions = [line for line in version_response.get("output", "").splitlines() if line]
+    versions = [
+        line for line in version_response.get("output", "").splitlines() if line
+    ]
 
     # ---- V2 check: PulseAudio virtual sink `vsink` present ------------------
     sinks_response = execute("pactl list short sinks 2>/dev/null || true")
@@ -296,7 +306,8 @@ if [ -e /dev/kvm ]; then echo kvm=present; else echo kvm=absent; fi"""
 
     # ---- V2 check: task-service ports 3000/8000 free + relay-reachable ------
     guest_ss = (
-        execute("ss -ltnH 2>/dev/null || ss -ltn 2>/dev/null || true").get("output", "") or ""
+        execute("ss -ltnH 2>/dev/null || ss -ltn 2>/dev/null || true").get("output", "")
+        or ""
     )
     port3000_free = probe_port_free(guest_ss, 3000)
     port8000_free = probe_port_free(guest_ss, 8000)
@@ -337,7 +348,9 @@ if [ -e /dev/kvm ]; then echo kvm=present; else echo kvm=absent; fi"""
     launch(["musescore3"], 15)
     musescore_tree = accessibility()
     musescore_bytes = screenshot("smoke-musescore.png")
-    execute("pkill -x mscore3 2>/dev/null; sleep 2; pkill -9 -x mscore3 2>/dev/null || true")
+    execute(
+        "pkill -x mscore3 2>/dev/null; sleep 2; pkill -9 -x mscore3 2>/dev/null || true"
+    )
 
     # ---- V2 check: FreeCAD window + first-run modal absent ------------------
     kill_pattern("freecad")
@@ -388,13 +401,19 @@ if [ -e /dev/kvm ]; then echo kvm=present; else echo kvm=absent; fi"""
         "port3000_reachable_via_relay": p3000_reachable,
         "port8000_reachable_via_relay": p8000_reachable,
         "cdp_browser": cdp_version.get("Browser"),
-        "cdp_websocket_rewritten_to_local_relay": websocket_url.startswith("ws://127.0.0.1:19222/"),
+        "cdp_websocket_rewritten_to_local_relay": websocket_url.startswith(
+            "ws://127.0.0.1:19222/"
+        ),
         "cdp_contexts": cdp_contexts,
         "cdp_pages": cdp_pages,
         "chrome_window_present": window_present(chrome_tree, "google chrome"),
-        "chrome_keyring_modal_absent": modal_absent(chrome_tree, ("unlock login keyring",)),
+        "chrome_keyring_modal_absent": modal_absent(
+            chrome_tree, ("unlock login keyring",)
+        ),
         "chrome_screenshot_bytes": chrome_bytes,
-        "libreoffice_window_present": window_present(libreoffice_tree, "libreoffice calc"),
+        "libreoffice_window_present": window_present(
+            libreoffice_tree, "libreoffice calc"
+        ),
         # First-run labels also occur in normal menus and hidden controls, so
         # only a top-level dialog/frame with one of these names is a failure.
         "libreoffice_first_run_modal_absent": named_dialog_absent(
@@ -440,12 +459,16 @@ if [ -e /dev/kvm ]; then echo kvm=present; else echo kvm=absent; fi"""
         "unauthenticated ingress rejected": unauth_status == 403,
         "authenticated ingress accepted": auth_status == 200,
         "screen is 1920x1080": size == {"width": 1920, "height": 1080},
-        "CDP websocket is relay-local": evidence["cdp_websocket_rewritten_to_local_relay"],
+        "CDP websocket is relay-local": evidence[
+            "cdp_websocket_rewritten_to_local_relay"
+        ],
         "CDP attached to a context": cdp_contexts >= 1 and cdp_pages >= 1,
         "Chrome window present": evidence["chrome_window_present"],
         "Chrome first-run modal absent": evidence["chrome_keyring_modal_absent"],
         "LibreOffice window present": evidence["libreoffice_window_present"],
-        "LibreOffice first-run modal absent": evidence["libreoffice_first_run_modal_absent"],
+        "LibreOffice first-run modal absent": evidence[
+            "libreoffice_first_run_modal_absent"
+        ],
         "VLC window present": evidence["vlc_window_present"],
         "VLC privacy modal absent": evidence["vlc_privacy_modal_absent"],
         # ---- V2 ----
@@ -456,7 +479,9 @@ if [ -e /dev/kvm ]; then echo kvm=present; else echo kvm=absent; fi"""
         "port 8000 free by default": port8000_free and p8000_free_probe,
         "port 8000 reachable via relay": p8000_reachable,
         "MuseScore window present": evidence["musescore_window_present"],
-        "MuseScore first-run modal absent": evidence["musescore_first_run_modal_absent"],
+        "MuseScore first-run modal absent": evidence[
+            "musescore_first_run_modal_absent"
+        ],
         "FreeCAD window present": evidence["freecad_window_present"],
         "FreeCAD first-run modal absent": evidence["freecad_first_run_modal_absent"],
         "REAPER window present": evidence["reaper_window_present"],

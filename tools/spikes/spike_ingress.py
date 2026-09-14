@@ -47,7 +47,7 @@ Decision rule (recorded as `host_suffix_mode` in the evidence JSON):
 
 Run:
     export E2B_API_KEY=$(grep '^E2B_API_KEY=' .env.local | cut -d= -f2)
-    uv run --with e2b --with requests python runner/spike_ingress.py
+    uv run --with e2b --with requests python tools/spikes/spike_ingress.py
 
 Writes out/osworld-v2-evidence/spike-ingress.json.
 """
@@ -63,7 +63,7 @@ from pathlib import Path
 import requests
 from e2b import Sandbox
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 OUT_PATH = REPO_ROOT / "out" / "osworld-v2-evidence" / "spike-ingress.json"
 
 ECHO_SERVER = """import http.server
@@ -97,7 +97,9 @@ def start_echo_server(sbx: Sandbox) -> str:
         timeout=15,
     )
     if "LOCAL_OK" not in (r.stdout or ""):
-        raise RuntimeError(f"echo server failed to start in-sandbox: {r.stdout!r} {r.stderr!r}")
+        raise RuntimeError(
+            f"echo server failed to start in-sandbox: {r.stdout!r} {r.stderr!r}"
+        )
     return sbx.get_host(80)
 
 
@@ -139,7 +141,9 @@ def tls_handshake_probe(ip: str, servername: str, timeout: float = 15) -> dict:
             "returncode": out.returncode,
             "raw_output": combined.strip()[:1500],
             "certificate_chain_offered": "Certificate chain" in combined,
-            "peer_certificate_subject": subject_match.group(1).strip() if subject_match else None,
+            "peer_certificate_subject": subject_match.group(1).strip()
+            if subject_match
+            else None,
             "handshake_error": error_match.group(0) if error_match else None,
         }
     except Exception as e:
@@ -271,15 +275,21 @@ def main() -> int:
         # Probes 6/7: direct TLS handshake inspection (openssl s_client),
         # corroborating whichever HTTP-level result probes 1/2 observed.
         if ip_baseline:
-            evidence["probes"]["6_tls_handshake_baseline"] = tls_handshake_probe(ip_baseline, h)
+            evidence["probes"]["6_tls_handshake_baseline"] = tls_handshake_probe(
+                ip_baseline, h
+            )
         if ip:
-            evidence["probes"]["7_tls_handshake_mailhub"] = tls_handshake_probe(ip, f"mailhub.{h}")
+            evidence["probes"]["7_tls_handshake_mailhub"] = tls_handshake_probe(
+                ip, f"mailhub.{h}"
+            )
     finally:
         sbx_public.kill()
         print(f"killed {sbx_public.sandbox_id}")
 
     # --- sbx_restricted: allow_public_traffic=False, exercises the token path ---
-    sbx_restricted = Sandbox.create(timeout=300, network={"allow_public_traffic": False})
+    sbx_restricted = Sandbox.create(
+        timeout=300, network={"allow_public_traffic": False}
+    )
     try:
         token = sbx_restricted.traffic_access_token
         evidence["sandbox_restricted"] = {
@@ -314,7 +324,9 @@ def main() -> int:
     mailhub_routes_correctly = p2.get("status") == 200 and f"Host: mailhub.{h}" in (
         p2.get("body") or ""
     )
-    host_suffix_mode = "ingress-direct" if mailhub_routes_correctly else "guest-resolver"
+    host_suffix_mode = (
+        "ingress-direct" if mailhub_routes_correctly else "guest-resolver"
+    )
     evidence["host_suffix_mode"] = host_suffix_mode
 
     # --- Rationale: built from the values actually captured this run, not a

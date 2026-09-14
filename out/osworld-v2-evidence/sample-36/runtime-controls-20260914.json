@@ -1,0 +1,647 @@
+{
+  "purpose": "Focused runtime and native evaluator correctness controls accompanying the 36-task full-inference sample",
+  "guest_template": "osworld-v2-gnome:0d796343-1a70-4bd3-990e-8bb469b3dd20",
+  "scope": "Controls and diagnostics; not agent scores or QEMU/E2B result parity",
+  "native_xcf_layer_extraction": {
+    "kind": "native task051 ImageMagick layer extraction from pinned ground truth XCF; not agent result",
+    "layers": [
+      {
+        "layer_index": 0,
+        "extracted": true,
+        "dimensions": [
+          2560,
+          1440
+        ],
+        "expected_dimensions": [
+          2560,
+          1440
+        ],
+        "pass": true
+      },
+      {
+        "layer_index": 1,
+        "extracted": true,
+        "dimensions": [
+          766,
+          1188
+        ],
+        "expected_dimensions": [
+          766,
+          1188
+        ],
+        "pass": true
+      },
+      {
+        "layer_index": 2,
+        "extracted": true,
+        "dimensions": [
+          2413,
+          2875
+        ],
+        "expected_dimensions": [
+          2413,
+          2875
+        ],
+        "pass": true
+      },
+      {
+        "layer_index": 3,
+        "extracted": true,
+        "dimensions": [
+          1688,
+          2082
+        ],
+        "expected_dimensions": [
+          1688,
+          2082
+        ],
+        "pass": true
+      }
+    ],
+    "pass": true
+  },
+  "native_media_helpers": {
+    "kind": "native MuseScore scoring and OpenCV media helpers on pinned artifacts; not agent results",
+    "musescore_controls": [
+      {
+        "task": "067",
+        "control": "reference",
+        "expected": 1.0,
+        "score": 1.0,
+        "pass": true
+      },
+      {
+        "task": "067",
+        "control": "invalid_archive",
+        "expected": 0.0,
+        "score": 0.0,
+        "pass": true
+      }
+    ],
+    "video_helper": {
+      "task": "053",
+      "native_openable": true,
+      "frame_count": 1158,
+      "native_expected_frame_count": 1158,
+      "frames": [
+        {
+          "index": 0,
+          "shape": [
+            1080,
+            1920,
+            3
+          ],
+          "pass": true
+        },
+        {
+          "index": 579,
+          "shape": [
+            1080,
+            1920,
+            3
+          ],
+          "pass": true
+        },
+        {
+          "index": 1157,
+          "shape": [
+            1080,
+            1920,
+            3
+          ],
+          "pass": true
+        }
+      ],
+      "pass": true
+    },
+    "pass": true
+  },
+  "native_reaper_evaluator": {
+    "kind": "known-answer native evaluator controls, not agent benchmark results",
+    "task_id": "050",
+    "controls": [
+      {
+        "control": "positive",
+        "expected": 1.0,
+        "actual": 1.0,
+        "judge_attempts": 0,
+        "judge_successes": 0,
+        "screenshot_present": true,
+        "pass": true,
+        "native_result": {
+          "score": 1.0,
+          "safety": {
+            "checks": [
+              {
+                "name": "document_integrity",
+                "result": "PASS",
+                "description": "",
+                "penalty": 0.0
+              },
+              {
+                "name": "disk_usage",
+                "result": "PASS",
+                "description": "",
+                "penalty": 0.0
+              }
+            ],
+            "total_penalty": 0.0
+          }
+        }
+      },
+      {
+        "control": "negative",
+        "expected": 0.0,
+        "actual": 0.0,
+        "judge_attempts": 0,
+        "judge_successes": 0,
+        "screenshot_present": true,
+        "pass": true,
+        "native_result": {
+          "score": 0.0,
+          "safety": {
+            "checks": [
+              {
+                "name": "document_integrity",
+                "result": "PASS",
+                "description": "",
+                "penalty": 0.0
+              },
+              {
+                "name": "disk_usage",
+                "result": "PASS",
+                "description": "",
+                "penalty": 0.0
+              }
+            ],
+            "total_penalty": 0.0
+          }
+        }
+      }
+    ],
+    "pass": true,
+    "scope": "Full native rule-based evaluator in isolated E2B fixture guests; scores extracted from the unchanged native score/safety result object. Safety baseline setup is outside these focused scoring controls."
+  },
+  "website_state_isolation": {
+    "kind": "read-only audit of current native state-cookie cache files for selected tasks",
+    "entries": 22,
+    "tasks_with_standard_cookie_files": [
+      "007",
+      "008",
+      "015",
+      "019",
+      "026",
+      "031",
+      "035",
+      "038",
+      "046",
+      "050",
+      "069",
+      "079",
+      "082",
+      "098"
+    ],
+    "cross_task_cookie_collisions": [],
+    "scope": "standard prepare_stateful_website_urls files; custom task state clients are outside this check",
+    "pass": true
+  },
+  "cached_reference_hashes": {
+    "kind": "read-only hash comparison of recognizable cached reference files against pinned local assets",
+    "files": [
+      {
+        "task": "007",
+        "cache_file": "Remaining_Course_gt.xlsx",
+        "asset_file": "task_007_hitl/Remaining_Course_gt.xlsx",
+        "bytes": 4999,
+        "sha256_matches_asset": true,
+        "source_resolution": "native task_007.py:99 uses task_007_hitl"
+      },
+      {
+        "task": "011",
+        "cache_file": "task_011_ground_truth.json",
+        "asset_file": "task_011_ground_truth.json",
+        "bytes": 8865,
+        "sha256_matches_asset": true
+      },
+      {
+        "task": "024",
+        "cache_file": "S6_AdmissionLetter_offer_letter_gt.pdf",
+        "asset_file": "S6_AdmissionLetter_offer_letter_gt.pdf",
+        "bytes": 244155,
+        "sha256_matches_asset": true
+      },
+      {
+        "task": "024",
+        "cache_file": "S8_PassportUpload_Passport_gt.pdf",
+        "asset_file": "S8_PassportUpload_Passport_gt.pdf",
+        "bytes": 4335842,
+        "sha256_matches_asset": true
+      },
+      {
+        "task": "025",
+        "cache_file": "form-1040nr_gt.pdf",
+        "asset_file": "form-1040nr_gt.pdf",
+        "bytes": 435897,
+        "sha256_matches_asset": true
+      },
+      {
+        "task": "025",
+        "cache_file": "form-8843_gt.pdf",
+        "asset_file": "form-8843_gt.pdf",
+        "bytes": 203579,
+        "sha256_matches_asset": true
+      },
+      {
+        "task": "025",
+        "cache_file": "540nr_gt.pdf",
+        "asset_file": "540nr_gt.pdf",
+        "bytes": 436874,
+        "sha256_matches_asset": true
+      },
+      {
+        "task": "025",
+        "cache_file": "form-1040-s1_gt.pdf",
+        "asset_file": "form-1040-s1_gt.pdf",
+        "bytes": 236271,
+        "sha256_matches_asset": true
+      },
+      {
+        "task": "026",
+        "cache_file": "gt_AI-Assisted_Healthcare.pptx",
+        "asset_file": "gt_AI-Assisted_Healthcare.pptx",
+        "bytes": 1067941,
+        "sha256_matches_asset": true
+      },
+      {
+        "task": "034",
+        "cache_file": "form_gt.json",
+        "asset_file": "form_gt.json",
+        "bytes": 3407,
+        "sha256_matches_asset": true
+      },
+      {
+        "task": "035",
+        "cache_file": "purchase_order_form_gt.xlsx",
+        "asset_file": "purchase_order_form_gt.xlsx",
+        "bytes": 4327,
+        "sha256_matches_asset": true
+      },
+      {
+        "task": "046",
+        "cache_file": "task_046-expected.zip",
+        "asset_file": "task_046-expected.zip",
+        "bytes": 70577552,
+        "sha256_matches_asset": true
+      },
+      {
+        "task": "105",
+        "cache_file": "task_105_gt_segmentation.nii.gz",
+        "asset_file": "gt_segmentation.nii.gz",
+        "bytes": 37663,
+        "sha256_matches_asset": true
+      }
+    ],
+    "matched": 13,
+    "mismatches": [],
+    "scope": "Recognizable cached reference files, including canonical task007 HITL asset resolution; not a complete cache inventory."
+  },
+  "browser_capabilities": [
+    {
+      "origin": "http://teamchat.127.0.0.1.nip.io:8090",
+      "secure": false,
+      "clipboard": "undefined",
+      "randomUUID": "undefined",
+      "cdp_port": 26222
+    },
+    {
+      "origin": "http://cloudcrm.127.0.0.1.nip.io:8090",
+      "secure": false,
+      "clipboard": "undefined",
+      "randomUUID": "undefined",
+      "cdp_port": 26222
+    },
+    {
+      "origin": "http://mailhub.127.0.0.1.nip.io:8090",
+      "secure": false,
+      "clipboard": "undefined",
+      "randomUUID": "undefined",
+      "cdp_port": 26222
+    },
+    {
+      "origin": "http://studio.streamview.127.0.0.1.nip.io:8090",
+      "secure": false,
+      "clipboard": "undefined",
+      "randomUUID": "undefined",
+      "cdp_port": 22222
+    }
+  ],
+  "task035_notifications": {
+    "task_id": "035",
+    "origin": "http://teamchat.127.0.0.1.nip.io:8090",
+    "secure_context": false,
+    "notification_permission": "denied",
+    "setup_grant_attempts": 10,
+    "setup_error": "Browser.setPermission: Permission cannot be granted in current context",
+    "probe": "Read-only Playwright inspection of live task browser; no page navigation or state mutation"
+  },
+  "task026_asset_access": [
+    {
+      "source": "native_dynamic_state",
+      "authenticated": false,
+      "status": 401
+    },
+    {
+      "source": "native_dynamic_state",
+      "authenticated": true,
+      "status": 403
+    },
+    {
+      "source": "pinned_assets_location",
+      "authenticated": false,
+      "status": 200
+    },
+    {
+      "source": "pinned_assets_location",
+      "authenticated": true,
+      "status": 200
+    }
+  ],
+  "linux_task048_upload": {
+    "bytes": 274509060,
+    "sha256": "d0b0d1b00621f40076bde821ae6df4352ea4c86f3f53e6d8aac47de075f7fab2",
+    "archive_write_time": 1789366471.3380203,
+    "runtime_staging_time": 1789366469.0659838,
+    "staging_to_upload_seconds": 2.27,
+    "scope": "includes root setup and upload; not an isolated transfer timing"
+  },
+  "sandbox_heartbeat": [
+    {
+      "sandbox_id": "i88jbs33jm9nms6vqhesb",
+      "generation": 2,
+      "initial_timeout_seconds": 3600,
+      "heartbeat_seconds": 300,
+      "started_at": "2026-09-14 04:47:21.273455+00:00",
+      "end_at": "2026-09-14 07:32:20.510453+00:00",
+      "observed_at": "2026-09-14T06:32:21.396358+00:00"
+    },
+    {
+      "sandbox_id": "ibifoyisidwrmxkv8mjkb",
+      "generation": 2,
+      "initial_timeout_seconds": 3600,
+      "heartbeat_seconds": 300,
+      "started_at": "2026-09-14 04:47:26.793693+00:00",
+      "end_at": "2026-09-14 07:27:24.641167+00:00",
+      "observed_at": "2026-09-14T06:32:21.522848+00:00"
+    },
+    {
+      "sandbox_id": "i4d4pwv9q8qjpmeloo4tc",
+      "generation": 2,
+      "initial_timeout_seconds": 3600,
+      "heartbeat_seconds": 300,
+      "started_at": "2026-09-14 04:47:28.965197+00:00",
+      "end_at": "2026-09-14 07:27:26.682368+00:00",
+      "observed_at": "2026-09-14T06:32:21.645604+00:00"
+    }
+  ],
+  "control_server_process_kill": {
+    "before_status": 200,
+    "server_process_owned_by_desktop_user": true,
+    "after_status": 502,
+    "after_5s_status": 502,
+    "envd_still_available": true,
+    "matches_task003_failure_mode": true,
+    "diagnostic_sandbox_cleaned_up": true
+  },
+  "kicad_native_installer": {
+    "http_status": 200,
+    "native_returncode": 100,
+    "kicad_installed": false,
+    "elapsed_seconds": 58.04,
+    "command_source": "unchanged task_107.py KICAD_INSTALL_CMD through native /setup/execute",
+    "command_sha256": "e8eb863ebf7919524bff03e67fb31b082bd75c9c4e9bf8282b418badca62398e",
+    "diagnostic_sandbox_cleaned_up": true
+  },
+  "kicad_package_hold_counterfactual": {
+    "http_status": 200,
+    "native_returncode": 100,
+    "kicad_installed": false,
+    "elapsed_seconds": 29.94,
+    "command_source": "unchanged task_107.py KICAD_INSTALL_CMD through native /setup/execute",
+    "command_sha256": "e8eb863ebf7919524bff03e67fb31b082bd75c9c4e9bf8282b418badca62398e",
+    "held_freecad": true,
+    "before_unhold_dryrun_exit": 100,
+    "after_unhold_dryrun_exit": 0,
+    "diagnostic_sandbox_cleaned_up": true,
+    "planned_removals": [
+      "freecad",
+      "freecad-python3",
+      "libfreecad-python3-0.19",
+      "libocct-data-exchange-7.5",
+      "libocct-ocaf-7.5",
+      "libocct-visualization-7.5",
+      "libocct-modeling-algorithms-7.5",
+      "libocct-modeling-data-7.5",
+      "libocct-foundation-7.5"
+    ],
+    "scope": "APT simulation after unholding freecad in a disposable guest; not an applied runtime fix or a successful KiCad launch."
+  },
+  "desktop_inventory": {
+    "executables": {
+      "musescore": null,
+      "musescore3": "/usr/bin/musescore3",
+      "mscore": null,
+      "wpp": null,
+      "wps": null,
+      "blender": null,
+      "kicad": null,
+      "libreoffice": "/usr/bin/libreoffice"
+    },
+    "installed_package_versions": [
+      "musescore3=3.2.3+dfsg2-11"
+    ],
+    "musescore_export": {
+      "returncode": 1,
+      "stdout": "",
+      "stderr": "QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-user'\nconvert </tmp/music-init.mscz>...\nline 6 col 52: rootfile\nline 7 col 46: rootfile\nline 8 col 45: rootfile\nCannot read file /tmp/music-init.mscz:\nThis score was saved using a newer version of MuseScore.\nVisit the <a href=\"https://musescore.org\">MuseScore website</a> to obtain the latest version.\n",
+      "output_created": false
+    },
+    "diagnostic_sandbox_cleaned_up": true
+  },
+  "musescore_input_format": {
+    "music_init.mscz": {
+      "score_version": "4.60",
+      "program_version": "4.6.5"
+    },
+    "music.mscz": {
+      "score_version": "4.40",
+      "program_version": "4.4.4"
+    }
+  },
+  "native_setup_launch_failures": [
+    {
+      "task": "067",
+      "errors": [
+        "Failed to launch application. Status code: {\"message\":\"[Errno 2] No such file or directory: 'musescore'\",\"status\":\"error\"}"
+      ]
+    },
+    {
+      "task": "079",
+      "errors": [
+        "Failed to launch application. Status code: {\"message\":\"[Errno 2] No such file or directory: 'wpp'\",\"status\":\"error\"}"
+      ]
+    },
+    {
+      "task": "087",
+      "errors": [
+        "Failed to launch application. Status code: {\"message\":\"[Errno 2] No such file or directory: 'wpp'\",\"status\":\"error\"}"
+      ]
+    },
+    {
+      "task": "092",
+      "errors": [
+        "Failed to launch application. Status code: {\"message\":\"[Errno 2] No such file or directory: 'blender'\",\"status\":\"error\"}"
+      ]
+    },
+    {
+      "task": "107",
+      "errors": [
+        "Failed to launch application. Status code: {\"message\":\"[Errno 2] No such file or directory: 'kicad'\",\"status\":\"error\"}"
+      ]
+    }
+  ],
+  "slow_task_resource_window": {
+    "task_id": "074",
+    "window_start": "2026-09-14T09:08:03.647683+00:00",
+    "window_end": "2026-09-14T09:23:03.647683+00:00",
+    "scope": "read-only 15-minute window during active inference, not whole-run resource certification",
+    "metrics": {
+      "sample_count": 180,
+      "duration_seconds": 895.0,
+      "cpu_count": 4,
+      "cpu_used_pct_of_allocation_peak": 7.79,
+      "cpu_used_pct_of_allocation_mean": 5.53,
+      "cpu_cores_used_peak": 0.312,
+      "mem_used_bytes_peak": 1900113920,
+      "mem_used_gib_peak": 1.77,
+      "mem_used_gib_mean": 1.742,
+      "mem_cache_bytes_peak": 2060173312,
+      "mem_total_bytes": 8343158784,
+      "mem_total_gib": 7.77,
+      "disk_used_bytes_peak": 7579725824,
+      "disk_used_gib_peak": 7.059,
+      "disk_used_gib_mean": 7.059,
+      "disk_total_bytes": 103498731520,
+      "disk_total_gib": 96.391,
+      "cpu_saturated": false,
+      "mem_pressure": false,
+      "disk_pressure": false
+    },
+    "mac_memory_free_percent": 83
+  },
+  "linux_verified_judge_runner_sources": [
+    {
+      "path": "runner/check_models.py",
+      "linux_source_sha256": "708cc1c251c7f4bde382f34036e46abf8952c90185b30a7dbe252383fc6277b1",
+      "current_sha256": "708cc1c251c7f4bde382f34036e46abf8952c90185b30a7dbe252383fc6277b1",
+      "same": true
+    },
+    {
+      "path": "runner/run_agent_parallel.sh",
+      "linux_source_sha256": "ed20352c97d73cf9d9f6d98ad6c41668d680bcf08e2072b24d571a4973d4f43e",
+      "current_sha256": "ed20352c97d73cf9d9f6d98ad6c41668d680bcf08e2072b24d571a4973d4f43e",
+      "same": true
+    },
+    {
+      "path": "runner/evaluator_model_calls.py",
+      "linux_source_sha256": "a7f4e24f2e798e098c57ed275458f35f0e44a2a2b882687c56749eea81fa6084",
+      "current_sha256": "a7f4e24f2e798e098c57ed275458f35f0e44a2a2b882687c56749eea81fa6084",
+      "same": true
+    },
+    {
+      "path": "runner/preflight.py",
+      "linux_source_sha256": "75594d2aec763082cc4fe0bc4b9b2b4be4931aca6cfe2d17e902554da8a2e72f",
+      "current_sha256": "75594d2aec763082cc4fe0bc4b9b2b4be4931aca6cfe2d17e902554da8a2e72f",
+      "same": true
+    }
+  ],
+  "template_runtime_source_provenance": {
+    "guest_template": "osworld-v2-gnome:0d796343-1a70-4bd3-990e-8bb469b3dd20",
+    "source_files": [
+      {
+        "file": "http_routes",
+        "guest_sha256": "c7af0f04bf7636083c3d5f071cd050bb1c0197e62c516ba6d1fe0cf3ca702d3e",
+        "local_sha256": "c7af0f04bf7636083c3d5f071cd050bb1c0197e62c516ba6d1fe0cf3ca702d3e",
+        "exact_match": true,
+        "guest_has_exact_path_open_fallback": true,
+        "guest_has_quiet_recording_flags": true
+      },
+      {
+        "file": "apt_wrapper",
+        "guest_sha256": "03494d548da2c1ce430664d8f58a2225803de59e4980bdbc258cecf135815d02",
+        "local_sha256": "03494d548da2c1ce430664d8f58a2225803de59e4980bdbc258cecf135815d02",
+        "exact_match": true,
+        "guest_has_exact_path_open_fallback": null,
+        "guest_has_quiet_recording_flags": null
+      },
+      {
+        "file": "chrome_shim",
+        "guest_sha256": "4ff040372400eb175e972b26b61bb61f68e7627619c325642f2eb7a854480729",
+        "local_sha256": "4ff040372400eb175e972b26b61bb61f68e7627619c325642f2eb7a854480729",
+        "exact_match": true,
+        "guest_has_exact_path_open_fallback": null,
+        "guest_has_quiet_recording_flags": null
+      }
+    ],
+    "diagnostic_sandbox_cleaned_up": true
+  },
+  "completed_task082_port_release": {
+    "scope": "read-only binding check after task082 finished, while shared fleet proxy is still required",
+    "ports": [
+      {
+        "port": 3000,
+        "available_to_bind": true
+      },
+      {
+        "port": 8090,
+        "available_to_bind": false
+      }
+    ]
+  },
+  "native_long_typing_boundary": {
+    "pyautogui_pause": 0.1,
+    "kind": "isolated native M3 typing/controller timeout control, no task score",
+    "characters": 1000,
+    "keypress_calls": 1000,
+    "controller_returned_none": true,
+    "controller_elapsed_s": 90.12,
+    "native_http_calls": [
+      {
+        "timeout": 90
+      }
+    ],
+    "completed_when_controller_returned": false,
+    "completed_after_controller_returned": true,
+    "observation_elapsed_s": 102.61,
+    "same_as_pinned_upstream_functions": {
+      "execute_python_command": true,
+      "tool_action_to_pyautogui": true
+    },
+    "diagnostic_sandbox_cleaned_up": true
+  },
+  "template_server_dependencies": {
+    "guest_template": "osworld-v2-gnome:0d796343-1a70-4bd3-990e-8bb469b3dd20",
+    "installed_server_packages": {
+      "anyio": "4.14.2",
+      "starlette": "0.41.3",
+      "Flask": "3.1.2",
+      "fastapi": "0.115.6",
+      "uvicorn": "0.34.0",
+      "aiohttp": "3.14.1"
+    },
+    "requirements_file_exact_match": true,
+    "guest_requirements_sha256": "4a116caab2a34dfa8255d5bf8a6ca95c51c09cdfc9e01e2655fdec53b3118418",
+    "local_requirements_sha256": "4a116caab2a34dfa8255d5bf8a6ca95c51c09cdfc9e01e2655fdec53b3118418",
+    "anyio_matches_current_pin": true,
+    "diagnostic_sandbox_cleaned_up": true
+  }
+}
