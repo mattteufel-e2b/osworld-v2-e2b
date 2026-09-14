@@ -110,6 +110,16 @@ def _run(
     return process, receipt
 
 
+def _wait_for_exit(process: subprocess.Popen) -> None:
+    """Never leave a runner behind when a hang or an assertion ends the test."""
+    try:
+        process.wait(timeout=20)
+    finally:
+        if process.returncode is None:
+            process.kill()
+            process.wait(timeout=5)
+
+
 def _wait_for(path: Path, timeout: float = 15.0) -> None:
     deadline = time.monotonic() + timeout
     while not path.exists():
@@ -121,7 +131,7 @@ def _wait_for(path: Path, timeout: float = 15.0) -> None:
 def test_deadline_writes_a_task_timeout_receipt_and_exits_124(tmp_path):
     checkout = _fake_checkout(tmp_path, "import time\ntime.sleep(30)")
     process, receipt = _run(tmp_path, checkout, ["--deadline-seconds", "1"])
-    process.wait(timeout=20)
+    _wait_for_exit(process)
     assert process.returncode == 124, process.communicate()
     data = json.loads(receipt.read_text())
     assert data["path_status"] == "ERROR"
@@ -141,7 +151,7 @@ def test_sigterm_writes_an_interrupted_receipt_and_exits_143(tmp_path):
         tmp_path / "raw" / "started"
     )  # handlers are installed before the loop runs
     process.send_signal(signal.SIGTERM)
-    process.wait(timeout=20)
+    _wait_for_exit(process)
     assert process.returncode == 143, process.communicate()
     data = json.loads(receipt.read_text())
     assert data["error_cause"] == "interrupted"
@@ -153,7 +163,7 @@ def test_failure_before_env_exists_still_writes_a_receipt(tmp_path):
         "class DesktopEnv:\n    def __init__(self, **kw):\n        raise OSError('bind failed: address in use')\n"
     )
     process, receipt = _run(tmp_path, checkout, [])
-    process.wait(timeout=20)
+    _wait_for_exit(process)
     assert process.returncode == 0
     data = json.loads(receipt.read_text())
     assert data["path_status"] == "ERROR"
@@ -166,9 +176,48 @@ def test_success_path_records_bridge_sandbox(tmp_path):
         tmp_path, "open(result_dir + '/result.txt', 'w').write('0.5')"
     )
     process, receipt = _run(tmp_path, checkout, [])
-    process.wait(timeout=20)
+    _wait_for_exit(process)
     assert process.returncode == 0, process.communicate()
     data = json.loads(receipt.read_text())
     assert data["path_status"] == "OK"
     assert data["score"] == 0.5
+    assert data["sandbox_id"] == "sbx-fake"
+
+
+def test_a_second_sigterm_during_teardown_cannot_cost_the_receipt(tmp_path):
+    # env.close() can take minutes (the bridge joins its proxy threads) and the
+    # receipt is written after the finally block, so a coordinator escalating
+    # with a second SIGTERM must not abort teardown half way.
+    checkout = _fake_checkout(
+        tmp_path,
+        "import time\nopen(result_dir + '/started', 'w').close()\ntime.sleep(30)",
+    )
+    raw = tmp_path / "raw"
+    (checkout / "desktop_env" / "desktop_env.py").write_text(
+        textwrap.dedent(
+            """
+            import time
+            class _Bridge:
+                def state(self):
+                    return {"sandbox_id": "sbx-fake", "generation": 1, "restricted_ingress": True}
+            class _Provider:
+                bridge = _Bridge()
+            class DesktopEnv:
+                def __init__(self, **kwargs):
+                    self.provider = _Provider()
+                def close(self):
+                    open(CLOSING_MARKER, "w").close()
+                    time.sleep(3)
+            """
+        ).replace("CLOSING_MARKER", repr(str(raw / "closing")))
+    )
+    process, receipt = _run(tmp_path, checkout, ["--deadline-seconds", "60"])
+    _wait_for(raw / "started")
+    process.send_signal(signal.SIGTERM)
+    _wait_for(raw / "closing")  # teardown has begun and is deliberately slow
+    process.send_signal(signal.SIGTERM)  # the escalation that must be ignored
+    _wait_for_exit(process)
+    assert process.returncode == 143, process.communicate()
+    data = json.loads(receipt.read_text())
+    assert data["error_cause"] == "interrupted"
     assert data["sandbox_id"] == "sbx-fake"

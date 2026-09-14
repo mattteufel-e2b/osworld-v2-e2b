@@ -232,7 +232,6 @@ def main() -> int:
         raise RuntimeError("OSWORLD_RUN_NONCE is required")
     evaluator_model_calls = EvaluatorModelCallTracker()
     evaluator_model_calls.install()
-    _install_signal_handlers(args.deadline_seconds)
     exit_code = 0
     result_dir = args.result_dir.resolve()
     result_dir.mkdir(parents=True, exist_ok=True)
@@ -285,6 +284,10 @@ def main() -> int:
     env = None
     scores: list[float] = []
     start = time.monotonic()
+    # Armed last, immediately before the try: everything above (task load, agent
+    # construction) runs outside it, where a signal would escape as a traceback
+    # with no receipt. From here every signal lands in a handled block.
+    _install_signal_handlers(args.deadline_seconds)
     try:
         env = DesktopEnv(
             provider_name="e2b",
@@ -310,6 +313,9 @@ def main() -> int:
         )
         receipt["path_status"] = "OK"
     except BaseException as error:  # noqa: BLE001 -- record and classify, never leak text
+        # Classification globs the result dir; a deadline firing here would
+        # escape this handler uncaught and cost the receipt.
+        signal.alarm(0)
         if isinstance(error, AgentTaskTimeout):
             exit_code = 124
         elif isinstance(error, AgentInterrupted):
@@ -326,7 +332,12 @@ def main() -> int:
 
         (result_dir / "FAIL.trace.txt").write_text(traceback.format_exc())
     finally:
+        # Teardown is uninterruptible: bridge.state() and env.close() can take
+        # minutes, and a second SIGTERM landing here would abort the close
+        # mid-flight -- leaking the guest sandbox and losing the receipt, which
+        # is written after this block.
         signal.alarm(0)
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
         # Capture the sandbox this rollout ran against (one reset == one sandbox)
         # before tearing anything down.
         bridge = getattr(getattr(env, "provider", None), "bridge", None)
