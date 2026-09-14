@@ -2,9 +2,9 @@
 
 OSWorld's shape is kept: the desktop VM is the thing under test, and the agent, task setup,
 and evaluators run *outside* it as a client, seeing only screenshots and sending only
-mouse/keyboard actions. This port swaps the VM for E2B sandboxes and adds a localhost relay
-because E2B exposes sandbox ports as per-sandbox HTTPS hostnames rather than an IP with open
-ports. Everything below is what actually runs for a real task, e.g. a task that opens a mocked
+mouse/keyboard actions. This port swaps the VM for E2B sandboxes and adds an in-process
+bridge inside the provider because E2B exposes sandbox ports as per-sandbox HTTPS hostnames
+rather than an IP with open ports. Everything below is what actually runs for a real task, e.g. a task that opens a mocked
 website in Chrome and edits a document in LibreOffice.
 
 ## What is hosted where
@@ -14,17 +14,16 @@ flowchart LR
     subgraph HOST["Runner host (any Linux box or a coordinator sandbox) — one process set per task worker"]
         direction TB
         COORD["run_agent_parallel.sh<br/>one worker per task, up to 80"]
-        WORKER["run_agent.sh (worker for task N)"]
-        RUNNER["agent_runner.py<br/>DesktopEnv(provider=e2b)<br/>lib_run_single agent loop (upstream)"]
+        RUNNER["agent_runner.py --deadline-seconds N<br/>DesktopEnv(provider=e2b)<br/>lib_run_single agent loop (upstream)"]
         AGENT["Agent (upstream PromptAgent / M3)<br/>predict(screenshot) → pyautogui code"]
         EVAL["Upstream evaluators + setup controller<br/>ffprobe / identify / OCR on host"]
-        RELAY["e2b_relay.py (one per worker)<br/>127.0.0.1:14999 control<br/>:15000 → guest 5000 (server)<br/>:19222 → guest 9222 (CDP)<br/>:18080 → guest 8080 (VLC)<br/>(+500 × slot)"]
+        BRIDGE["Bridge (inside the agent_runner / run.py process)<br/>loopback listeners on OS-assigned ports<br/>server, CDP, VLC → guest 5000, 9222, 8080"]
         HPROXY["hostmap_proxy.py<br/>127.0.0.1:8090<br/>Host: site.127.0.0.1.nip.io → fleet port"]
-        COORD --> WORKER --> RUNNER
+        COORD --> RUNNER
         RUNNER --> AGENT
         RUNNER --> EVAL
-        RUNNER -- "http://127.0.0.1:15000/screenshot, /execute, /file, /setup/upload ..." --> RELAY
-        RUNNER -- "CDP ws://127.0.0.1:19222" --> RELAY
+        RUNNER -- "http://127.0.0.1:<server>/screenshot, /execute, /file, /setup/upload ..." --> BRIDGE
+        RUNNER -- "CDP ws://127.0.0.1:<cdp>" --> BRIDGE
         EVAL -- "http://site.127.0.0.1.nip.io:8090/api/..." --> HPROXY
     end
 
@@ -33,7 +32,7 @@ flowchart LR
         subgraph GUEST["Guest desktop sandbox — one fresh sandbox per task attempt (osworld-v2-gnome template, 4 vCPU / 8 GB)"]
             SERVER["osworld-server :5000 (upstream, patched)<br/>screenshot, pyautogui execute, file I/O,<br/>a11y tree, ffmpeg recording"]
             DESK["GNOME on Xvfb 1920×1080<br/>Chrome (CDP :9222), LibreOffice, GIMP, VLC :8080, ..."]
-            GPROXY["hostmap_proxy.py (installed by relay)<br/>:80 and :8090 inside guest"]
+            GPROXY["hostmap_proxy.py (installed by the bridge)<br/>:80 and :8090 inside guest"]
             SERVER --- DESK
             DESK -- "Chrome loads http://teamchat.127.0.0.1.nip.io:8090<br/>(nip.io → 127.0.0.1 inside guest)" --> GPROXY
         end
@@ -54,9 +53,9 @@ flowchart LR
         E2BAPI["E2B API (sandbox create/kill/snapshot)"]
     end
 
-    RELAY -- "https://5000-{sbx}.e2b.app + e2b-traffic-access-token" --> SERVER
-    RELAY -- "https://9222-{sbx}.e2b.app (WebSocket)" --> DESK
-    RELAY -- "SDK: Sandbox.create / kill / create_snapshot / set_timeout" --> E2BAPI
+    BRIDGE -- "https://5000-{sbx}.e2b.app + e2b-traffic-access-token" --> SERVER
+    BRIDGE -- "https://9222-{sbx}.e2b.app (WebSocket)" --> DESK
+    BRIDGE -- "SDK: Sandbox.create / kill / create_snapshot / set_timeout" --> E2BAPI
     HPROXY -- "https://13001-{web-sbx}.e2b.app + token" --> FANOUT
     HPROXY -- "https://{port}-{gitlab-sbx}.e2b.app + token" --> GITLAB
     GPROXY -- "https://13001-{web-sbx}.e2b.app + token" --> FANOUT
@@ -68,8 +67,8 @@ flowchart LR
 
 Reading the diagram:
 
-- **Nothing on the host listens beyond 127.0.0.1.** The relay and the host proxy bind loopback
-  only. The E2B API key and every sandbox traffic token live in the relay and proxies, never in
+- **Nothing on the host listens beyond 127.0.0.1.** The bridge and the host proxy bind loopback
+  only. The E2B API key and every sandbox traffic token live in the bridge and proxies, never in
   the guest, so an agent with a terminal cannot read them.
 - **The guest never sees the host.** It only sees inbound requests on its own server port and
   CDP port arriving via E2B ingress. Egress from every sandbox denies RFC1918, link-local and
@@ -91,8 +90,7 @@ Reading the diagram:
 ```mermaid
 sequenceDiagram
     autonumber
-    participant W as run_agent.sh (worker)
-    participant RL as e2b_relay.py (127.0.0.1)
+    participant B as Bridge (in-process)
     participant E as E2B API
     participant G as Guest sandbox<br/>(osworld-server :5000, Chrome :9222)
     participant R as agent_runner.py<br/>DesktopEnv + lib_run_single
@@ -102,39 +100,36 @@ sequenceDiagram
     participant F as Websites fleet sandbox
     participant J as Judge LLM
 
-    Note over W: preflight already passed: host tools, keys, live judge probe, fleet lifetime
+    Note over R: preflight already passed: host tools, keys, live judge probe, fleet lifetime (the coordinator launched this process directly, with a per-task deadline)
 
-    W->>RL: start relay (PORT_BASE = 500 × slot)
-    RL->>E: Sandbox.create(GUEST_TEMPLATE, timeout, secure, network policy, metadata)
-    E-->>RL: sandbox id + traffic token
-    RL->>G: poll GET /health via https://5000-{sbx}.e2b.app until ready
-    RL->>G: upload hostmap_proxy.py + fleet_runtime.json, start guest proxy (:80, :8090)
-    W-->>W: /health on 127.0.0.1:14999 answers → relay ready
+    R->>B: DesktopEnv(provider_name="e2b") → provider.start_emulator() binds ports, Sandbox.create(...)
+    B->>E: Sandbox.create(GUEST_TEMPLATE, timeout, secure, network policy, metadata)
+    E-->>B: sandbox id + traffic token
+    B->>G: poll /screen_size, install guest proxy
+    B-->>R: get_ip_address() = 127.0.0.1:{server}:{cdp}:0:{vlc}
 
-    W->>R: start agent_runner.py --task-id N
-    R->>R: DesktopEnv(provider_name="e2b") → provider.get_ip_address() = 127.0.0.1:15000:19222:0:18080
-    R->>RL: env.reset(task) → provider.revert_to_snapshot("init_state") → POST /reset
-    RL->>E: create new sandbox, kill old one (strict reset)
-    RL->>G: wait ready, reinstall guest proxy
-    RL-->>R: new sandbox id, generation
+    R->>B: env.reset(task) → provider.revert_to_snapshot("init_state")
+    B->>E: create new sandbox, kill old one (strict reset)
+    B->>G: wait ready, reinstall guest proxy
+    B-->>R: new sandbox id, generation
 
     Note over R,G: upstream setup controller runs the task config unchanged
-    R->>RL: POST /setup/upload (task files from gated assets)
-    RL->>E: sandbox.files.write(...)
-    R->>RL: POST /execute (launch LibreOffice / open Chrome)
-    RL->>G: proxied to :5000/execute
-    R->>RL: CDP ws://127.0.0.1:19222 → open tab http://teamchat.127.0.0.1.nip.io:8090/...
-    RL->>G: WebSocket to https://9222-{sbx}.e2b.app
+    R->>B: POST /setup/upload (task files from gated assets)
+    B->>E: sandbox.files.write(...)
+    R->>B: POST /execute (launch LibreOffice / open Chrome)
+    B->>G: proxied to :5000/execute
+    R->>B: CDP ws://127.0.0.1:{cdp} → open tab http://teamchat.127.0.0.1.nip.io:8090/...
+    B->>G: WebSocket to https://9222-{sbx}.e2b.app
     G->>P: Chrome resolves nip.io → 127.0.0.1, hits guest proxy
     P->>F: https://13001-{web-sbx}.e2b.app + e2b-traffic-access-token
     F-->>G: TeamChat page renders
     opt ENABLE_RECORDING=1
-        R->>RL: POST /start_recording → guest ffmpeg
+        R->>B: POST /start_recording → guest ffmpeg
     end
 
     loop until DONE / FAIL / max steps (default 500)
-        R->>RL: GET /screenshot
-        RL->>G: proxied, RL re-arms the sandbox timeout while traffic flows
+        R->>B: GET /screenshot
+        B->>G: proxied, bridge re-arms the sandbox timeout while traffic flows
         G-->>R: 1920×1080 PNG
         R->>A: agent.predict(instruction, screenshot)
         A->>M: chat / messages request
@@ -143,15 +138,15 @@ sequenceDiagram
         alt ASK_USER
             R->>J: user simulator answers (upstream LLMUserSimulator)
         else pyautogui action
-            R->>RL: POST /execute (python pyautogui code)
-            RL->>G: mouse / keyboard on the desktop
+            R->>B: POST /execute (python pyautogui code)
+            B->>G: mouse / keyboard on the desktop
         end
         R->>R: append traj.jsonl, save step PNG (raw dir, gitignored)
     end
 
     Note over R: env.evaluate() — upstream metrics run on the host
-    R->>RL: POST /file (pull the saved document), /accessibility, etc.
-    RL->>G: proxied
+    R->>B: POST /file (pull the saved document), /accessibility, etc.
+    B->>G: proxied
     R->>P: GET http://teamchat.127.0.0.1.nip.io:8090/api/state
     P->>F: fetch site state through fleet ingress
     opt task uses an LLM judge
@@ -159,24 +154,24 @@ sequenceDiagram
     end
     R->>R: write result.txt (score) — receipt records ids, path status, score only
 
-    R->>RL: env.close() → POST /stop
-    RL->>E: sandbox.kill(), delete snapshots
-    W-->>W: exit, coordinator aggregates receipts → campaign gate PASS / FAIL
+    R->>B: env.close() → bridge.stop()
+    B->>E: sandbox.kill(), delete snapshots
+    R-->>R: exit (receipt already written on every exit path), coordinator aggregates receipts → campaign gate PASS / FAIL
 ```
 
 Notes on the sequence:
 
-- **Steps 1–6 and 9–12 are E2B-specific.** Everything between them is unchanged upstream
+- **Steps 1–9 are E2B-specific.** Everything after them is unchanged upstream
   code: the setup controller, `lib_run_single.run_single_example`, the agents under
   `mm_agents/`, the evaluators, the judge and user-simulator clients.
-- **The relay is transparent to DesktopEnv.** DesktopEnv believes it is talking to a VM at
-  127.0.0.1 with the server, CDP and VLC ports the provider reported. The relay forwards each
+- **The bridge is transparent to DesktopEnv.** DesktopEnv believes it is talking to a VM at
+  127.0.0.1 with the server, CDP and VLC ports the provider reported. The bridge forwards each
   request to the right `https://{port}-{sandbox}.e2b.app` host, injects the per-sandbox
   traffic token, and strips it from responses.
-- **Snapshots map to E2B snapshots.** If the loop calls `save_state`, the relay captures a
+- **Snapshots map to E2B snapshots.** If the loop calls `save_state`, the bridge captures a
   memory + filesystem snapshot; a later `revert_to_snapshot(name)` creates a fresh sandbox from
   it. The default `init_state` is simply a new sandbox from the template.
-- **Timeouts.** `SANDBOX_TIMEOUT_S` (default 1 h) is an idle ceiling that the relay re-arms
+- **Timeouts.** `SANDBOX_TIMEOUT_S` (default 1 h) is an idle ceiling that the bridge re-arms
   while guest traffic flows, so a multi-hour task survives and an abandoned guest expires.
 - **Recording** lands as `recording.mp4` next to the trajectory in the raw result directory.
   **Live view / human takeover (VNC)** is not built yet; see
@@ -184,7 +179,7 @@ Notes on the sequence:
 
 ## Where a customer runs the host side
 
-The only hard constraint is that the relay and DesktopEnv share a machine (they talk over
+The only hard constraint is that the bridge runs inside the DesktopEnv process (they talk over
 127.0.0.1). Any Linux VM works, including an E2B sandbox used as the coordinator. Host needs:
 `uv` (Python 3.12), `ffmpeg` and `imagemagick` for the evaluators, outbound HTTPS to E2B, the
 model and judge endpoints, Hugging Face, and GitHub. Node 20 is needed only to rebuild the
@@ -196,7 +191,7 @@ All in `examples/osworld-v2/upstream.lock.json`:
 
 | Input | Pin | How it arrives |
 |---|---|---|
-| `xlang-ai/OSWorld-V2` | commit `d578d2d` | `runner/setup.sh` clones it (gitignored), copies in provider + relay + policy, applies 3 one-line patches |
+| `xlang-ai/OSWorld-V2` | commit `d578d2d` | `runner/setup.sh` clones it (gitignored), copies in provider, manager, bridge and policy, applies 4 one-line patches |
 | `xlang-ai/osworld-server` | commit `a3cc3f0` | `template/fetch_server.sh` downloads, patches, bakes into the guest template (never redistributed) |
 | Guest base image | `ubuntu:22.04@sha256:…` | `template/template.ts` via the E2B Template SDK |
 | Fleet base image | `debian:bookworm@sha256:…` + Docker | `services/build_fleet_template.py` |

@@ -2,7 +2,8 @@
 
 Run OSWorld 2.0 agents and benchmarks on E2B Firecracker sandboxes. This repo adapts the
 upstream desktop environment to E2B while keeping OSWorld's tasks, agents, and evaluators.
-It includes a desktop template, the E2B provider, service fleets, and a parallel runner.
+It includes a desktop template, the E2B provider with its in-process sandbox bridge, service
+fleets, and an optional parallel coordinator.
 
 The port is experimental. See the [verified results and known limitations](docs/pr-1-verification.md).
 
@@ -64,6 +65,38 @@ AGENT_MANIFEST="$RUN_ROOT/full-manifest.json" PARALLEL_CONCURRENCY=80 MAX_STEPS=
 Concurrency defaults to and is capped at **80**. Results are in `$RUN_ROOT/agent-full.json`;
 trajectories are in `$RUN_ROOT/agent-raw`. Admitted runs stop their service fleets on exit.
 See [run configuration](docs/configuration.md) for cleanup, recording, and result interpretation.
+
+## Run with upstream's runner
+
+Upstream's scripts work unchanged once `runner/setup.sh` has patched the checkout. The M3
+multi-env runner accepts `--provider_name e2b` (one of `setup.sh`'s four one-line patches);
+each env process owns its own E2B guest and loopback ports, so `--num_envs` is the only
+concurrency knob. Fleets from Quick start step 2 must be running.
+
+```bash
+export WEBSITE_HOST_SUFFIX=127.0.0.1.nip.io:8090 GITLAB_URL=http://gitlab.127.0.0.1.nip.io:8090
+export GITLAB_PRIVATE_TOKEN="$(cat services/.gitlab-token)"
+export HOSTMAP_PROXY_SCRIPT="$PWD/services/hostmap_proxy.py" OSWORLD_FLEET_RULES="$PWD/services/.runtime.json"
+export OSWORLD_FILE_BASE_URL="$PWD/tasks/assets"
+cd OSWorld-V2
+uv run --locked --extra full --python 3.12 --with e2b==2.34.0 --with aiohttp==3.14.1 \
+    python scripts/python/run_multienv_m3.py \
+        --provider_name e2b --num_envs 8 --headless \
+        --model accounts/fireworks/models/minimax-m3 \
+        --base_url https://api.fireworks.ai/inference --api_key "$MODEL_API_KEY" \
+        --client_password osworld-public-evaluation --max_steps 500 \
+        --test_all_meta_path evaluation_examples/test_v2.json --result_dir ./results
+```
+
+`GUEST_TEMPLATE`, `OSWORLD_CAMPAIGN_ID` and `E2B_API_KEY` come from Quick start. Every sandbox
+the run creates carries `OSWORLD_CAMPAIGN_ID` in its metadata, so use a fresh id per run.
+
+Task 082 dials `localhost:3000` on the host, so it runs in its own single-env invocation:
+run the manifest without 082 as above, then 082 alone with `--num_envs 1
+--specific_task_id 082` and `OSWORLD_TASK_SERVICE_PORTS=3000` exported. Without that mapping
+the task's setup cannot reach its service and the bridge logs a hint naming the variable.
+The coordinator in Quick start step 3 does this carve-out for you and adds a judge probe,
+per-task deadlines and receipts; it is optional.
 
 ## Use your own agent
 

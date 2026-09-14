@@ -113,7 +113,7 @@ AGENT_MANIFEST="$RUN_ROOT/sample24-manifest.json" REQUIRE_NO_MODEL_COVERAGE=1 \
 
 Rungs run in order; PATH_PASS is never reported as task success:
 
-1. Static checks (typecheck, compile, relay unit tests).
+1. Static checks (typecheck, compile, bridge unit tests).
 2. Live desktop smoke (windows present, first-run modals absent, non-empty a11y tree).
 3. Two-pass environment-path validation with fresh-sandbox-per-task proof.
 4. Snapshot save/revert probe.

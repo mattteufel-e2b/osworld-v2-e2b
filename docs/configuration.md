@@ -91,8 +91,8 @@ evidence is published only after allowlist sanitization.
 
 The workflow is upstream's: write an agent, point the runner at it, pick tasks, run, read the
 OSWorld outputs. `runner/agents.py` is the one file to edit. It constructs the agent for
-`AGENT_KIND` and holds each kind's upstream generation defaults; `agent_runner.py`, the relay
-and the receipts never look inside the agent.
+`AGENT_KIND` and holds each kind's upstream generation defaults; `agent_runner.py` and the
+receipts never look inside the agent.
 
 - `AGENT_KIND=prompt` is upstream's `PromptAgent` routed at any OpenAI-compatible
   chat-completions endpoint (`MODEL_BASE_URL`, `MODEL_API_KEY`, `MODEL` passed verbatim).

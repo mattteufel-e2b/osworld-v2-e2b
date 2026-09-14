@@ -284,7 +284,7 @@ full native-result parity or a passing 24-task sample.
   fail-closed `task-timeout` receipt (never a score) and is eligible for the
   infrastructure retry wave — unless a completed receipt already exists when the
   deadline fires, in which case that scored receipt is kept.
-- **Setup upload paths**: the relay serves `POST /setup/upload` directly through
+- **Setup upload paths**: the bridge serves `POST /setup/upload` directly through
   the E2B files API and requires absolute guest paths; upstream's in-guest server
   also accepts `~`- and `$VAR`-relative paths. All 108 release tasks use absolute
   paths; custom configs with relative upload destinations must be rewritten.
