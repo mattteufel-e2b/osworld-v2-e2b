@@ -37,6 +37,7 @@ MAINTAINER_FILES = {
     "no_model.py",
     "profile_resources.sh",
     "readiness.py",
+    "receipt_summary.py",  # full ladder receipt -> committed summary evidence
     "run_path_task.sh",
     "validate.sh",
     "validate_parallel.sh",

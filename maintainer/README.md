@@ -14,6 +14,7 @@ optional `REQUIRE_NO_MODEL_COVERAGE=1` gate in `runner/run_agent_parallel.sh` co
 | `harness.py` | The no-agent rollout: reset, observe, fail-closed evaluate, receipt |
 | `no_model.py`, `readiness.py` | Evaluator stubs and bounded observation retries used by the harness |
 | `profile_resources.sh` | Ladder rung 7: publish measured CPU/RAM/disk from evidence |
+| `receipt_summary.py` | Reduce a no-model aggregate receipt to the committable summary |
 
 Each harness process owns its E2B guest through the provider's in-process bridge; there is
 no separate relay to start or clean up. Shared path and environment gates live in
@@ -45,6 +46,8 @@ VALIDATION_MANIFEST="$RUN_ROOT/full-manifest.json" VALIDATION_RUNS=1 \
     EVIDENCE_DIR="$RUN_ROOT/no-model-evidence" OUTPUT="$RUN_ROOT/no-model.json" \
     maintainer/validate_parallel.sh            # all 108 tasks, zero external model calls
 ```
+
+Commit the summary, not the receipt: `python3 maintainer/receipt_summary.py --input "$RUN_ROOT/no-model.json" --output out/osworld-v2-evidence/full-suite/<name>.summary.json`, and keep the full receipt under the gitignored `out/osworld-v2-raw/`.
 
 The no-model receipt distinguishes an evaluator path that returned normally (`PATH_PASS`) from one
 that propagated the intentional disabled-model sentinel (`MODEL_BOUNDARY_PASS`). Both are validated
