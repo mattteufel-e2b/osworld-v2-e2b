@@ -165,7 +165,6 @@ if ! $UV python "$V2ROOT/services/fleetlib.py" --check-lifetime "$MANIFEST" \
     --runtime "$SERVICES_DIR/.runtime.json"; then
     exit 2
 fi
-fleets_admitted=1
 
 mkdir -p "$RAW_DIR/workers" "$(dirname "$OUTPUT")"
 RUN_NONCE="$(python3 "$HERE/prepare_agent_run.py" \
@@ -273,6 +272,9 @@ run_batch() {
     done
     return "$batch_failed"
 }
+
+# Everything above is local; from here a guest may exist, so an exit must stop the fleets.
+fleets_admitted=1
 
 overall=0
 batch=()

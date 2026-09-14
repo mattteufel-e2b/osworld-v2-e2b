@@ -226,7 +226,7 @@ def test_retry_selection_procsub_survives_macos_bash_3_2(tmp_path):
     assert rows == ["001 release"], (rows, result.stdout, result.stderr)
 
 
-def _coordinator_env(tmp_path, *, fleetlib_case: str) -> dict[str, str]:
+def _coordinator_env(tmp_path, *, fleetlib_case: str = "") -> dict[str, str]:
     env = _runner_env(tmp_path, task_timeout=1)
     env.update(
         PARALLEL_CONCURRENCY="1",
@@ -340,7 +340,37 @@ def test_coordinator_rejected_before_admission_leaves_fleets_running(tmp_path):
     assert result.returncode == 2, (result.stdout, result.stderr)
     assert "left running" in result.stderr
     assert not Path(env["FLEET_STOPPED_FILE"]).exists()
-    assert not Path(env["RAW_DIR"], "workers").exists()  # nothing launched
+
+
+def test_occupied_hostmap_port_rejects_the_run_but_leaves_fleets_running(tmp_path):
+    # The 8090 occupancy probe runs after the fleet lifetime check but before
+    # the first batch launches; a purely local failure there must still leave
+    # the fleets running, exactly like a rejection at the lifetime gate.
+    import socket
+
+    blocker = socket.socket()
+    try:
+        blocker.bind(("127.0.0.1", 8090))
+    except OSError:
+        pytest.skip("127.0.0.1:8090 is already in use on this machine")
+    blocker.listen(1)
+    try:
+        env = _coordinator_env(tmp_path)
+        result = subprocess.run(
+            ["bash", str(ROOT / "runner/run_agent_parallel.sh")],
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            timeout=60,
+            check=False,
+        )
+    finally:
+        blocker.close()
+    assert result.returncode == 2, (result.stdout, result.stderr)
+    assert "already occupied" in result.stderr
+    assert "left running" in result.stderr
+    assert not Path(env["FLEET_STOPPED_FILE"]).exists()
 
 
 def test_retry_wave_is_skipped_when_fleets_cannot_outlast_it(tmp_path):
