@@ -6,6 +6,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -101,6 +102,9 @@ class FakeSandbox:
     created = []
     deleted_snapshots = []
     root_capacity_bytes = 100 * 1024**3
+    # Tests that need a slow create set this to a threading.Event; create()
+    # blocks on it until the test releases it.
+    create_gate = None
 
     def __init__(self, sandbox_id):
         self.sandbox_id = sandbox_id
@@ -108,6 +112,29 @@ class FakeSandbox:
         self.killed = False
         self.timeout_calls = []
         self.commands = self.FakeCommands(self)
+        self.files = self.FakeFiles()
+
+    class FakeFiles:
+        """Records the E2B native file calls the setup-upload path makes."""
+
+        def __init__(self):
+            self.entries = {}
+            self.writes = []
+            self.renames = []
+            self.removals = []
+
+        def write(self, path, data, **kwargs):
+            payload = data.read()
+            self.writes.append((path, payload, kwargs))
+            self.entries[path] = payload
+
+        def rename(self, old_path, new_path, **kwargs):
+            self.renames.append((old_path, new_path, kwargs))
+            self.entries[new_path] = self.entries.pop(old_path)
+
+        def remove(self, path, **kwargs):
+            self.removals.append((path, kwargs))
+            self.entries.pop(path, None)
 
     class FakeCommands:
         def __init__(self, sandbox):
@@ -129,6 +156,8 @@ class FakeSandbox:
 
     @classmethod
     def create(cls, template, **kwargs):
+        if cls.create_gate is not None:
+            cls.create_gate.wait(timeout=10)
         sandbox = cls(f"sandbox-{len(cls.created) + 1}")
         sandbox.create_template = template
         sandbox.create_kwargs = kwargs
@@ -758,6 +787,419 @@ class GuestManagerTests(unittest.IsolatedAsyncioTestCase):
         rewritten = bridge._rewrite_cdp_host(payload, 19222).decode()
         self.assertIn("ws://127.0.0.1:19222/devtools/browser/1", rewritten)
         self.assertIn('"host": "127.0.0.1:19222"', rewritten)
+
+
+def _config(**overrides):
+    base = dict(
+        template=IMMUTABLE_TEMPLATE, campaign_id="test-campaign", ready_timeout_s=5
+    )
+    base.update(overrides)
+    return bridge.BridgeConfig(**base)
+
+
+class BridgeTestCase(unittest.TestCase):
+    """Bridge tests against the fake E2B sandbox, with readiness stubbed out."""
+
+    def setUp(self):
+        FakeSandbox.created.clear()
+        FakeSandbox.deleted_snapshots.clear()
+        self.patches = [
+            patch.object(bridge, "Sandbox", FakeSandbox),
+            patch.object(
+                bridge.GuestManager, "_wait_ready", AsyncMock(return_value=None)
+            ),
+        ]
+        for p in self.patches:
+            p.start()
+
+    def tearDown(self):
+        for p in self.patches:
+            p.stop()
+
+
+class BridgeThreadTests(BridgeTestCase):
+    def test_start_binds_free_loopback_ports_and_creates_one_guest(self):
+        b = bridge.Bridge(_config())
+        try:
+            b.start()
+            self.assertTrue(b.started)
+            self.assertTrue(0 < b.server_port <= 65535)
+            self.assertNotEqual(b.server_port, b.cdp_port)
+            self.assertNotEqual(b.cdp_port, b.vlc_port)
+            self.assertEqual(b.local_ports[b.server_port], 5000)
+            self.assertEqual(b.local_ports[b.cdp_port], 9222)
+            self.assertEqual(b.local_ports[b.vlc_port], 8080)
+            self.assertEqual(len(FakeSandbox.created), 1)
+            state = b.state()
+            self.assertEqual(state["sandbox_id"], "sandbox-1")
+            self.assertEqual(state["generation"], 1)
+            self.assertNotIn("traffic_token", json.dumps(state))
+        finally:
+            b.stop()
+        self.assertTrue(FakeSandbox.created[0].killed)
+
+    def test_two_bridges_in_one_process_do_not_collide(self):
+        a, c = bridge.Bridge(_config()), bridge.Bridge(_config())
+        try:
+            a.start()
+            c.start()
+            self.assertEqual(
+                len(
+                    {
+                        a.server_port,
+                        a.cdp_port,
+                        a.vlc_port,
+                        c.server_port,
+                        c.cdp_port,
+                        c.vlc_port,
+                    }
+                ),
+                6,
+            )
+        finally:
+            a.stop()
+            c.stop()
+
+    def test_reset_replaces_the_guest_and_kills_the_previous_one(self):
+        b = bridge.Bridge(_config())
+        try:
+            b.start()
+            state = b.reset("init_state")
+            self.assertEqual(state["sandbox_id"], "sandbox-2")
+            self.assertEqual(state["generation"], 2)
+            self.assertTrue(FakeSandbox.created[0].killed)
+            self.assertFalse(FakeSandbox.created[1].killed)
+        finally:
+            b.stop()
+
+    def test_save_then_reset_by_name_seeds_from_the_snapshot(self):
+        b = bridge.Bridge(_config())
+        try:
+            b.start()
+            snapshot_id = b.save("mid-task")
+            self.assertEqual(snapshot_id, "snap-of-sandbox-1")
+            b.reset("mid-task")
+            self.assertEqual(
+                FakeSandbox.created[1].create_template, "snap-of-sandbox-1"
+            )
+        finally:
+            b.stop()
+        self.assertEqual(FakeSandbox.deleted_snapshots, ["snap-of-sandbox-1"])
+
+    def test_stop_is_idempotent_and_reset_after_stop_raises(self):
+        b = bridge.Bridge(_config())
+        b.start()
+        b.stop()
+        b.stop()
+        with self.assertRaises(bridge.GuestUnavailable):
+            b.reset()
+
+    def test_literal_task_service_port_collision_fails_loudly(self):
+        import socket
+
+        blocker = socket.socket()
+        blocker.bind(("127.0.0.1", 0))
+        blocker.listen(1)
+        port = blocker.getsockname()[1]
+        b = bridge.Bridge(_config(task_service_ports=f"{port}:3000"))
+        try:
+            with self.assertRaisesRegex(RuntimeError, "already owned"):
+                b.start()
+            self.assertEqual(FakeSandbox.created, [])  # no guest before listeners bind
+        finally:
+            blocker.close()
+            b.stop()
+
+    def test_proxy_forwards_to_ingress_with_token_and_rewrites_cdp_host(self):
+        import urllib.request
+
+        b = bridge.Bridge(_config())
+        captured = {}
+
+        class FakeResponse:
+            status = 200
+            headers = {"Content-Type": "application/json"}
+
+            async def read(self):
+                return b'{"webSocketDebuggerUrl": "ws://9222-sandbox-1.example.test/devtools/x", "host": "x"}'
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+        class FakeSession:
+            def __init__(self, *a, **k):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+            def request(
+                self, method, url, headers=None, data=None, allow_redirects=False
+            ):
+                captured.update(method=method, url=url, headers=headers)
+                return FakeResponse()
+
+        try:
+            with patch.object(bridge.aiohttp, "ClientSession", FakeSession):
+                b.start()
+                with urllib.request.urlopen(
+                    f"http://127.0.0.1:{b.cdp_port}/json/version", timeout=5
+                ) as response:
+                    body = response.read().decode()
+            self.assertEqual(
+                captured["url"], "https://9222-sandbox-1.example.test/json/version"
+            )
+            self.assertEqual(
+                captured["headers"]["e2b-traffic-access-token"], "token-sandbox-1"
+            )
+            self.assertIn(f"ws://127.0.0.1:{b.cdp_port}/devtools/x", body)
+            self.assertIn(f'"host": "127.0.0.1:{b.cdp_port}"', body)
+        finally:
+            b.stop()
+
+
+class BridgeUploadTests(BridgeTestCase):
+    """POST /setup/upload through the real listener and the real handler."""
+
+    DESTINATION = "/home/user/Desktop/input.bin"
+    PAYLOAD = b"file-payload"
+
+    @staticmethod
+    def _multipart_body(destination, payload):
+        boundary = "osworld-bridge-test-boundary"
+        body = b"".join(
+            [
+                f"--{boundary}\r\n".encode(),
+                b'Content-Disposition: form-data; name="file_path"\r\n\r\n',
+                destination.encode() + b"\r\n",
+                f"--{boundary}\r\n".encode(),
+                b'Content-Disposition: form-data; name="file_data"; '
+                b'filename="input.bin"\r\n',
+                b"Content-Type: application/octet-stream\r\n\r\n",
+                payload + b"\r\n",
+                f"--{boundary}--\r\n".encode(),
+            ]
+        )
+        return body, f"multipart/form-data; boundary={boundary}"
+
+    def _post_upload(self, bridge_instance, destination=None, payload=None):
+        import urllib.request
+
+        body, content_type = self._multipart_body(
+            self.DESTINATION if destination is None else destination,
+            self.PAYLOAD if payload is None else payload,
+        )
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{bridge_instance.server_port}/setup/upload",
+            data=body,
+            headers={"Content-Type": content_type},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return response.status, response.read().decode()
+
+    @staticmethod
+    def _recording_session(requests):
+        class FakeSession:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+            def request(self, method, url, **kwargs):
+                requests.append((method, url))
+                raise AssertionError("upload must not be forwarded over HTTP")
+
+        return FakeSession
+
+    def test_setup_upload_uses_the_native_file_api_without_forwarding_http(self):
+        b = bridge.Bridge(_config())
+        forwarded = []
+        try:
+            with patch.object(
+                bridge.aiohttp, "ClientSession", self._recording_session(forwarded)
+            ):
+                b.start()
+                status, text = self._post_upload(b)
+            files = FakeSandbox.created[0].files
+        finally:
+            b.stop()
+
+        self.assertEqual(status, 200)
+        self.assertEqual(text, f"File Uploaded: {len(self.PAYLOAD)} bytes")
+        self.assertEqual(forwarded, [])
+        self.assertEqual(len(files.writes), 1)
+        staging_path, written, kwargs = files.writes[0]
+        self.assertEqual(str(Path(staging_path).parent), "/home/user/Desktop")
+        self.assertTrue(
+            Path(staging_path).name.startswith(".input.bin.osworld-upload-")
+        )
+        self.assertEqual(written, self.PAYLOAD)
+        self.assertEqual(
+            kwargs,
+            {
+                "user": "user",
+                "request_timeout": b.config.http_timeout_s,
+                "use_octet_stream": True,
+            },
+        )
+        self.assertEqual(
+            files.renames,
+            [
+                (
+                    staging_path,
+                    self.DESTINATION,
+                    {"user": "user", "request_timeout": b.config.http_timeout_s},
+                )
+            ],
+        )
+        self.assertEqual(files.removals, [])
+        self.assertEqual(files.entries, {self.DESTINATION: self.PAYLOAD})
+
+    def test_setup_upload_failure_is_a_502_that_leaves_no_staging_file(self):
+        import urllib.error
+
+        b = bridge.Bridge(_config())
+        try:
+            b.start()
+            files = FakeSandbox.created[0].files
+            files.entries[self.DESTINATION] = b"original"
+
+            def failing_write(path, _data, **kwargs):
+                files.writes.append((path, None, kwargs))
+                files.entries[path] = b"partial"
+                raise InvalidArgumentException("invalid destination")
+
+            files.write = failing_write
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                self._post_upload(b)
+        finally:
+            b.stop()
+
+        self.assertEqual(caught.exception.code, 502)
+        self.assertEqual(len(files.writes), 1)  # permanent failure is not retried
+        staging_path = files.writes[0][0]
+        self.assertNotEqual(staging_path, self.DESTINATION)
+        self.assertEqual(
+            files.removals,
+            [
+                (
+                    staging_path,
+                    {"user": "user", "request_timeout": b.config.http_timeout_s},
+                )
+            ],
+        )
+        self.assertEqual(files.renames, [])
+        self.assertEqual(files.entries, {self.DESTINATION: b"original"})
+
+
+class BridgeRoadmapTests(BridgeTestCase):
+    """Timed-out calls, shutdown reporting and the task-082 listener hint."""
+
+    @staticmethod
+    def _wait_until(predicate, timeout=5.0):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if predicate():
+                return True
+            time.sleep(0.01)
+        return predicate()
+
+    def test_reset_timeout_cancels_the_replace_and_leaves_no_untracked_guest(self):
+        # reset()'s production timeout is ready_timeout_s + 600, far too long to
+        # wait for here, so the test submits the very coroutine reset() submits
+        # and gives _call a short deadline.
+        b = bridge.Bridge(_config())
+        gate = threading.Event()
+        try:
+            b.start()
+            FakeSandbox.create_gate = gate
+            self.addCleanup(setattr, FakeSandbox, "create_gate", None)
+
+            with self.assertRaises(TimeoutError) as caught:
+                b._call("reset", b._manager.revert(None), timeout=0.5)
+            self.assertEqual(str(caught.exception), "bridge reset exceeded 0.5s")
+
+            # The cancelled replace has unwound once it drops the replace lock.
+            self.assertTrue(
+                self._wait_until(lambda: not b._manager._replace_lock.locked())
+            )
+            gate.set()
+            # The create that was already in flight finishes on its worker thread
+            # and reaps its own sandbox rather than leaving it running untracked.
+            self.assertTrue(self._wait_until(lambda: len(FakeSandbox.created) == 2))
+            self.assertTrue(self._wait_until(lambda: FakeSandbox.created[1].killed))
+
+            state = b.state()
+            self.assertEqual(state["sandbox_id"], "sandbox-1")
+            self.assertEqual(state["generation"], 1)
+            self.assertFalse(FakeSandbox.created[0].killed)
+        finally:
+            gate.set()
+            b.stop()
+
+    def test_stop_reports_a_clean_shutdown(self):
+        b = bridge.Bridge(_config())
+        self.assertFalse(b.clean_stop)
+        b.start()
+        b.stop()
+        self.assertTrue(b.clean_stop)
+        self.assertTrue(FakeSandbox.created[0].killed)
+
+    def test_stop_reports_incomplete_cleanup_when_the_loop_thread_does_not_exit(self):
+        b = bridge.Bridge(_config())
+        b.start()
+        loop_thread = b._thread
+
+        class StuckThread:
+            def join(self, timeout=None):
+                pass
+
+            def is_alive(self):
+                return True
+
+        b._thread = StuckThread()
+        with self.assertLogs(bridge.logger, level="ERROR") as logs:
+            b.stop()
+
+        self.assertFalse(b.clean_stop)
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn("bridge did not stop", logs.output[0])
+        self.assertIn("test-campaign", logs.output[0])
+        self.assertIn("sandbox-1", logs.output[0])
+        self.assertNotIn("token-sandbox-1", logs.output[0])
+        # stop() still signalled the real loop, so nothing is left running.
+        loop_thread.join(timeout=10)
+        self.assertFalse(loop_thread.is_alive())
+        self.assertTrue(FakeSandbox.created[0].killed)
+
+    def test_start_hints_that_task_082_needs_a_task_service_listener(self):
+        b = bridge.Bridge(_config())
+        try:
+            with self.assertLogs(bridge.logger, level="INFO") as logs:
+                b.start()
+        finally:
+            b.stop()
+
+        hints = [
+            line for line in logs.output if "OSWORLD_TASK_SERVICE_PORTS empty" in line
+        ]
+        self.assertEqual(len(hints), 1)
+        self.assertIn(
+            "no task-service listeners configured (OSWORLD_TASK_SERVICE_PORTS "
+            "empty); task 082 needs 3000, see README",
+            hints[0],
+        )
 
 
 if __name__ == "__main__":

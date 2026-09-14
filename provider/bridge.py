@@ -15,12 +15,15 @@ exposes synchronous methods for the provider. Nothing here listens beyond
 from __future__ import annotations
 
 import asyncio
+import atexit
+import contextlib
 import json
 import logging
 import os
 import re
 import secrets
 import tempfile
+import threading
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -332,6 +335,8 @@ class GuestManager:
         self._config = config
         self._guest_ports = guest_ports
         self._guest: Guest | None = None
+        # Survives stop() so shutdown reporting can name the last guest.
+        self._last_sandbox_id: str | None = None
         self._lock = asyncio.Lock()
         self._replace_lock = asyncio.Lock()
         # Set once by stop() and never cleared: replace() re-checks it around its
@@ -354,6 +359,10 @@ class GuestManager:
     def touch(self) -> None:
         """Record guest-directed activity for the timeout heartbeat."""
         self._last_activity = asyncio.get_running_loop().time()
+
+    def last_sandbox_id(self) -> str | None:
+        """The most recent guest's sandbox id, kept past stop() for reporting."""
+        return self._last_sandbox_id
 
     def snapshot_ids(self) -> dict[str, str]:
         """This run's saved snapshots (OSWorld name -> persistent E2B id)."""
@@ -404,7 +413,15 @@ class GuestManager:
                 raise GuestUnavailable("guest is not ready")
             return self._guest
 
-    async def _create(self, generation: int, source: str | None = None) -> Guest:
+    async def _kill(self, guest: Guest) -> None:
+        try:
+            await asyncio.to_thread(guest.sandbox.kill)
+        except Exception as exc:
+            logger.warning("could not kill %s: %s", guest.sandbox_id, exc)
+
+    async def _create(
+        self, generation: int, source: str | None, abandoned: threading.Event
+    ) -> Guest:
         def create_sync() -> Sandbox:
             template_or_snapshot = source or self._config.template
             sandbox = Sandbox.create(
@@ -419,13 +436,20 @@ class GuestManager:
                 },
             )
             # The awaiting task can be cancelled while this thread runs (client
-            # disconnect, shutdown); the thread still completes and would leak
-            # the sandbox. asyncio.run() waits for executor threads on exit, so
-            # reaping here is guaranteed to run before the process dies.
+            # disconnect, shutdown, a timed-out Bridge._call); the thread still
+            # completes and would leak the sandbox. asyncio.run() waits for
+            # executor threads on exit, so reaping here is guaranteed to run
+            # before the process dies.
             if self._stopped:
                 sandbox.kill()
                 raise RuntimeError(
                     f"relay stopping; reaped just-created sandbox {sandbox.sandbox_id}"
+                )
+            if abandoned.is_set():
+                sandbox.kill()
+                raise RuntimeError(
+                    f"replace was cancelled; reaped just-created sandbox "
+                    f"{sandbox.sandbox_id}"
                 )
             return sandbox
 
@@ -472,31 +496,38 @@ class GuestManager:
                 if self._stopped:
                     raise GuestUnavailable("bridge is stopping")
                 generation = 1 if self._guest is None else self._guest.generation + 1
-            new_guest = await self._create(generation, source)
-            async with self._lock:
-                # stop() may have run while _create was in flight (it only takes
-                # _lock, which we release across the slow create); installing the
-                # new guest now would orphan it, so reap it instead.
-                if self._stopped:
-                    try:
-                        await asyncio.to_thread(new_guest.sandbox.kill)
-                    except Exception as exc:
-                        logger.warning(
-                            "could not kill %s: %s", new_guest.sandbox_id, exc
-                        )
-                    raise GuestUnavailable("bridge is stopping")
-                old_guest = self._guest
-                self._guest = new_guest
-                # The fresh sandbox starts with a full sandbox_timeout_s, so the
-                # heartbeat owes it nothing until new traffic arrives.
-                now = asyncio.get_running_loop().time()
-                self._last_activity = now
-                self._last_refresh = now
+            # A cancelled caller (a timed-out Bridge._call, a client disconnect)
+            # must not strand a sandbox: create_sync reaps one it is still
+            # building, and a cancel landing after _create returned is reaped
+            # here, so the guest this manager tracks is always one that lives.
+            abandoned = threading.Event()
+            new_guest = None
+            installed = False
+            try:
+                new_guest = await self._create(generation, source, abandoned)
+                async with self._lock:
+                    # stop() may have run while _create was in flight (it only
+                    # takes _lock, which we release across the slow create);
+                    # installing the new guest now would orphan it, so reap it.
+                    if self._stopped:
+                        await self._kill(new_guest)
+                        raise GuestUnavailable("bridge is stopping")
+                    old_guest = self._guest
+                    self._guest = new_guest
+                    self._last_sandbox_id = new_guest.sandbox_id
+                    installed = True
+                    # The fresh sandbox starts with a full sandbox_timeout_s, so
+                    # the heartbeat owes it nothing until new traffic arrives.
+                    now = asyncio.get_running_loop().time()
+                    self._last_activity = now
+                    self._last_refresh = now
+            except asyncio.CancelledError:
+                abandoned.set()
+                if new_guest is not None and not installed:
+                    await self._kill(new_guest)
+                raise
             if old_guest is not None:
-                try:
-                    await asyncio.to_thread(old_guest.sandbox.kill)
-                except Exception as exc:
-                    logger.warning("could not kill %s: %s", old_guest.sandbox_id, exc)
+                await self._kill(old_guest)
         logger.info(
             "guest ready id=%s generation=%s template=%s",
             new_guest.sandbox_id,
@@ -606,10 +637,7 @@ class GuestManager:
             if not self._retain_snapshots:
                 self._snapshots.clear()
         if guest is not None:
-            try:
-                await asyncio.to_thread(guest.sandbox.kill)
-            except Exception as exc:
-                logger.warning("could not kill %s: %s", guest.sandbox_id, exc)
+            await self._kill(guest)
         if not self._retain_snapshots:
             for snapshot_id in sorted(set(snapshots.values())):
                 try:
@@ -675,3 +703,328 @@ async def _ws_connect_with_retry(session, url, headers, retry_s: int):
             if asyncio.get_running_loop().time() >= deadline:
                 raise
             await asyncio.sleep(1)
+
+
+class Bridge:
+    """Synchronous facade over GuestManager + loopback proxy listeners.
+
+    start() binds listeners on 127.0.0.1:0 (plus any literal task-service
+    ports), starts the loop thread, and creates the first guest. Every other
+    method schedules a coroutine on that loop and waits for it.
+    """
+
+    def __init__(self, config: BridgeConfig) -> None:
+        self.config = config
+        self._task_ports = parse_task_service_ports(config.task_service_ports)
+        guest_ports = {GUEST_SERVER_PORT, GUEST_CDP_PORT, GUEST_VLC_PORT}
+        guest_ports.update(self._task_ports.values())
+        self._manager = GuestManager(config, frozenset(guest_ports))
+        # local listener port -> guest port, filled in after bind
+        self.local_ports: dict[int, int] = {}
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._thread: threading.Thread | None = None
+        self._ready = threading.Event()
+        self._stop_event: asyncio.Event | None = None
+        self._startup_error: BaseException | None = None
+        self._stopped = False
+        # True once the loop thread has confirmed it finished cleaning up.
+        self.clean_stop = False
+
+    # ---- public sync API ------------------------------------------------
+    @property
+    def started(self) -> bool:
+        return (
+            self._thread is not None
+            and self._startup_error is None
+            and not self._stopped
+        )
+
+    @property
+    def server_port(self) -> int:
+        return self._local_port_for(GUEST_SERVER_PORT)
+
+    @property
+    def cdp_port(self) -> int:
+        return self._local_port_for(GUEST_CDP_PORT)
+
+    @property
+    def vlc_port(self) -> int:
+        return self._local_port_for(GUEST_VLC_PORT)
+
+    def start(self) -> None:
+        if self._thread is not None:
+            raise RuntimeError("bridge already started")
+        if not self._task_ports:
+            logger.info(
+                "no task-service listeners configured (OSWORLD_TASK_SERVICE_PORTS "
+                "empty); task 082 needs 3000, see README"
+            )
+        self._thread = threading.Thread(
+            target=self._run, name="e2b-bridge", daemon=True
+        )
+        self._thread.start()
+        # bind + create + readiness gate, with headroom for the create call
+        if not self._ready.wait(timeout=self.config.ready_timeout_s + 600):
+            self.stop()
+            raise TimeoutError("bridge did not become ready")
+        if self._startup_error is not None:
+            error, self._startup_error = self._startup_error, None
+            self.stop()
+            raise error
+        atexit.register(self.stop)
+
+    def reset(self, snapshot_name: str | None = None) -> dict:
+        guest = self._call(
+            "reset",
+            self._manager.revert(snapshot_name),
+            timeout=self.config.ready_timeout_s + 600,
+        )
+        return self._manager.public_state(guest)
+
+    def save(self, name: str) -> str:
+        return self._call(
+            "save",
+            self._manager.save_snapshot(name),
+            timeout=self.config.ready_timeout_s + 600,
+        )
+
+    def check_volume(self, requested_gb: int) -> dict:
+        return self._call(
+            "check_volume", self._manager.check_volume(requested_gb), timeout=120
+        )
+
+    def state(self) -> dict:
+        guest = self._call("state", self._manager.current(), timeout=15)
+        return self._manager.public_state(guest)
+
+    def stop(self) -> None:
+        if self._stopped:
+            return
+        self._stopped = True
+        loop, thread, stop_event = self._loop, self._thread, self._stop_event
+        if loop is None or stop_event is None or thread is None:
+            self.clean_stop = True  # nothing was ever running
+        else:
+            join_timeout = self.config.ready_timeout_s + 600
+            # The loop may already be closed (a bridge that failed to start).
+            with contextlib.suppress(RuntimeError):
+                loop.call_soon_threadsafe(stop_event.set)
+            thread.join(timeout=join_timeout)
+            self.clean_stop = not thread.is_alive()
+            if not self.clean_stop:
+                logger.error(
+                    "bridge did not stop within %ss; campaign %s guest %s may "
+                    "still be running",
+                    join_timeout,
+                    self.config.campaign_id,
+                    self._manager.last_sandbox_id(),
+                )
+        with contextlib.suppress(Exception):
+            atexit.unregister(self.stop)
+
+    # ---- internals ------------------------------------------------------
+    def _local_port_for(self, guest_port: int) -> int:
+        for local, guest in self.local_ports.items():
+            if guest == guest_port and local not in self._task_ports:
+                return local
+        raise RuntimeError("bridge is not started")
+
+    def _call(self, name: str, coro, timeout: float):
+        if self._stopped or self._loop is None:
+            coro.close()
+            raise GuestUnavailable("bridge is stopped")
+        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        try:
+            return future.result(timeout)
+        except TimeoutError as exc:
+            # concurrent.futures.TimeoutError is the builtin TimeoutError, so an
+            # operation that timed out on its own lands here too; only an
+            # unfinished future means our own wait ran out.
+            if future.done():
+                raise
+            # Cancel it: a caller that gave up must not have the operation
+            # complete unnoticed behind its back.
+            future.cancel()
+            raise TimeoutError(f"bridge {name} exceeded {timeout}s") from exc
+
+    def _run(self) -> None:
+        try:
+            asyncio.run(self._main())
+        except BaseException as exc:  # noqa: BLE001 -- surfaced to start()
+            if not self._ready.is_set():
+                self._startup_error = exc
+                self._ready.set()
+            else:
+                logger.warning("bridge loop ended with %s", exc)
+
+    async def _main(self) -> None:
+        self._loop = asyncio.get_running_loop()
+        self._stop_event = asyncio.Event()
+        runners: list[web.AppRunner] = []
+        heartbeat: asyncio.Task | None = None
+        try:
+            for guest_port in (GUEST_SERVER_PORT, GUEST_CDP_PORT, GUEST_VLC_PORT):
+                runners.append(await self._listen(0, guest_port))
+            for local_port, guest_port in self._task_ports.items():
+                runners.append(await self._listen(local_port, guest_port))
+            await self._manager.replace()
+            heartbeat = asyncio.create_task(self._manager.heartbeat())
+            self._ready.set()
+            await self._stop_event.wait()
+        finally:
+            if heartbeat is not None:
+                heartbeat.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await heartbeat
+            await self._manager.stop()
+            for runner in reversed(runners):
+                await runner.cleanup()
+
+    async def _listen(self, local_port: int, guest_port: int) -> web.AppRunner:
+        app = web.Application(client_max_size=1024**3)
+        app.router.add_route("*", "/{tail:.*}", self._proxy_handler(guest_port))
+        runner = web.AppRunner(app)
+        await runner.setup()
+        try:
+            await web.TCPSite(runner, "127.0.0.1", local_port).start()
+        except OSError as exc:
+            await runner.cleanup()
+            if local_port != 0:
+                raise RuntimeError(
+                    f"task-service listener port {local_port} is already owned by "
+                    f"another process ({exc}); under parallel envs give this env a "
+                    f"unique local:guest OSWORLD_TASK_SERVICE_PORTS mapping"
+                ) from exc
+            raise
+        bound = runner.addresses[0][1]
+        self.local_ports[bound] = guest_port
+        return runner
+
+    def _proxy_handler(self, guest_port: int):
+        manager = self._manager
+        config = self.config
+
+        async def handler(request: web.Request) -> web.StreamResponse:
+            try:
+                guest = await manager.current()
+            except GuestUnavailable as exc:
+                raise web.HTTPServiceUnavailable(text=str(exc)) from exc
+            manager.touch()
+            local_port = request.transport.get_extra_info("sockname")[1]
+            target = f"https://{guest.hosts[guest_port]}{request.rel_url}"
+            headers = _upstream_headers(request, guest)
+
+            if (
+                guest_port == GUEST_SERVER_PORT
+                and request.method == "POST"
+                and request.path == "/setup/upload"
+            ):
+                return await _direct_setup_upload(request, guest, config)
+
+            if request.headers.get("Upgrade", "").lower() == "websocket":
+                return await self._proxy_websocket(request, target, headers, guest_port)
+
+            body = await request.read()
+            timeout = aiohttp.ClientTimeout(total=config.http_timeout_s)
+            try:
+                async with (
+                    aiohttp.ClientSession(timeout=timeout) as session,
+                    session.request(
+                        request.method,
+                        target,
+                        headers=headers,
+                        data=body or None,
+                        allow_redirects=False,
+                    ) as response,
+                ):
+                    payload = await response.read()
+                    if guest_port == GUEST_CDP_PORT and "json" in response.headers.get(
+                        "Content-Type", ""
+                    ):
+                        payload = _rewrite_cdp_host(payload, local_port)
+                    excluded = {
+                        "content-length",
+                        "transfer-encoding",
+                        "content-encoding",
+                        "connection",
+                        "e2b-traffic-access-token",
+                    }
+                    out_headers = {
+                        key: value
+                        for key, value in response.headers.items()
+                        if key.lower() not in excluded
+                    }
+                    return web.Response(
+                        status=response.status, body=payload, headers=out_headers
+                    )
+            except TimeoutError as exc:
+                raise web.HTTPGatewayTimeout(
+                    text=f"upstream exceeded {config.http_timeout_s}s bridge timeout"
+                ) from exc
+            except aiohttp.ClientError as exc:
+                raise web.HTTPBadGateway(
+                    text=f"upstream request failed: {exc}"
+                ) from exc
+
+        return handler
+
+    async def _proxy_websocket(
+        self,
+        request: web.Request,
+        target: str,
+        headers: dict[str, str],
+        guest_port: int,
+    ) -> web.StreamResponse:
+        manager = self._manager
+        downstream = web.WebSocketResponse(max_msg_size=0)
+        await downstream.prepare(request)
+        timeout = aiohttp.ClientTimeout(total=None, sock_connect=15)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            try:
+                upstream = await _ws_connect_with_retry(
+                    session,
+                    target.replace("https://", "wss://", 1),
+                    headers,
+                    self.config.ws_connect_retry_s,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "[bridge:%s] websocket connect failed: %s", guest_port, exc
+                )
+                await downstream.close(code=1011, message=b"upstream connect failed")
+                return downstream
+
+            async def upstream_to_downstream() -> None:
+                async for message in upstream:
+                    manager.touch()
+                    if message.type == aiohttp.WSMsgType.TEXT:
+                        await downstream.send_str(message.data)
+                    elif message.type == aiohttp.WSMsgType.BINARY:
+                        await downstream.send_bytes(message.data)
+
+            async def downstream_to_upstream() -> None:
+                async for message in downstream:
+                    manager.touch()
+                    if message.type == aiohttp.WSMsgType.TEXT:
+                        await upstream.send_str(message.data)
+                    elif message.type == aiohttp.WSMsgType.BINARY:
+                        await upstream.send_bytes(message.data)
+
+            tasks = [
+                asyncio.create_task(upstream_to_downstream()),
+                asyncio.create_task(downstream_to_upstream()),
+            ]
+            done, pending = await asyncio.wait(
+                tasks, return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
+            for task in done:
+                if not task.cancelled() and task.exception() is not None:
+                    logger.warning(
+                        "[bridge:%s] websocket error: %s", guest_port, task.exception()
+                    )
+            await upstream.close()
+            await downstream.close()
+            return downstream
