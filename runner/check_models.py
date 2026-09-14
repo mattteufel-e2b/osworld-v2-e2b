@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import re
 import secrets
 import sys
 import tempfile
@@ -42,28 +43,38 @@ def simulator_configs(manifest, tasks_dir):
 
 
 def check_models(
-    generate_text, simulator_class, simulator_configs, image_path, image_answer="4827"
+    generate_text,
+    simulator_class,
+    simulator_configs,
+    image_path,
+    image_answer="4827",
+    *,
+    parse_verdict,
+    binary_system=None,
 ):
     # Tasks use budgets as small as five tokens. A generous probe would hide
     # reasoning-only/empty output at the actual evaluator boundary.
-    for prompt, images, expected in (
-        ("Is two plus two equal to four? Reply only YES or NO.", None, "YES"),
-        (
-            "Read the four digits in the image. Reply only with those digits.",
-            [image_path],
-            image_answer,
-        ),
-    ):
-        answer = require_response(
-            generate_text(
-                prompt,
-                image_paths=images,
-                options={"max_tokens": 5, "temperature": 0.0},
-            )
+    options = {"max_tokens": 5, "temperature": 0.0}
+    text = require_response(
+        generate_text(
+            "Is two plus two equal to four? Reply only YES or NO.",
+            image_paths=None,
+            options=options,
+            system=binary_system,
         )
-        if answer.strip().upper() != expected:
-            kind = "image" if images else "text"
-            raise ValueError(f"judge {kind} check returned an incorrect answer")
+    )
+    # Same parser the judge uses: first alphabetic token decides.
+    if parse_verdict(text)[0] != "YES":
+        raise ValueError("judge text check returned an incorrect answer")
+    digits = require_response(
+        generate_text(
+            "Read the four digits in the image. Reply only with those digits.",
+            image_paths=[image_path],
+            options=options,
+        )
+    )
+    if re.sub(r"\D", "", digits) != image_answer:
+        raise ValueError("judge image check returned an incorrect answer")
     for config in simulator_configs:
         probe_config = {
             **config,
@@ -83,6 +94,7 @@ def main() -> int:
     args = parser.parse_args()
     # Run from the pinned checkout in its full evaluator environment.
     sys.path.insert(0, str(Path.cwd()))
+    from desktop_env.evaluators.metrics import llm_metrics
     from desktop_env.evaluators.model_client import generate_text
     from desktop_env.user_simulator import LLMUserSimulator
     from PIL import Image, ImageDraw, ImageFont
@@ -96,7 +108,15 @@ def main() -> int:
             (40, 30), image_answer, font=ImageFont.load_default(size=96), fill="black"
         )
         image.save(image_path)
-        check_models(generate_text, LLMUserSimulator, configs, image_path, image_answer)
+        check_models(
+            generate_text,
+            LLMUserSimulator,
+            configs,
+            image_path,
+            image_answer,
+            parse_verdict=llm_metrics._extract_verdict_and_explanation,
+            binary_system=llm_metrics._SYSTEM_BINARY,
+        )
     print(
         f"live model check ok: text + image judge, {len(configs)} simulator configuration(s)"
     )
