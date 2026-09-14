@@ -149,7 +149,7 @@ def _count_steps(result_dir: Path) -> int:
             if row.get("action") in (None, "ASK_USER"):
                 continue
             if "step_num" in row:
-                steps.add(row["step_num"])
+                steps.add((row.get("phase_index", 1), row["step_num"]))
     return len(steps)
 
 
