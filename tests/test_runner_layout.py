@@ -41,12 +41,7 @@ MAINTAINER_FILES = {
     "validate.sh",
     "validate_parallel.sh",
 }
-SPIKE_FILES = {
-    "smoke.py",
-    "snapshot_probe.py",
-    "spike_audio.py",
-    "spike_ingress.py",
-}
+SPIKE_FILES = {"spike_audio.py", "spike_ingress.py"}
 
 
 def _files(directory: Path) -> set[str]:
