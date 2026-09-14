@@ -43,6 +43,14 @@ def test_sequential_validator_owns_host_proxy_for_whole_run():
     assert "trap cleanup_all EXIT INT TERM" in validator
 
 
+def test_path_harness_reads_sandbox_identity_from_the_bridge():
+    harness = (ROOT / "maintainer" / "harness.py").read_text()
+    assert "env.provider.bridge.state()" in harness
+    assert "14999" not in harness
+    assert "OSWORLD_RELAY_PORT_BASE" not in harness
+    assert 'os.environ["GUEST_TEMPLATE"]' in harness
+
+
 def test_website_fanout_accepts_large_state_and_reloads_config():
     launcher = (ROOT / "services" / "websites" / "launch.py").read_text()
 

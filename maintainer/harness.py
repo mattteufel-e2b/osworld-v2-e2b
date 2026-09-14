@@ -34,7 +34,6 @@ import time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.request import urlopen
 
 
 # task_loader.py is a top-level module in the pinned checkout root (not part of
@@ -65,16 +64,6 @@ def _alarm_handler(_signum, _frame):
 
 def utc_now() -> str:
     return datetime.now(UTC).isoformat()
-
-
-def relay_port_base() -> int:
-    return int(os.environ.get("OSWORLD_RELAY_PORT_BASE", "0"))
-
-
-def relay_state() -> dict:
-    url = f"http://127.0.0.1:{14999 + relay_port_base()}/state"
-    with urlopen(url, timeout=10) as response:
-        return json.load(response)
 
 
 def osworld_commit(root: Path) -> str:
@@ -157,7 +146,7 @@ def run_task(
     start = time.monotonic()
     try:
         observation = env.reset(task_config=task)
-        state = relay_state()
+        state = env.provider.bridge.state()
         record["sandbox"] = {
             "id": state["sandbox_id"],
             "generation": state["generation"],
@@ -247,10 +236,10 @@ def main() -> int:
             f"OSWorld-V2 commit mismatch: expected {expected_commit}, got {actual_commit}"
         )
 
-    relay = relay_state()
-    if manifest["template"] != relay["template"]:
+    guest_template = os.environ["GUEST_TEMPLATE"]
+    if manifest["template"] != guest_template:
         raise RuntimeError(
-            f"template mismatch: manifest {manifest['template']} vs relay {relay['template']}"
+            f"template mismatch: manifest {manifest['template']} vs GUEST_TEMPLATE {guest_template}"
         )
 
     # Several upstream getters/evaluators resolve assets and repo-relative paths
@@ -273,7 +262,7 @@ def main() -> int:
         "dependencies": {
             name: importlib.metadata.version(name) for name in ("e2b", "aiohttp")
         },
-        "relay": relay,
+        "bridge": {"template": guest_template},
         "records": [],
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -294,6 +283,7 @@ def main() -> int:
             headless=True,
             enable_proxy=False,
         )
+        run["bridge"] = env.provider.bridge.state()
         sandbox_ids: set[str] = set()
         for item, task_path in tasks:
             signal.alarm(args.task_timeout_seconds)

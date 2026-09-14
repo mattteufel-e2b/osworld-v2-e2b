@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 # Maintainer-only release validation (sequential): run the
 # selected manifest VALIDATION_RUNS times against the immutable guest template,
-# preserving per-run receipts and raw relay logs. The final gate derives its
+# preserving per-run receipts and raw logs. The final gate derives its
 # expected task and unique-sandbox counts from the manifest and VALIDATION_RUNS.
 #
-# Relay + harness run under the pinned checkout's project env via worker_lib.sh;
-# this script additionally owns the host-side fleet proxy for the whole run.
+# Each harness process runs under the pinned checkout's project env (paths and
+# gates shared via runner/common.sh) and owns its own in-process bridge; this
+# script additionally owns the host-side fleet proxy for the whole run.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$HERE/../runner/worker_lib.sh"  # shared with the benchmark path
+source "$HERE/../runner/common.sh"
 MANIFEST="${VALIDATION_MANIFEST:-$V2ROOT/validation/manifest.json}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-$REPO_ROOT/out/osworld-v2-evidence}"
 RAW_DIR="${RAW_DIR:-$REPO_ROOT/out/osworld-v2-raw}"
@@ -25,13 +26,15 @@ unset OSWORLD_EVAL_MODEL_API_KEY OSWORLD_USER_SIM_API_KEY
 resolve_e2b_api_key
 
 mkdir -p "$EVIDENCE_DIR" "$RAW_DIR"
+MANIFEST="$(abspath "$MANIFEST")"
+EVIDENCE_DIR="$(abspath "$EVIDENCE_DIR")"
+RAW_DIR="$(abspath "$RAW_DIR")"
 overall=0
 proxy_pid=""
 outputs=()
 cleanup_all() {
     local status=$?
     trap - EXIT INT TERM
-    worker_cleanup
     if [ -n "$proxy_pid" ] && kill -0 "$proxy_pid" 2>/dev/null; then
         kill "$proxy_pid" 2>/dev/null || true
         wait "$proxy_pid" 2>/dev/null || true
@@ -46,7 +49,6 @@ if ! python3 "$RUNNER_DIR/preflight.py" \
     exit 2
 fi
 
-namespace_relay 0
 export_fleet_wiring
 
 echo "template=$GUEST_TEMPLATE"
@@ -91,28 +93,17 @@ fi
 for run_number in $(seq 1 "$RUNS"); do
     output="$EVIDENCE_DIR/validate-run${run_number}.json"
     outputs+=("$output")
-    relay_log="$RAW_DIR/validate-run${run_number}-relay.log"
-
-    if ! start_relay "$relay_log"; then
-        echo "relay did not become ready for run $run_number" >&2
-        shutdown_relay
-        overall=1
-        continue
-    fi
-
-    start_in_new_session "$OSWORLD_ROOT" "${WORKER_UV[@]}" python "$HERE/harness.py" \
-        --osworld-root "$OSWORLD_ROOT" \
-        --tasks-dir "$TASKS_DIR" \
-        --manifest "$MANIFEST" \
-        --raw-dir "$RAW_DIR" \
-        --output "$output" &
-    rollout_pid=$!
-    # One harness process runs every manifest task and bounds each with its own
-    # TASK_TIMEOUT_SECONDS, so no per-task deadline applies here.
-    wait_for_rollout 0
+    (
+        cd "$OSWORLD_ROOT" &&
+        "${WORKER_UV[@]}" python "$HERE/harness.py" \
+            --osworld-root "$OSWORLD_ROOT" \
+            --tasks-dir "$TASKS_DIR" \
+            --manifest "$MANIFEST" \
+            --raw-dir "$RAW_DIR" \
+            --output "$output"
+    )
     status=$?
     [ "$status" -eq 0 ] || overall=1
-    shutdown_relay
 done
 
 # ---- aggregate gate: every task passes and every sandbox id is unique ------

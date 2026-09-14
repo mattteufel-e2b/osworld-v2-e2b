@@ -9,14 +9,15 @@ optional `REQUIRE_NO_MODEL_COVERAGE=1` gate in `runner/run_agent_parallel.sh` co
 | Script | Purpose |
 |---|---|
 | `validate_parallel.sh` | All manifest tasks, one worker each (default and cap of 80 concurrent), aggregate gate |
-| `run_path_task.sh` | One no-model task on its own namespaced relay (worker for the above) |
+| `run_path_task.sh` | One no-model task in its own process (worker for the above) |
 | `validate.sh` | Sequential variant, `VALIDATION_RUNS` passes over a manifest |
 | `harness.py` | The no-agent rollout: reset, observe, fail-closed evaluate, receipt |
 | `no_model.py`, `readiness.py` | Evaluator stubs and bounded observation retries used by the harness |
 | `profile_resources.sh` | Ladder rung 7: publish measured CPU/RAM/disk from evidence |
 
-Relay start-up, watchdog and process-group teardown are shared with the benchmark path
-through `runner/worker_lib.sh`; a lifecycle fix there applies to both.
+Each harness process owns its E2B guest through the provider's in-process bridge; there is
+no separate relay to start or clean up. Shared path and environment gates live in
+`runner/common.sh`.
 
 Run the commands below in Bash from the repository root, after building the templates,
 downloading the gated data, and starting a fleet campaign as described in the
