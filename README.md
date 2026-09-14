@@ -76,11 +76,22 @@ multi-env runner accepts `--provider_name e2b` (one of `setup.sh`'s four one-lin
 each env process owns its own E2B guest and loopback ports, so `--num_envs` is the only
 concurrency knob. Fleets from Quick start step 2 must be running.
 
+Upstream's loader resolves task classes at `OSWorld-V2/evaluation_examples/task_class/`;
+`runner/gated_data.py` downloads them to `tasks/` instead, so copy them into the checkout
+first (harmless: the checkout is gitignored, so this doesn't affect `setup.sh --verify`).
+The coordinator also starts the host hostmap proxy for you; on this path start it yourself,
+or task setup and evaluators on the host cannot reach `*.127.0.0.1.nip.io:8090`.
+
 ```bash
 export WEBSITE_HOST_SUFFIX=127.0.0.1.nip.io:8090 GITLAB_URL=http://gitlab.127.0.0.1.nip.io:8090
 export GITLAB_PRIVATE_TOKEN="$(cat services/.gitlab-token)"
 export HOSTMAP_PROXY_SCRIPT="$PWD/services/hostmap_proxy.py" OSWORLD_FLEET_RULES="$PWD/services/.runtime.json"
 export OSWORLD_FILE_BASE_URL="$PWD/tasks/assets"
+cp tasks/task_*.py OSWorld-V2/evaluation_examples/task_class/
+
+HOSTMAP_PORT=8090 FLEET_RUNTIME_FILE="$PWD/services/.runtime.json" \
+    uv run --python 3.12 --with e2b==2.34.0 python services/hostmap_proxy.py &
+
 cd OSWorld-V2
 uv run --locked --extra full --python 3.12 --with e2b==2.34.0 --with aiohttp==3.14.1 \
     python scripts/python/run_multienv_m3.py \
@@ -93,6 +104,8 @@ uv run --locked --extra full --python 3.12 --with e2b==2.34.0 --with aiohttp==3.
 
 `GUEST_TEMPLATE`, `OSWORLD_CAMPAIGN_ID` and `E2B_API_KEY` come from Quick start. Every sandbox
 the run creates carries `OSWORLD_CAMPAIGN_ID` in its metadata, so use a fresh id per run.
+Stop the hostmap proxy (kill its backgrounded pid) when the run ends; the coordinator does
+both the starting and the stopping for you.
 
 Task 082 dials `localhost:3000` on the host, so it runs in its own single-env invocation:
 run the manifest without 082 as above, then 082 alone with `--num_envs 1
