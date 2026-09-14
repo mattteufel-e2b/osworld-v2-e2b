@@ -69,19 +69,7 @@ fi
 HOSTMAP_PORT="8090" FLEET_RUNTIME_FILE="$SERVICES_DIR/.runtime.json" \
     $UV python "$SERVICES_DIR/hostmap_proxy.py" >"$RAW_DIR/hostmap-proxy.log" 2>&1 &
 proxy_pid=$!
-proxy_ready=0
-for _ in $(seq 1 30); do
-    if ! kill -0 "$proxy_pid" 2>/dev/null; then break; fi
-    if curl -fsS -H 'Host: mailhub.127.0.0.1.nip.io' \
-        'http://127.0.0.1:8090/api/state?cookie=parallel-validation' >/dev/null 2>&1; then
-        proxy_ready=1
-        break
-    fi
-    sleep 2
-done
-if [ "$proxy_ready" -ne 1 ]; then
-    echo "fleet proxy or website service failed readiness" >&2
-    tail -40 "$RAW_DIR/hostmap-proxy.log" >&2
+if ! wait_for_hostmap_proxy "$proxy_pid" "parallel-validation" "$RAW_DIR/hostmap-proxy.log"; then
     exit 1
 fi
 
