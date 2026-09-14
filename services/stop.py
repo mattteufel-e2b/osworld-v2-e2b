@@ -77,7 +77,8 @@ def stop_campaign(campaign: str, dry_run: bool = False) -> list[str]:
     try:
         listed_targets = list_campaign_targets(campaign)
     except Exception as exc:  # noqa: BLE001
-        fl.stop_host_proxy()
+        if not dry_run:
+            fl.stop_host_proxy()
         raise RuntimeError(
             f"could not enumerate campaign sandboxes for campaign {campaign}: {exc}"
         ) from exc
@@ -96,8 +97,8 @@ def stop_campaign(campaign: str, dry_run: bool = False) -> list[str]:
 
     if dry_run:
         print(
-            f"stopped_service_sandboxes={service_count} "
-            f"stopped_guest_sandboxes={guest_count}"
+            f"would_stop_service_sandboxes={service_count} "
+            f"would_stop_guest_sandboxes={guest_count}"
         )
         return sorted(targets)
 

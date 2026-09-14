@@ -178,6 +178,9 @@ def test_sweep_kills_only_exact_campaign_matches_across_both_workloads(tmp_path)
 
     assert set(stopped) == {"A1", "A2", "A-web"}
     assert set(fake.killed) == {"A1", "A2", "A-web"}
+    assert not (
+        {"B1", "no-metadata", "no-campaign", "other-workload"} & set(fake.killed)
+    )
     delete.assert_not_called()
 
 
@@ -204,6 +207,8 @@ def test_dry_run_lists_targets_and_kills_nothing(tmp_path, monkeypatch, capsys):
         ("A-web", "osworld-v2-services"),
     ):
         assert f"campaign=A workload={workload} sandbox={sandbox_id}" in out
+    assert "sandbox=B1" not in out
+    assert "would_stop_service_sandboxes=1 would_stop_guest_sandboxes=2" in out
 
 
 def test_empty_campaign_id_is_refused(tmp_path, monkeypatch):
@@ -237,3 +242,60 @@ def test_incomplete_sweep_exits_non_zero(tmp_path, monkeypatch):
             stop.main()
 
     assert set(fake.killed) == {"A1", "A2"}
+
+
+class _RaisingListSandbox:
+    """A Sandbox stand-in whose list() always fails, to exercise the
+    listing-error path without ever reaching a kill call."""
+
+    def list(self, query=None, limit=100):
+        raise RuntimeError("listing failed")
+
+    def kill(self, sandbox_id):
+        raise AssertionError("kill must not be called on the listing-error path")
+
+
+def test_dry_run_listing_error_never_stops_host_proxy(tmp_path):
+    with (
+        patch.object(stop.fl, "SERVICES_DIR", tmp_path),
+        patch.object(stop.fl, "read_runtime", return_value={}),
+        patch.object(stop.fl, "stop_host_proxy") as stop_proxy,
+        patch.object(stop, "Sandbox", _RaisingListSandbox()),
+    ):
+        with pytest.raises(RuntimeError, match="could not enumerate"):
+            stop.stop_campaign("A", dry_run=True)
+
+    stop_proxy.assert_not_called()
+
+
+def test_real_run_listing_error_stops_host_proxy(tmp_path):
+    with (
+        patch.object(stop.fl, "SERVICES_DIR", tmp_path),
+        patch.object(stop.fl, "read_runtime", return_value={}),
+        patch.object(stop.fl, "stop_host_proxy") as stop_proxy,
+        patch.object(stop, "Sandbox", _RaisingListSandbox()),
+    ):
+        with pytest.raises(RuntimeError, match="could not enumerate"):
+            stop.stop_campaign("A", dry_run=False)
+
+    stop_proxy.assert_called_once()
+
+
+class _PermissiveListSandbox:
+    """A Sandbox stand-in whose list() ignores the query entirely and always
+    returns the full inventory, so only stop.py's client-side re-check can
+    be responsible for narrowing the result."""
+
+    def __init__(self, inventory):
+        self.inventory = list(inventory)
+
+    def list(self, query=None, limit=100):
+        return _FakePaginator(self.inventory)
+
+
+def test_list_campaign_sandbox_ids_rechecks_client_side_against_a_permissive_server():
+    fake = _PermissiveListSandbox(_mixed_inventory())
+    with patch.object(stop, "Sandbox", fake):
+        result = stop.list_campaign_sandbox_ids("A", "osworld")
+
+    assert result == {"A1", "A2"}
