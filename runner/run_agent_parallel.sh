@@ -6,7 +6,7 @@
 # strict reset can briefly own two guests per worker, so 80 workers peak near
 # 160 guest sandboxes plus the two fleet sandboxes under a 200-concurrent-
 # sandbox account ceiling. Task 082 alone dials host port 3000, so it gets a
-# literal task-service listener and runs solo by default.
+# literal task-service listener, and runs solo when RUN_TASK_082_CONCURRENT=0.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -144,7 +144,7 @@ if ! python3 "$HERE/preflight.py" \
     --services-dir "$SERVICES_DIR" --manifest "$MANIFEST"; then
     exit 2
 fi
-export OSWORLD_PREFLIGHT_VERIFIED=1  # workers skip the checks just made for them
+
 # Reject an unknown AGENT_KIND now, in the worker's own environment, rather than
 # letting every worker discover it after its guest sandbox has been created.
 if ! (cd "$OSWORLD_ROOT" && PYTHONPATH="$OSWORLD_ROOT" uv run --locked --extra full --python 3.12 \
