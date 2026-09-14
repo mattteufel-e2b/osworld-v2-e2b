@@ -133,7 +133,10 @@ def test_preflight_rejects_busy_canonical_task_082_host_port(tmp_path, monkeypat
     import preflight
 
     osworld, tasks, manifest, services = _minimal_inputs(tmp_path)
-    (osworld / "e2b_relay.py").write_text("# test relay\n")
+    (osworld / "desktop_env" / "providers" / "e2b").mkdir(parents=True, exist_ok=True)
+    (osworld / "desktop_env" / "providers" / "e2b" / "bridge.py").write_text(
+        "# test bridge\n"
+    )
     (tasks / "task_001.py").unlink()
     (tasks / "task_082.py").write_text("TASK = {}\n")
     manifest.write_text(
@@ -216,7 +219,10 @@ def _admissible_inputs(tmp_path, monkeypatch):
     monkeypatch.setattr("shutil.which", lambda name: f"/usr/bin/{name}")
 
     osworld, tasks, manifest, services = _minimal_inputs(tmp_path)
-    (osworld / "e2b_relay.py").write_text("# test relay\n")
+    (osworld / "desktop_env" / "providers" / "e2b").mkdir(parents=True, exist_ok=True)
+    (osworld / "desktop_env" / "providers" / "e2b" / "bridge.py").write_text(
+        "# test bridge\n"
+    )
     runtime = {
         "websites": {
             "sandbox_id": "website-sandbox",

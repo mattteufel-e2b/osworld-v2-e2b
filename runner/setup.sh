@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
 # Self-contained OSWorld-V2-on-E2B setup: clone OSWorld-V2 at the validated pin
 # (examples/osworld-v2/upstream.lock.json) and wire in the E2B provider
-# (provider/provider.py + provider/manager.py) so OSWorld-V2's own run.py works
-# with --provider_name e2b. Idempotent: re-running is safe and each string patch
-# is grep-guarded, reporting "already applied" on the second run.
+# (provider/provider.py + provider/manager.py + provider/bridge.py, the
+# in-process bridge) so OSWorld-V2's own run.py works with --provider_name e2b.
+# Idempotent: re-running is safe and each of the four string patches is
+# grep-guarded, reporting "already applied" on the second run.
 #
 # Checkout states (the checkout is gitignored, so its state lives on disk only):
 #   * "applied"  — setup.sh's patches present (register+classify e2b provider,
-#                  strict reset, vendored provider/manager + relay/policy). This
-#                  is the NORMAL operating state between runs and the state
-#                  checked by `setup.sh --verify`. Re-running setup.sh with no
-#                  flag restores it idempotently.
+#                  strict reset, --provider_name e2b accepted by the M3 runner,
+#                  vendored provider/manager/bridge + policy). This is the
+#                  NORMAL operating state between runs and the state checked
+#                  by `setup.sh --verify`. Re-running setup.sh with no flag
+#                  restores it idempotently.
 #   * "pristine" — the upstream pin with no tracked edits. Reach it with
 #                  `setup.sh --restore`: it reverts every tracked edit (setup.sh's
 #                  own patches and any drift --verify would reject, e.g. a
@@ -25,7 +27,6 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 V2ROOT="$(cd "$HERE/.." && pwd)"            # repo root
-RELAY_DIR="$V2ROOT/relay"
 PROVIDER_DIR="$V2ROOT/provider"
 POLICY_FILE="$V2ROOT/e2b_policy.py"
 LOCKFILE="$V2ROOT/examples/osworld-v2/upstream.lock.json"
@@ -48,11 +49,15 @@ DEST="${1:-$PWD/OSWorld-V2}"
 # setup.sh's footprint in the checkout, declared once: the tracked files it
 # patches in place and the local files it vendors in. --verify checks exactly
 # this set; --restore reverts it. Any --verify failure prints REPAIR_HINT.
-PATCHED_TRACKED=(desktop_env/desktop_env.py desktop_env/providers/__init__.py)
+PATCHED_TRACKED=(
+    desktop_env/desktop_env.py
+    desktop_env/providers/__init__.py
+    scripts/python/run_multienv_m3.py
+)
 VENDORED=(
     "desktop_env/providers/e2b/provider.py:$PROVIDER_DIR/provider.py"
     "desktop_env/providers/e2b/manager.py:$PROVIDER_DIR/manager.py"
-    "e2b_relay.py:$RELAY_DIR/relay.py"
+    "desktop_env/providers/e2b/bridge.py:$PROVIDER_DIR/bridge.py"
     "e2b_policy.py:$POLICY_FILE"
 )
 REPAIR_HINT="repair with: runner/setup.sh --restore $DEST && runner/setup.sh $DEST"
@@ -85,9 +90,9 @@ EOF
 )"
 
 for required_file in \
-    "$RELAY_DIR/relay.py" \
     "$PROVIDER_DIR/provider.py" \
     "$PROVIDER_DIR/manager.py" \
+    "$PROVIDER_DIR/bridge.py" \
     "$POLICY_FILE" \
     "$HERE/requirements-e2b.txt"
 do
@@ -160,6 +165,20 @@ else:
     assert count == 1, f"desktop_env.py reset condition found {count}x, need exactly 1 (OSWorld-V2 moved?)"
     denv.write_text(src.replace(reset_anchor, reset_patched, 1))
     print('(c) desktop_env.py: patched (strict fresh sandbox for e2b resets)')
+
+# (d) let upstream's M3 multi-env runner accept --provider_name e2b ---------
+m3 = dest / "scripts/python/run_multienv_m3.py"
+if m3.exists():
+    src = m3.read_text()
+    m3_anchor = 'choices=["aws", "virtualbox", "vmware", "docker", "azure"]'
+    m3_patched = 'choices=["aws", "virtualbox", "vmware", "docker", "azure", "e2b"]'
+    if m3_patched in src:
+        print("(d) run_multienv_m3.py: already applied")
+    else:
+        count = src.count(m3_anchor)
+        assert count == 1, f"run_multienv_m3.py provider choices found {count}x, need exactly 1 (OSWorld-V2 moved?)"
+        m3.write_text(src.replace(m3_anchor, m3_patched, 1))
+        print("(d) run_multienv_m3.py: patched (accepts --provider_name e2b)")
 
 EOF
 }
@@ -244,16 +263,16 @@ if current != pristine:
     print("lib_run_single.py: restored upstream terminal observation handling")
 EOF
 
-# ---- provider package ----------------------------------------------------
+# ---- provider package (provider + manager + in-process bridge) -------------
 mkdir -p "$DEST/desktop_env/providers/e2b"
-cp "$PROVIDER_DIR/provider.py" "$PROVIDER_DIR/manager.py" "$DEST/desktop_env/providers/e2b/"
+cp "$PROVIDER_DIR/provider.py" "$PROVIDER_DIR/manager.py" "$PROVIDER_DIR/bridge.py" \
+    "$DEST/desktop_env/providers/e2b/"
 touch "$DEST/desktop_env/providers/e2b/__init__.py"
-
-# ---- relay (runs on the host next to run.py) ------------------------------
-cp "$RELAY_DIR/relay.py" "$DEST/e2b_relay.py"
+# The bridge imports e2b_policy from the checkout root (run.py's cwd).
 cp "$POLICY_FILE" "$DEST/e2b_policy.py"
 
-# ---- string patches: register + classify the provider, force strict reset --
+# ---- string patches: register + classify the provider, force strict reset,
+#      accept --provider_name e2b in the M3 multi-env runner ------------------
 apply_adapter_patches "$DEST"
 
 echo

@@ -35,7 +35,12 @@ def test_verify_checkout_rejects_drift_without_modifying_it(tmp_path):
         ["git", "-C", str(checkout), "show", f"{PIN}:{backend}"]
     )
     assert (checkout / backend).read_bytes() == pristine
-    for relative in ("lib_run_single.py", "e2b_relay.py", "run.py", backend):
+    for relative in (
+        "lib_run_single.py",
+        "desktop_env/providers/e2b/bridge.py",
+        "run.py",
+        backend,
+    ):
         target = checkout / relative
         original = target.read_bytes()
         changed = original + b"\n# unexpected modification\n"
@@ -61,3 +66,45 @@ def test_verify_checkout_rejects_drift_without_modifying_it(tmp_path):
         ["git", "-C", str(checkout), "checkout", "--quiet", "HEAD~1"], check=True
     )
     assert subprocess.run(verify, capture_output=True).returncode != 0
+
+
+def test_setup_patches_the_m3_runner_provider_choices(tmp_path):
+    dest = tmp_path / "OSWorld-V2"
+    (dest / "scripts" / "python").mkdir(parents=True)
+    (dest / "desktop_env" / "providers").mkdir(parents=True)
+    (dest / "desktop_env" / "providers" / "__init__.py").write_text(
+        '    else:\n        raise NotImplementedError(f"{provider_name} not implemented!")'
+    )
+    (dest / "desktop_env" / "desktop_env.py").write_text(
+        'if self.provider_name in {"docker", "aws", "gcp", "azure", "aliyun", "volcengine"}:\n'
+        "if self.is_environment_used:\n"
+    )
+    (dest / "scripts" / "python" / "run_multienv_m3.py").write_text(
+        '        "--provider_name", type=str, default="aws", '
+        'choices=["aws", "virtualbox", "vmware", "docker", "azure"], help="Provider name"\n'
+    )
+    script = (ROOT / "runner" / "setup.sh").read_text()
+    body = script[
+        script.index("apply_adapter_patches() {") : script.index(
+            "\n}\n", script.index("apply_adapter_patches() {")
+        )
+        + 3
+    ]
+    subprocess.run(
+        ["bash", "-c", body + f'\napply_adapter_patches "{dest}"'],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    patched = (dest / "scripts" / "python" / "run_multienv_m3.py").read_text()
+    assert (
+        'choices=["aws", "virtualbox", "vmware", "docker", "azure", "e2b"]' in patched
+    )
+    # idempotent
+    subprocess.run(
+        ["bash", "-c", body + f'\napply_adapter_patches "{dest}"'],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert patched == (dest / "scripts" / "python" / "run_multienv_m3.py").read_text()
