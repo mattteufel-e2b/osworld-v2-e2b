@@ -78,3 +78,4 @@ See [agent configuration and examples](docs/configuration.md#bring-your-own-agen
 - [Runtime, resources, networking, and snapshots](docs/runtime.md)
 - [Maintainer validation](maintainer/README.md)
 - [Verification evidence](FIDELITY.md) and [known issues](docs/pr-1-verification.md)
+- [Architecture walkthrough](docs/architecture.md)
