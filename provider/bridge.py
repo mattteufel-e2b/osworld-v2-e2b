@@ -440,13 +440,25 @@ class GuestManager:
             # completes and would leak the sandbox. asyncio.run() waits for
             # executor threads on exit, so reaping here is guaranteed to run
             # before the process dies.
+            # The RuntimeErrors below land in an awaiter that is usually already
+            # cancelled, so log the reap here or it leaves no trace at all.
             if self._stopped:
                 sandbox.kill()
+                logger.warning(
+                    "reaped just-created sandbox %s: %s",
+                    sandbox.sandbox_id,
+                    "bridge stopping",
+                )
                 raise RuntimeError(
-                    f"relay stopping; reaped just-created sandbox {sandbox.sandbox_id}"
+                    f"bridge stopping; reaped just-created sandbox {sandbox.sandbox_id}"
                 )
             if abandoned.is_set():
                 sandbox.kill()
+                logger.warning(
+                    "reaped just-created sandbox %s: %s",
+                    sandbox.sandbox_id,
+                    "replace was cancelled",
+                )
                 raise RuntimeError(
                     f"replace was cancelled; reaped just-created sandbox "
                     f"{sandbox.sandbox_id}"
@@ -802,13 +814,17 @@ class Bridge:
             return
         self._stopped = True
         loop, thread, stop_event = self._loop, self._thread, self._stop_event
-        if loop is None or stop_event is None or thread is None:
+        if thread is None:
             self.clean_stop = True  # nothing was ever running
         else:
             join_timeout = self.config.ready_timeout_s + 600
-            # The loop may already be closed (a bridge that failed to start).
-            with contextlib.suppress(RuntimeError):
-                loop.call_soon_threadsafe(stop_event.set)
+            # The loop thread may be alive but not yet have assigned the loop
+            # and the stop event, and the loop may already be closed (a bridge
+            # that failed to start); either way the join below is what decides
+            # whether cleanup finished.
+            if loop is not None and stop_event is not None:
+                with contextlib.suppress(RuntimeError):
+                    loop.call_soon_threadsafe(stop_event.set)
             thread.join(timeout=join_timeout)
             self.clean_stop = not thread.is_alive()
             if not self.clean_stop:
@@ -872,13 +888,28 @@ class Bridge:
             self._ready.set()
             await self._stop_event.wait()
         finally:
+            # Each step is independent: a heartbeat that died of its own
+            # exception, or a manager stop that raises, must not skip the guest
+            # kill or the listener cleanup that follow it.
             if heartbeat is not None:
                 heartbeat.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await heartbeat
-            await self._manager.stop()
+                # cancel() is a no-op on a task that already ended with an
+                # exception, and awaiting such a task re-raises it; drain it
+                # instead so the exception is retrieved and reported here.
+                outcome = (await asyncio.gather(heartbeat, return_exceptions=True))[0]
+                if isinstance(outcome, BaseException) and not isinstance(
+                    outcome, asyncio.CancelledError
+                ):
+                    logger.warning("heartbeat task ended with %s", outcome)
+            try:
+                await self._manager.stop()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("guest manager did not stop cleanly: %s", exc)
             for runner in reversed(runners):
-                await runner.cleanup()
+                try:
+                    await runner.cleanup()
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("proxy listener did not clean up: %s", exc)
 
     async def _listen(self, local_port: int, guest_port: int) -> web.AppRunner:
         app = web.Application(client_max_size=1024**3)

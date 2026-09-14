@@ -39,8 +39,9 @@ def test_atomic_write_json_is_private_and_replaces(tmp_path):
 
 
 def test_bare_python3_receipt_scripts_run_on_310():
-    # These are invoked with system python3 (run_agent.sh:265,
-    # run_agent_parallel.sh:328); `from datetime import UTC` needs 3.11+.
+    # These are invoked with system python3 from the coordinator
+    # (runner/run_agent_parallel.sh, around its `export ATTEMPT_SUFFIX` retry
+    # loop); `from datetime import UTC` needs 3.11+.
     runner = Path(__file__).resolve().parents[1] / "runner"
     for name in ("aggregate_agent.py", "receipt_safety.py"):
         assert "from datetime import UTC" not in (runner / name).read_text(), name

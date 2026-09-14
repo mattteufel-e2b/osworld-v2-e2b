@@ -1,9 +1,12 @@
-"""Minimal VMManager adapter; the localhost relay owns E2B lifecycle.
+"""Minimal VMManager adapter; the provider's in-process Bridge owns E2B lifecycle.
+
+This resolves the immutable `GUEST_TEMPLATE` reference and nothing else: creating,
+replacing and killing the sandbox belongs to the Bridge that `provider.py` starts.
 
 Intentionally NOT subclassing the VMManager ABC: DesktopEnv only ever calls
 `get_vm_path` on the manager, and the ABC declares several abstract methods
-(check_and_clean, etc.) that are irrelevant when an external orchestrator owns
-the sandbox lifecycle.
+(check_and_clean, etc.) that are irrelevant when the provider's bridge owns the
+sandbox lifecycle.
 """
 
 import os

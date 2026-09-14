@@ -51,7 +51,7 @@ PY
 # could mistake for this run.
 rm -f "$OUTPUT" "${OUTPUT%.json}.jsonl"
 
-cd "$OSWORLD_ROOT"
+cd "$OSWORLD_ROOT" || exit 1
 "${WORKER_UV[@]}" python "$HERE/harness.py" \
     --osworld-root "$OSWORLD_ROOT" \
     --tasks-dir "$TASKS_DIR" \

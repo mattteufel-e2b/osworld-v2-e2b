@@ -154,11 +154,18 @@ class ProviderBridgeTests(unittest.TestCase):
         provider.save_state(self.TEMPLATE, "mid")
         provider.finalize_volume(self.TEMPLATE, 80, "Ubuntu", None, None, "pw")
         provider.finalize_volume(self.TEMPLATE, None, "Ubuntu", None, None, "pw")
+        stopped = provider.bridge  # stop_emulator drops the stopped bridge
         provider.stop_emulator(self.TEMPLATE)
         self.assertEqual(
-            provider.bridge.calls,
+            stopped.calls,
             ["start", ("reset", "init_state"), ("save", "mid"), ("volume", 80), "stop"],
         )
+        # A later start_emulator builds a fresh bridge rather than reusing the
+        # stopped one.
+        self.assertIsNone(provider.bridge)
+        provider.start_emulator(self.TEMPLATE, headless=True)
+        self.assertIsNot(provider.bridge, stopped)
+        self.assertEqual(provider.bridge.calls, ["start"])
 
     def test_get_ip_address_before_start_fails_closed(self):
         provider = provider_module.E2BProvider()

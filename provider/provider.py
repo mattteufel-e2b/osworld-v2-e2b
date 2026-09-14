@@ -85,6 +85,10 @@ class E2BProvider(Provider):
             self.bridge.stop()
         except Exception as exc:  # noqa: BLE001
             logger.warning("Could not stop E2B bridge cleanly: %s", exc)
+        finally:
+            # A stopped bridge can never serve again; drop it so a later
+            # start_emulator builds a fresh one instead of reusing this one.
+            self.bridge = None
 
     def _require_bridge(self) -> Bridge:
         if self.bridge is None:

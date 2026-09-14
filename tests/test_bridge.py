@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 import json
 import os
 import sys
@@ -1155,6 +1156,38 @@ class BridgeRoadmapTests(BridgeTestCase):
         b.stop()
         self.assertTrue(b.clean_stop)
         self.assertTrue(FakeSandbox.created[0].killed)
+
+    def test_stop_kills_the_guest_after_the_heartbeat_died_of_its_own_exception(self):
+        # cancel() is a no-op on an already-failed task and awaiting it re-raises,
+        # which used to abort shutdown before the guest kill while stop() still
+        # reported clean_stop.
+        died = threading.Event()
+
+        async def failing_heartbeat(_manager):
+            try:
+                await asyncio.sleep(0)  # let _main reach its stop-event wait
+                raise RuntimeError("boom")
+            finally:
+                died.set()
+
+        b = bridge.Bridge(_config())
+        with (
+            patch.object(bridge.GuestManager, "heartbeat", failing_heartbeat),
+            # A drained exception leaves no "Task exception was never retrieved".
+            self.assertNoLogs("asyncio", level="ERROR"),
+        ):
+            b.start()
+            self.assertTrue(died.wait(timeout=5))
+            with self.assertLogs(bridge.logger, level="WARNING") as logs:
+                b.stop()
+            gc.collect()  # an unretrieved task exception is reported at GC
+
+        self.assertTrue(b.clean_stop)
+        self.assertTrue(FakeSandbox.created[0].killed)
+        self.assertTrue(
+            any("heartbeat task ended with boom" in line for line in logs.output),
+            logs.output,
+        )
 
     def test_stop_reports_incomplete_cleanup_when_the_loop_thread_does_not_exit(self):
         b = bridge.Bridge(_config())
