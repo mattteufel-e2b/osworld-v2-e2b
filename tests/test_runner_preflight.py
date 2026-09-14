@@ -426,11 +426,11 @@ def test_agent_coordinator_rejects_unknown_agent_kind_before_admission(tmp_path)
     assert not Path(env["LIFETIME_CHECKED"]).exists()
 
 
-@pytest.mark.parametrize("concurrency", ["100", "1000"])
+@pytest.mark.parametrize("concurrency", ["1", "80"])
 def test_agent_coordinator_admits_agent_kinds_the_module_knows(tmp_path, concurrency):
     env = _coordinator_inputs_past_preflight(tmp_path, agents_check_case="exit 0")
     env["PARALLEL_CONCURRENCY"] = concurrency
-    env["AGENT_RETRY_CONCURRENCY"] = concurrency
+    env["AGENT_RETRY_CONCURRENCY"] = "4"
     result = _run_coordinator(env)
     assert result.returncode == 2, (
         result.stdout,
@@ -440,8 +440,8 @@ def test_agent_coordinator_admits_agent_kinds_the_module_knows(tmp_path, concurr
     assert "AGENT_KIND" not in result.stderr
 
 
-@pytest.mark.parametrize("concurrency", ["100", "1000", "0", "-1", "1.5"])
-def test_validator_concurrency_requires_only_a_positive_integer(concurrency):
+@pytest.mark.parametrize("concurrency", ["1", "80", "81", "100", "0", "-1", "1.5"])
+def test_validator_concurrency_is_a_positive_integer_at_most_80(concurrency):
     result = subprocess.run(
         ["bash", str(ROOT / "maintainer" / "validate_parallel.sh")],
         env={**os.environ, "PARALLEL_CONCURRENCY": concurrency, "GUEST_TEMPLATE": ""},
@@ -452,9 +452,9 @@ def test_validator_concurrency_requires_only_a_positive_integer(concurrency):
     )
     assert result.returncode == 2
     # Accepted concurrency reaches the next validation boundary without
-    # launching services or sandboxes; invalid values stop before it.
+    # launching services or sandboxes; invalid or over-cap values stop before it.
     expected = (
-        "GUEST_TEMPLATE" if concurrency in {"100", "1000"} else "PARALLEL_CONCURRENCY"
+        "GUEST_TEMPLATE" if concurrency in {"1", "80"} else "PARALLEL_CONCURRENCY"
     )
     assert expected in result.stderr
 

@@ -49,7 +49,7 @@ mkdir -p "$RESULT_DIR" "$(dirname "$OUTPUT")" "$(dirname "$RELAY_LOG")"
 rm -f "$OUTPUT"
 
 # run_agent_parallel.sh has already run the same checks for the whole manifest
-# moments ago; parallel workers re-verifying the checkout at once is pure load.
+# moments ago; 80 workers re-verifying the checkout at once is pure load.
 if [ "${OSWORLD_PREFLIGHT_VERIFIED:-0}" != "1" ] && ! python3 "$HERE/preflight.py" \
     --osworld-root "$OSWORLD_ROOT" --tasks-dir "$TASKS_DIR" \
     --services-dir "$SERVICES_DIR" --manifest "${AGENT_MANIFEST:-$V2ROOT/validation/full-manifest.json}" \

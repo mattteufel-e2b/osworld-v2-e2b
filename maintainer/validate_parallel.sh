@@ -2,7 +2,9 @@
 # Maintainer-only release validation: the full 108-task OSWorld-V2
 # environment-path run with no model calls, configurable E2B concurrency. Not needed
 # to run the benchmark (see README "Quick start"); it qualifies a template build.
-# Worker concurrency defaults to 100 with no repository-imposed upper bound.
+# Worker concurrency defaults to and is capped at 80: strict reset can double
+# guest use under the 200-concurrent-sandbox ceiling, and the 500-port relay slot
+# stride would push CDP listeners above 65535 from slot 93 (see run_agent_parallel.sh).
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,11 +17,15 @@ MANIFEST="${VALIDATION_MANIFEST:-$V2ROOT/validation/full-manifest.json}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-$REPO_ROOT/out/osworld-v2-evidence/full-suite}"
 RAW_DIR="${RAW_DIR:-$REPO_ROOT/out/osworld-v2-raw/full-suite}"
 OUTPUT="${OUTPUT:-$EVIDENCE_DIR/validate-run1.json}"
-PARALLEL_CONCURRENCY="${PARALLEL_CONCURRENCY:-100}"
+PARALLEL_CONCURRENCY="${PARALLEL_CONCURRENCY:-80}"
 UV="uv run --python 3.12 --with e2b==2.34.0"
 
 if [[ ! "$PARALLEL_CONCURRENCY" =~ ^[1-9][0-9]*$ ]]; then
     echo "PARALLEL_CONCURRENCY must be a positive integer" >&2
+    exit 2
+fi
+if [ "$PARALLEL_CONCURRENCY" -gt 80 ]; then
+    echo "PARALLEL_CONCURRENCY must not exceed 80 (strict reset can double guest use; relay port slots end at 92)" >&2
     exit 2
 fi
 if [[ ! "${GUEST_TEMPLATE:-}" =~ ^[a-z0-9-]+:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then

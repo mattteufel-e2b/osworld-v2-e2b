@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
-# Run the complete OSWorld-V2 agent benchmark with configurable E2B concurrency.
-# Worker concurrency defaults to 100 with no repository-imposed upper bound.
+# Run the complete OSWorld-V2 agent benchmark with bounded E2B concurrency.
+# Worker concurrency defaults to and is capped at 80. Two limits meet there:
+# strict reset can briefly own two guests per worker, so 80 workers peak near
+# 160 guest sandboxes plus the two fleet sandboxes under a 200-concurrent-
+# sandbox account ceiling; and each worker slot offsets its relay listeners by
+# 500 ports (slot N: control 14999+500N, server 15000+500N, VLC 18080+500N,
+# CDP 19222+500N), so slot 93 would bind CDP above 65535. 80 stays under both.
 # Task 082 alone owns host port 3000,
 # matching the canonical gated task without rewriting its task module.
 set -uo pipefail
@@ -12,7 +17,7 @@ SERVICES_DIR="${OSWORLD_SERVICES_DIR:-$V2ROOT/services}"
 OSWORLD_ROOT="${OSWORLD_ROOT:-$V2ROOT/OSWorld-V2}"
 TASKS_DIR="${OSWORLD_TASKS_DIR:-$V2ROOT/tasks}"
 MANIFEST="${AGENT_MANIFEST:-$V2ROOT/validation/full-manifest.json}"
-PARALLEL_CONCURRENCY="${PARALLEL_CONCURRENCY:-100}"
+PARALLEL_CONCURRENCY="${PARALLEL_CONCURRENCY:-80}"
 AGENT_RETRY_ATTEMPTS="${AGENT_RETRY_ATTEMPTS:-0}"
 AGENT_RETRY_CONCURRENCY="${AGENT_RETRY_CONCURRENCY:-4}"
 AGENT_START_STAGGER_SECONDS="${AGENT_START_STAGGER_SECONDS:-0.25}"
@@ -28,12 +33,16 @@ if [[ ! "$PARALLEL_CONCURRENCY" =~ ^[1-9][0-9]*$ ]]; then
     echo "PARALLEL_CONCURRENCY must be a positive integer" >&2
     exit 2
 fi
+if [ "$PARALLEL_CONCURRENCY" -gt 80 ]; then
+    echo "PARALLEL_CONCURRENCY must not exceed 80 (strict reset can double guest use; relay port slots end at 92)" >&2
+    exit 2
+fi
 if [[ ! "$AGENT_RETRY_ATTEMPTS" =~ ^[0-9]+$ ]]; then
     echo "AGENT_RETRY_ATTEMPTS must be a non-negative integer" >&2
     exit 2
 fi
-if [[ ! "$AGENT_RETRY_CONCURRENCY" =~ ^[1-9][0-9]*$ ]]; then
-    echo "AGENT_RETRY_CONCURRENCY must be a positive integer" >&2
+if [[ ! "$AGENT_RETRY_CONCURRENCY" =~ ^[1-9][0-9]*$ ]] || [ "$AGENT_RETRY_CONCURRENCY" -gt 4 ]; then
+    echo "AGENT_RETRY_CONCURRENCY must be between 1 and 4" >&2
     exit 2
 fi
 if [[ ! "$AGENT_START_STAGGER_SECONDS" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
