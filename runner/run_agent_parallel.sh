@@ -1,21 +1,16 @@
 #!/usr/bin/env bash
 # Run the complete OSWorld-V2 agent benchmark with bounded E2B concurrency.
-# Worker concurrency defaults to and is capped at 80. Two limits meet there:
+# Each task runs as one agent_runner.py process; its E2BProvider owns an
+# in-process bridge on OS-assigned loopback ports, so workers never collide
+# and need no port arithmetic. Concurrency defaults to and is capped at 80:
 # strict reset can briefly own two guests per worker, so 80 workers peak near
 # 160 guest sandboxes plus the two fleet sandboxes under a 200-concurrent-
-# sandbox account ceiling; and each worker slot offsets its relay listeners by
-# 500 ports (slot N: control 14999+500N, server 15000+500N, VLC 18080+500N,
-# CDP 19222+500N), so slot 93 would bind CDP above 65535. 80 stays under both.
-# Task 082 alone owns host port 3000,
-# matching the canonical gated task without rewriting its task module.
+# sandbox account ceiling. Task 082 alone dials host port 3000, so it gets a
+# literal task-service listener and runs solo by default.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-V2ROOT="$(cd "$HERE/.." && pwd)"
-REPO_ROOT="$V2ROOT"
-SERVICES_DIR="${OSWORLD_SERVICES_DIR:-$V2ROOT/services}"
-OSWORLD_ROOT="${OSWORLD_ROOT:-$V2ROOT/OSWorld-V2}"
-TASKS_DIR="${OSWORLD_TASKS_DIR:-$V2ROOT/tasks}"
+source "$HERE/common.sh"
 MANIFEST="${AGENT_MANIFEST:-$V2ROOT/validation/full-manifest.json}"
 PARALLEL_CONCURRENCY="${PARALLEL_CONCURRENCY:-80}"
 AGENT_RETRY_ATTEMPTS="${AGENT_RETRY_ATTEMPTS:-0}"
@@ -28,13 +23,18 @@ RUN_ID="${RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
 RAW_DIR="${RAW_DIR:-$REPO_ROOT/out/osworld-v2-raw/agent-full/$RUN_ID}"
 OUTPUT="${OUTPUT:-$REPO_ROOT/out/osworld-v2-evidence/full-suite/agent-$RUN_ID.json}"
 UV="uv run --python 3.12 --with e2b==2.34.0"
+# Workers `cd` into the pinned checkout, so every path they are handed and every
+# path this script writes to afterwards must already be absolute.
+RAW_DIR="$(abspath "$RAW_DIR")"
+OUTPUT="$(abspath "$OUTPUT")"
+MANIFEST="$(abspath "$MANIFEST")"
 
 if [[ ! "$PARALLEL_CONCURRENCY" =~ ^[1-9][0-9]*$ ]]; then
     echo "PARALLEL_CONCURRENCY must be a positive integer" >&2
     exit 2
 fi
 if [ "$PARALLEL_CONCURRENCY" -gt 80 ]; then
-    echo "PARALLEL_CONCURRENCY must not exceed 80 (strict reset can double guest use; relay port slots end at 92)" >&2
+    echo "PARALLEL_CONCURRENCY must not exceed 80 (strict reset can briefly double guest use)" >&2
     exit 2
 fi
 if [[ ! "$AGENT_RETRY_ATTEMPTS" =~ ^[0-9]+$ ]]; then
@@ -57,11 +57,22 @@ if [ "$REQUIRE_NO_MODEL_COVERAGE" != "0" ] && [ "$REQUIRE_NO_MODEL_COVERAGE" != 
     echo "REQUIRE_NO_MODEL_COVERAGE must be 0 or 1" >&2
     exit 2
 fi
-source "$HERE/worker_env.sh"
-if [[ ! "${GUEST_TEMPLATE:-}" =~ ^[a-z0-9-]+:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
-    echo "GUEST_TEMPLATE must be an immutable name:build_id reference" >&2
+AGENT_TASK_TIMEOUT_SECONDS="${AGENT_TASK_TIMEOUT_SECONDS:-14400}"
+GUEST_READY_TIMEOUT_S="${GUEST_READY_TIMEOUT_S:-180}"
+for knob in AGENT_TASK_TIMEOUT_SECONDS GUEST_READY_TIMEOUT_S; do
+    if [[ ! "${!knob}" =~ ^[1-9][0-9]*$ ]]; then
+        echo "$knob must be a positive integer" >&2
+        exit 2
+    fi
+done
+export AGENT_TASK_TIMEOUT_SECONDS GUEST_READY_TIMEOUT_S
+if [[ ! "${ENABLE_RECORDING:-0}" =~ ^[01]$ ]]; then
+    echo "ENABLE_RECORDING must be 0 or 1 (got: '$ENABLE_RECORDING')" >&2
     exit 2
 fi
+require_immutable_guest_template
+require_campaign_id
+resolve_e2b_api_key
 : "${MODEL_API_KEY:?MODEL_API_KEY required}"
 : "${MODEL_BASE_URL:?MODEL_BASE_URL required}"
 : "${MODEL:?MODEL required}"
@@ -74,16 +85,10 @@ if [ "$AGENT_KIND" = "m3" ] && [[ ! "${M3_MAX_LLM_RETRIES:-}" =~ ^[0-9]+$ ]]; th
     echo "M3_MAX_LLM_RETRIES must be explicit and non-negative for an M3 benchmark" >&2
     exit 2
 fi
-if [ -z "${OSWORLD_CAMPAIGN_ID:-}" ]; then echo "OSWORLD_CAMPAIGN_ID is required" >&2; exit 2; fi
-export GUEST_TEMPLATE OSWORLD_CAMPAIGN_ID MODEL_API_KEY MODEL_BASE_URL MODEL AGENT_KIND MAX_STEPS
+export MODEL_API_KEY MODEL_BASE_URL MODEL AGENT_KIND MAX_STEPS
 export MAX_TOKENS TEMPERATURE TOP_P MAX_TRAJECTORY_LENGTH  # unset = upstream default
 export ENABLE_RECORDING  # 1 = upstream --enable_recording (mp4 per task); unset = off
 export M3_THINKING_MODE M3_THINKING_BUDGET M3_MAX_LLM_RETRIES
-
-if [ -z "${E2B_API_KEY:-}" ] && [ -f "$REPO_ROOT/.env.local" ]; then
-    export E2B_API_KEY="$(grep '^E2B_API_KEY=' "$REPO_ROOT/.env.local" | cut -d= -f2)"
-fi
-if [ -z "${E2B_API_KEY:-}" ]; then echo "E2B_API_KEY is required" >&2; exit 2; fi
 
 mkdir -p "$RAW_DIR"
 proxy_pid=""
@@ -94,6 +99,9 @@ cleanup_proxy() {
     trap - EXIT
     trap '' INT TERM
     local pid
+    # Workers are direct children running agent_runner.py under uv; uv forwards
+    # SIGTERM to python, whose handler writes an "interrupted" receipt, stops its
+    # bridge (killing the guest) and exits 143.
     for pid in ${worker_pids[@]+"${worker_pids[@]}"}; do
         kill -TERM "$pid" 2>/dev/null || true
     done
@@ -152,6 +160,7 @@ if ! PYTHONPATH="$OSWORLD_ROOT" uv run --project "$OSWORLD_ROOT" --locked --extr
 fi
 
 export PARALLEL_CONCURRENCY RUN_TASK_082_CONCURRENT AGENT_START_STAGGER_SECONDS
+export_fleet_wiring
 if ! $UV python "$V2ROOT/services/fleetlib.py" --check-lifetime "$MANIFEST" \
     --runtime "$SERVICES_DIR/.runtime.json"; then
     exit 2
@@ -204,32 +213,58 @@ for item in json.load(open(sys.argv[1]))["tasks"]:
 PY
 )
 
+# Upstream generation flags, forwarded only when set so agents.py keeps the
+# upstream default otherwise. (`${arr[@]+...}` keeps bash 3.2 happy under set -u.)
+generation_args=()
+for pair in MAX_TOKENS:--max-tokens TEMPERATURE:--temperature TOP_P:--top-p \
+    MAX_TRAJECTORY_LENGTH:--max-trajectory-length; do
+    name="${pair%%:*}"
+    if [ -n "${!name:-}" ]; then generation_args+=("${pair#*:}" "${!name}"); fi
+done
+if [ "${ENABLE_RECORDING:-0}" = "1" ]; then
+    export ENABLE_RECORDING  # receipts record the opt-in
+    generation_args+=(--enable-recording)
+fi
+
 run_batch() {
     local -a batch=("$@")
     worker_pids=()
-    local row task_id domain slot port_base task_service_ports receipt result_dir log pid index
+    local row task_id domain task_service_ports receipt result_dir log pid index
     local batch_failed=0
-    slot=0
     for row in "${batch[@]}"; do
         read -r task_id domain <<<"$row"
-        slot=$((slot + 1))
-        port_base=$((slot * 500))
         task_service_ports=""
         if [ "$task_id" = "082" ]; then
             # Canonical task 082 dials localhost:3000 from the host; this is the
-            # only task-service listener in the release, so it can stay literal.
+            # only task-service listener in the release, so it stays literal.
             task_service_ports="3000:3000"
         fi
         receipt="$RAW_DIR/workers/task_${task_id}.json"
         result_dir="$RAW_DIR/workers/task_${task_id}${ATTEMPT_SUFFIX:-}"
         log="$RAW_DIR/workers/task_${task_id}${ATTEMPT_SUFFIX:-}.log"
-        OSWORLD_TASK_SERVICE_PORTS="$task_service_ports" \
-            TASK_ID="$task_id" DOMAIN="$domain" \
-            PORT_BASE="$port_base" OUTPUT="$receipt" RESULT_DIR="$result_dir" \
-            RAW_DIR="$RAW_DIR" "$HERE/run_agent.sh" >"$log" 2>&1 &
+        rm -f "$receipt"
+        # `exec` makes $! the worker itself rather than an intermediate shell,
+        # so cancellation's `kill -TERM "$pid"` reaches uv (and the python it
+        # supervises) instead of orphaning a rollout that still holds a guest.
+        (
+            cd "$OSWORLD_ROOT" || exit 1
+            export OSWORLD_TASK_SERVICE_PORTS="$task_service_ports"
+            exec "${WORKER_UV[@]}" python "$HERE/agent_runner.py" \
+                --task-id "$task_id" \
+                --domain "$domain" \
+                --tasks-dir "$TASKS_DIR" \
+                --result-dir "$result_dir" \
+                --output "$receipt" \
+                --agent-kind "$AGENT_KIND" \
+                --model "$MODEL" \
+                --max-steps "$MAX_STEPS" \
+                --deadline-seconds "$AGENT_TASK_TIMEOUT_SECONDS" \
+                --client-password "osworld-public-evaluation" \
+                ${generation_args[@]+"${generation_args[@]}"}
+        ) >"$log" 2>&1 &
         pid=$!
         worker_pids+=("$pid")
-        echo "launched agent task $task_id port_base=$port_base pid=$pid"
+        echo "launched agent task $task_id pid=$pid"
         sleep "$AGENT_START_STAGGER_SECONDS"
     done
     for index in "${!worker_pids[@]}"; do

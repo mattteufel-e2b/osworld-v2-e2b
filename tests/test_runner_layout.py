@@ -17,6 +17,7 @@ RUNNER_FILES = {
     "agents.py",  # the file customers edit
     "check_models.py",  # live upstream judge/simulator preflight
     "aggregate_agent.py",  # campaign receipt + gate
+    "common.sh",  # paths, uv command, fail-closed env gates (no lifecycle code)
     "evaluator_model_calls.py",  # judge/simulator call accounting
     "gated_data.py",  # gated task/asset download + verification
     "lazy_import.py",
@@ -25,14 +26,10 @@ RUNNER_FILES = {
     "prepare_agent_run.py",
     "receipt_safety.py",
     "render_manifest.py",
-    "requirements-e2b.txt",  # relay/provider pins layered onto the checkout env
+    "requirements-e2b.txt",  # bridge/provider pins layered onto the checkout env
     "retry_candidates.py",
-    "run_agent.sh",  # one worker
     "run_agent_parallel.sh",  # the coordinator
     "setup.sh",  # pinned checkout + provider patches
-    "worker_env.sh",
-    "worker_lib.sh",
-    "write_timeout_receipt.py",
 }
 MAINTAINER_FILES = {
     "README.md",

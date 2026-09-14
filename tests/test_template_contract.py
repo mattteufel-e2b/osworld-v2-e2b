@@ -23,14 +23,6 @@ def test_reaper_uses_clone_safe_startup_launcher():
     assert "windowclose" not in launcher
 
 
-def test_path_harness_uses_namespaced_relay_control_port():
-    harness = (ROOT / "maintainer" / "harness.py").read_text()
-
-    assert 'os.environ.get("OSWORLD_RELAY_PORT_BASE", "0")' in harness
-    assert 'f"http://127.0.0.1:{14999 + relay_port_base()}' in harness
-    assert 'os.environ.get("TASK_TIMEOUT_SECONDS", "900")' in harness
-
-
 def test_parallel_validator_owns_proxy_and_namespaces_task_service_ports():
     coordinator = (ROOT / "maintainer" / "validate_parallel.sh").read_text()
 
@@ -480,30 +472,6 @@ def test_openboard_snap_contract_maps_to_ubuntu_package_without_snapd():
     assert "unsupported snap command" in snap_compat
 
 
-def test_agent_runner_supports_any_openai_compatible_provider_without_secret_logging():
-    runner = (ROOT / "runner" / "run_agent.sh").read_text()
-    agent = (ROOT / "runner" / "agents.py").read_text()
-
-    assert 'MODEL_BASE_URL="${MODEL_BASE_URL:-' in runner
-    assert 'MODEL_API_KEY="${MODEL_API_KEY:-' in runner
-    assert 'os.environ["MODEL_BASE_URL"]' in agent
-    assert "os.environ['MODEL_API_KEY']" in agent
-    assert "OPENROUTER_API_KEY required" not in runner
-    assert "class CompatiblePromptAgent" in agent
-    assert "No secrets are logged" in agent
-
-
-def test_agent_runner_can_use_the_release_m3_scaffold_and_anthropic_transport():
-    runner = (ROOT / "runner" / "run_agent.sh").read_text()
-    agent = (ROOT / "runner" / "agents.py").read_text()
-
-    assert 'AGENT_KIND="${AGENT_KIND:-prompt}"' in runner
-    assert 'base_url=os.environ["MODEL_BASE_URL"]' in agent
-    assert 'api_key=os.environ["MODEL_API_KEY"]' in agent
-    assert "from mm_agents.m3 import M3Agent" in agent
-    assert "M3Agent(" in agent
-
-
 def test_full_agent_coordinator_bounds_sandboxes_and_namespaces_task_service_ports():
     coordinator = (ROOT / "runner" / "run_agent_parallel.sh").read_text()
     aggregator = (ROOT / "runner" / "aggregate_agent.py").read_text()
@@ -615,22 +583,13 @@ def test_agent_receipt_records_reasoning_and_evaluator_provenance_without_keys(
     assert not any("key" in field for field in receipt)
 
 
-def test_agent_worker_creates_custom_relay_log_parent_before_redirection():
-    runner = (ROOT / "runner" / "run_agent.sh").read_text()
+def test_coordinator_canonicalizes_paths_before_entering_upstream_checkout():
+    coordinator = (ROOT / "runner" / "run_agent_parallel.sh").read_text()
 
-    assert (
-        'mkdir -p "$RESULT_DIR" "$(dirname "$OUTPUT")" "$(dirname "$RELAY_LOG")"'
-        in runner
-    )
-
-
-def test_agent_worker_canonicalizes_output_paths_before_entering_upstream_checkout():
-    runner = (ROOT / "runner" / "run_agent.sh").read_text()
-
-    assert 'RAW_DIR="$(abspath "$RAW_DIR")"' in runner
-    assert 'RESULT_DIR="$(abspath "$RESULT_DIR")"' in runner
-    assert 'OUTPUT="$(abspath "$OUTPUT")"' in runner
-    assert 'RELAY_LOG="$(abspath "$RELAY_LOG")"' in runner
+    assert 'RAW_DIR="$(abspath "$RAW_DIR")"' in coordinator
+    assert 'OUTPUT="$(abspath "$OUTPUT")"' in coordinator
+    assert "--deadline-seconds" in coordinator
+    assert "PORT_BASE" not in coordinator
 
 
 def test_template_build_smoke_covers_ipv4_and_ipv6_protected_ranges():
