@@ -473,8 +473,8 @@ def test_signal_kills_agent_and_relay_process_trees(
     _assert_process_gone(process.pid)
 
 
-def test_readme_bounds_canary_but_restores_sample_retry_policy():
-    readme = (ROOT / "README.md").read_text()
+def test_maintainer_readme_bounds_canary_but_restores_sample_retry_policy():
+    readme = (ROOT / "maintainer" / "README.md").read_text()
 
     canary_retry = "M3_MAX_LLM_RETRIES=0"
     canary_timeout = "AGENT_TASK_TIMEOUT_SECONDS=900"
