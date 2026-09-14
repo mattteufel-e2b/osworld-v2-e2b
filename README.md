@@ -25,14 +25,17 @@ the results do not establish full-suite correctness or parity with QEMU.
 
 ## Quick start
 
+Run the commands below in Bash from the repository root. Replace credential placeholders
+with your own keys. Model credentials must be exported in that shell; putting them in
+`.env.local` alone does not populate the shell variables used by these examples.
+
 Prerequisites: `E2B_API_KEY=...` in `.env.local` at the repo root, `uv`, Node >=20.18.1,
 `npm`, `git`, FFmpeg (`ffprobe`), ImageMagick (`identify`), and Hugging Face access to both
 gated OSWorld V2 datasets. Install the native evaluator tools on the **runner host** with
 `brew install ffmpeg imagemagick` on macOS or `sudo apt-get install ffmpeg imagemagick`
 on Ubuntu/Debian. Task 051 extracts XCF layers with ImageMagick, and task 095 probes video
 metadata with `ffprobe`; missing tools can otherwise become zero scores. Preflight checks both.
-Authenticate once
-with `uv run --locked hf auth login` after accepting their access gates.
+Authenticate once with `uv run --locked hf auth login` after accepting their access gates.
 
 ```bash
 template/fetch_server.sh                    # fetch + patch the pinned guest server
@@ -41,10 +44,10 @@ uv run --env-file .env.local --locked npm --prefix template run typecheck
 uv run --env-file .env.local --locked npm --prefix template run build   # guest template
 uv run --env-file .env.local --locked \
     python services/build_fleet_template.py                      # fleet template
-export GUEST_TEMPLATE=<name:build_id>       # from template/results/template-build.json
-export FLEET_TEMPLATE=<name:build_id>       # from out/osworld-v2-raw/builds/fleet-template-build.json
+export GUEST_TEMPLATE="$(python3 -c 'import json; print(json.load(open("template/results/template-build.json"))["reference"])')"
+export FLEET_TEMPLATE="$(python3 -c 'import json; print(json.load(open("out/osworld-v2-raw/builds/fleet-template-build.json"))["reference"])')"
 runner/setup.sh                             # clone pinned OSWorld-V2 + apply e2b patches
-uv sync --project OSWorld-V2 --locked --extra full               # real evaluator dependencies
+uv sync --project OSWorld-V2 --locked --extra full --python 3.12 # real evaluator dependencies
 uv run --locked python runner/gated_data.py                     # exact gated revisions + hashes
 
 export OSWORLD_CAMPAIGN_ID="osworld-v2-$(date -u +%Y%m%dT%H%M%SZ)"
@@ -57,11 +60,17 @@ Running the benchmark is the default next step — no separate opt-in is require
 full 108-task manifest against the pinned template, export the agent endpoint (Fireworks M3
 shown, using Anthropic Messages transport), and launch the parallel driver:
 
+The example uses OpenAI for judging and user simulation. To use AWS Mantle instead,
+apply the [alternative judge configuration](#judge-and-user-simulator-configuration)
+before running the final launch command. `PARALLEL_CONCURRENCY` defaults to and is capped
+at 80.
+
 ```bash
 RUN_ROOT="$(mktemp -d)"
 python3 runner/render_manifest.py --source validation/full-manifest.json \
     --template "$GUEST_TEMPLATE" --output "$RUN_ROOT/full-manifest.json"
 
+export FIREWORKS_API_KEY="..."             # your Fireworks API key
 export MODEL_API_KEY="$FIREWORKS_API_KEY"
 export MODEL_BASE_URL="https://api.fireworks.ai/inference"
 export MODEL="accounts/fireworks/models/minimax-m3"
@@ -73,7 +82,7 @@ AGENT_MANIFEST="$RUN_ROOT/full-manifest.json" PARALLEL_CONCURRENCY=80 MAX_STEPS=
     OUTPUT="$RUN_ROOT/agent-full.json" runner/run_agent_parallel.sh
 ```
 
-The campaign receipt lands at `$OUTPUT`; watch stdout for the `AGENT RECEIPT GATE: PASS`/`FAIL`
+The campaign receipt lands at `$RUN_ROOT/agent-full.json`; watch stdout for the `AGENT RECEIPT GATE: PASS`/`FAIL`
 line, which gates on complete, attested, uniquely-sandboxed records for every task in the
 manifest. `REQUIRE_NO_MODEL_COVERAGE` defaults to `0` here, so a full benchmark run needs no
 preceding no-model receipt — that coverage gate is a maintainer-only opt-in, covered in
@@ -83,6 +92,8 @@ Measured pacing on provider-served endpoints runs close to ~40 s/step, and a ful
 rollout at the 500-step budget can then exceed the 14400 s (4 h) `AGENT_TASK_TIMEOUT_SECONDS`
 default well before the agent is actually stuck. Set `AGENT_TASK_TIMEOUT_SECONDS=28800` (8 h,
 as shown above) for full runs so genuinely long tasks aren't cut off mid-rollout.
+
+### Judge and user simulator configuration
 
 Agent credentials are separate from the upstream judge and simulator credentials. The default
 uses OpenAI with `OPENAI_API_KEY`; select another endpoint using upstream's settings:
@@ -177,8 +188,16 @@ and the receipts never look inside the agent.
   receipts record `recording_enabled`. Live desktop view (VNC) is tracked separately in
   [issue #2](https://github.com/mattteufel-e2b/osworld-v2-e2b/issues/2).
 
+Each admitted run stops its service fleets by default. Before this example, create a fresh
+campaign and launch both fleets using the Quick start commands. Set all three provider
+values for your chosen OpenAI-compatible endpoint; the placeholders below are not a live
+provider configuration.
+
 ```bash
-export AGENT_KIND=prompt MODEL="openai/gpt-4o" TEMPERATURE=0.2 MAX_TRAJECTORY_LENGTH=5
+export MODEL_BASE_URL="https://your-provider.example/v1"
+export MODEL_API_KEY="..."
+export MODEL="your-model-id"
+export AGENT_KIND=prompt TEMPERATURE=0.2 MAX_TRAJECTORY_LENGTH=5
 AGENT_MANIFEST="$RUN_ROOT/full-manifest.json" MAX_STEPS=75 \
     RAW_DIR="$RUN_ROOT/agent-raw" OUTPUT="$RUN_ROOT/agent.json" runner/run_agent_parallel.sh
 ```
@@ -189,8 +208,9 @@ Everything in this section lives under `maintainer/` and is **not required to ru
 benchmark**. `runner/` holds only the benchmark path; `tools/spikes/` keeps the one-off
 probes that shaped the port (their evidence is cited from `FIDELITY.md`).
 
-This validates every environment path across all 108 tasks with zero external model calls,
-then optionally gates a full-model benchmark receipt on that coverage. It's how maintainers
+This exercises the harness paths across all 108 tasks with zero external model calls,
+then optionally gates a full-model benchmark receipt on that coverage. A passing path does
+not establish application compatibility or task success. It's how maintainers
 qualify a release before it ships — it is **not** required to run the benchmark (see Quick
 start above). When the gate is enabled, the resulting campaign receipt records
 `execution.no_model_coverage_enforced: true`, so gated and ungated runs stay distinguishable
@@ -264,7 +284,7 @@ python3 runner/render_manifest.py --source validation/full-manifest.json \
     --template "$GUEST_TEMPLATE" --output "$RUN_ROOT/sample24-manifest.json" "${sample_args[@]}"
 AGENT_MANIFEST="$RUN_ROOT/sample24-manifest.json" REQUIRE_NO_MODEL_COVERAGE=1 \
     PARALLEL_CONCURRENCY=12 MAX_STEPS=500 \
-    AGENT_TASK_TIMEOUT_SECONDS=14400 AGENT_RETRY_ATTEMPTS=0 AGENT_START_STAGGER_SECONDS=1 \
+    AGENT_TASK_TIMEOUT_SECONDS=28800 AGENT_RETRY_ATTEMPTS=0 AGENT_START_STAGGER_SECONDS=1 \
     RUN_TASK_082_CONCURRENT=1 RAW_DIR="$RUN_ROOT/sample24-raw" \
     OUTPUT="$RUN_ROOT/sample24.json" runner/run_agent_parallel.sh
 ```
