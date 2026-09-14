@@ -171,6 +171,38 @@ def test_failure_before_env_exists_still_writes_a_receipt(tmp_path):
     assert data["error_type"] == "OSError"
 
 
+def test_a_hung_task_loader_still_hits_the_deadline(tmp_path):
+    # Task loading and agent construction run before DesktopEnv; the deadline
+    # must already be armed there, or a hung loader runs forever.
+    checkout = _fake_checkout(tmp_path, "pass")
+    (checkout / "task_loader.py").write_text(
+        "import time\n"
+        "def load_task_from_file(path):\n"
+        "    time.sleep(30)\n"
+        "    return {'instruction': 'do the thing'}\n"
+    )
+    process, receipt = _run(tmp_path, checkout, ["--deadline-seconds", "1"])
+    _wait_for_exit(process)
+    assert process.returncode == 124, process.communicate()
+    data = json.loads(receipt.read_text())
+    assert data["path_status"] == "ERROR"
+    assert data["error_cause"] == "task-timeout"
+
+
+def test_a_failing_task_loader_still_writes_a_receipt(tmp_path):
+    checkout = _fake_checkout(tmp_path, "pass")
+    (checkout / "task_loader.py").write_text(
+        "def load_task_from_file(path):\n    raise RuntimeError('bad task')\n"
+    )
+    process, receipt = _run(tmp_path, checkout, [])
+    _wait_for_exit(process)
+    assert process.returncode == 0, process.communicate()
+    data = json.loads(receipt.read_text())
+    assert data["path_status"] == "ERROR"
+    assert data["error_type"] == "RuntimeError"
+    assert data["sandbox_id"] is None
+
+
 def test_success_path_records_bridge_sandbox(tmp_path):
     checkout = _fake_checkout(
         tmp_path, "open(result_dir + '/result.txt', 'w').write('0.5')"

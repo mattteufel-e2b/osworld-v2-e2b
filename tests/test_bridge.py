@@ -760,13 +760,13 @@ class GuestManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["requested_gb"], 100)
         self.assertEqual(result["required_bytes"], 100_000_000_000)
         self.assertEqual(result["root_capacity_bytes"], 100 * 1024**3)
-        marker_calls = [
+        capacity_calls = [
             call
             for call in FakeSandbox.created[0].commands.calls
-            if "/run/osworld-required-volume-gb" in call[0]
+            if call[0].startswith("df -B1")
         ]
-        self.assertEqual(len(marker_calls), 1)
-        self.assertEqual(marker_calls[0][1]["user"], "root")
+        self.assertEqual(len(capacity_calls), 1)
+        self.assertEqual(capacity_calls[0][1]["user"], "root")
 
     async def test_volume_check_rejects_undersized_root_before_task_setup(self):
         FakeSandbox.root_capacity_bytes = 99_999_999_999
@@ -796,6 +796,18 @@ def _config(**overrides):
     )
     base.update(overrides)
     return bridge.BridgeConfig(**base)
+
+
+class _GateEvent(threading.Event):
+    """A create_gate that also reports when a create started waiting on it."""
+
+    def __init__(self):
+        super().__init__()
+        self.entered = threading.Event()
+
+    def wait(self, timeout=None):
+        self.entered.set()
+        return super().wait(timeout)
 
 
 class BridgeTestCase(unittest.TestCase):
@@ -886,6 +898,36 @@ class BridgeThreadTests(BridgeTestCase):
         finally:
             b.stop()
         self.assertEqual(FakeSandbox.deleted_snapshots, ["snap-of-sandbox-1"])
+
+    def test_an_interrupted_start_stops_the_bridge_instead_of_orphaning_the_guest(
+        self,
+    ):
+        # SIGTERM/SIGALRM/Ctrl-C land in the main thread while it waits on the
+        # readiness gate; the loop thread is still creating the first guest and
+        # the caller never gets an env to close, so start() must stop itself.
+        b = bridge.Bridge(_config())
+        gate = _GateEvent()
+        FakeSandbox.create_gate = gate
+        self.addCleanup(setattr, FakeSandbox, "create_gate", None)
+        self.addCleanup(gate.set)
+
+        def interrupt(*_args, **_kwargs):
+            # Interrupt with the first guest mid-create, then release it so the
+            # loop thread can unwind.
+            self.assertTrue(gate.entered.wait(timeout=5))
+            gate.set()
+            raise KeyboardInterrupt
+
+        with patch.object(b._ready, "wait", side_effect=interrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                b.start()
+
+        b._thread.join(timeout=5)
+        self.assertFalse(b._thread.is_alive())
+        self.assertEqual(len(FakeSandbox.created), 1)
+        self.assertTrue(FakeSandbox.created[0].killed)
+        self.assertFalse(b.started)
+        b.stop()  # a second stop is a no-op
 
     def test_stop_is_idempotent_and_reset_after_stop_raises(self):
         b = bridge.Bridge(_config())

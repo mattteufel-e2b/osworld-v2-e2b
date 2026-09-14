@@ -574,65 +574,40 @@ class GuestManager:
         return info.snapshot_id
 
     async def check_volume(self, requested_gb: int) -> dict[str, int]:
-        """Verify that the running sandbox root filesystem satisfies OSWorld's
-        provider-level ``volume_size`` request.
-
-        E2B root capacity is fixed when the template is built, so this hook
-        validates the actual restored filesystem rather than attaching a
-        persistent Volume or attempting a provider-specific partition resize.
-        """
-        if (
-            isinstance(requested_gb, bool)
-            or not isinstance(requested_gb, int)
-            or requested_gb <= 0
-        ):
+        """Verify the running guest's root filesystem satisfies OSWorld's
+        provider-level ``volume_size`` request. E2B root capacity is fixed when
+        the template is built, so this checks the restored filesystem instead of
+        attaching a volume or resizing a partition."""
+        if requested_gb <= 0:
             raise ValueError("requested_gb must be a positive integer")
         guest = await self.current()
         self.touch()
-
-        def check_sync() -> dict[str, int]:
-            result = guest.sandbox.commands.run(
-                "df -B1 --output=size / | tail -n 1",
-                user="root",
-                timeout=30,
+        result = await asyncio.to_thread(
+            guest.sandbox.commands.run,
+            "df -B1 --output=size / | tail -n 1",
+            user="root",
+            timeout=30,
+        )
+        if result.exit_code != 0:
+            raise RuntimeError(
+                f"could not measure sandbox root capacity: {result.stderr or result.stdout}"
             )
-            if result.exit_code != 0:
-                raise RuntimeError(
-                    f"could not measure sandbox root capacity: {result.stderr or result.stdout}"
-                )
-            try:
-                root_capacity_bytes = int((result.stdout or "").strip())
-            except ValueError as exc:
-                raise RuntimeError(
-                    f"invalid root-capacity output from sandbox: {result.stdout!r}"
-                ) from exc
-            # OSWorld defines volume_size as GB, and E2B product disk sizes use
-            # GB. Compare decimal bytes so an E2B 100 GB root satisfies an
-            # OSWorld 100 GB request despite filesystem overhead making df's
-            # binary-unit display smaller than 100 GiB.
-            required_bytes = requested_gb * 1_000_000_000
-            if root_capacity_bytes < required_bytes:
-                actual_gb = root_capacity_bytes / 1_000_000_000
-                raise RuntimeError(
-                    f"OSWorld task requires {requested_gb} GB root capacity, "
-                    f"but E2B sandbox {guest.sandbox_id} has {actual_gb:.2f} GB"
-                )
-            marker = guest.sandbox.commands.run(
-                f"printf '%s\\n' {requested_gb} > /run/osworld-required-volume-gb",
-                user="root",
-                timeout=15,
+        root_capacity_bytes = int((result.stdout or "").strip())
+        # OSWorld's volume_size and E2B's disk sizes are both decimal GB, so
+        # compare decimal bytes: an E2B 100 GB root satisfies a 100 GB request
+        # even though filesystem overhead makes df's binary display smaller.
+        required_bytes = requested_gb * 1_000_000_000
+        if root_capacity_bytes < required_bytes:
+            raise RuntimeError(
+                f"OSWorld task requires {requested_gb} GB root capacity, but E2B "
+                f"sandbox {guest.sandbox_id} has "
+                f"{root_capacity_bytes / 1_000_000_000:.2f} GB"
             )
-            if marker.exit_code != 0:
-                raise RuntimeError(
-                    f"could not record OSWorld volume requirement: {marker.stderr or marker.stdout}"
-                )
-            return {
-                "requested_gb": requested_gb,
-                "required_bytes": required_bytes,
-                "root_capacity_bytes": root_capacity_bytes,
-            }
-
-        return await asyncio.to_thread(check_sync)
+        return {
+            "requested_gb": requested_gb,
+            "required_bytes": required_bytes,
+            "root_capacity_bytes": root_capacity_bytes,
+        }
 
     async def revert(self, snapshot_name: str | None = None) -> Guest:
         """Replace the guest: from a saved snapshot if the name is known,
@@ -771,19 +746,26 @@ class Bridge:
                 "no task-service listeners configured (OSWORLD_TASK_SERVICE_PORTS "
                 "empty); task 082 needs 3000, see README"
             )
+        # Registered before the thread exists: an interruption below (SIGTERM,
+        # the deadline alarm, Ctrl-C) leaves the caller with no bridge object to
+        # close, so stop() must already be wired to the interpreter's exit.
+        atexit.register(self.stop)
         self._thread = threading.Thread(
             target=self._run, name="e2b-bridge", daemon=True
         )
         self._thread.start()
-        # bind + create + readiness gate, with headroom for the create call
-        if not self._ready.wait(timeout=self.config.ready_timeout_s + 600):
+        try:
+            # bind + create + readiness gate, with headroom for the create call
+            if not self._ready.wait(timeout=self.config.ready_timeout_s + 600):
+                raise TimeoutError("bridge did not become ready")
+            if self._startup_error is not None:
+                error, self._startup_error = self._startup_error, None
+                raise error
+        except BaseException:
+            # Including a signal-derived exception: the loop thread is still
+            # creating the first guest and nobody else will reap it.
             self.stop()
-            raise TimeoutError("bridge did not become ready")
-        if self._startup_error is not None:
-            error, self._startup_error = self._startup_error, None
-            self.stop()
-            raise error
-        atexit.register(self.stop)
+            raise
 
     def reset(self, snapshot_name: str | None = None) -> dict:
         guest = self._call(
@@ -876,6 +858,11 @@ class Bridge:
     async def _main(self) -> None:
         self._loop = asyncio.get_running_loop()
         self._stop_event = asyncio.Event()
+        if self._stopped:
+            # stop() ran before this thread published its loop and stop event,
+            # so it had nothing to signal and is now waiting on the join; there
+            # is no listener to bind and no guest to create.
+            return
         runners: list[web.AppRunner] = []
         heartbeat: asyncio.Task | None = None
         try:

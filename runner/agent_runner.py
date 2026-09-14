@@ -236,12 +236,6 @@ def main() -> int:
     result_dir = args.result_dir.resolve()
     result_dir.mkdir(parents=True, exist_ok=True)
 
-    task_path = (args.tasks_dir / f"task_{args.task_id}.py").resolve()
-    example = task_loader.load_task_from_file(str(task_path))
-    instruction = example["instruction"]
-    phases = getattr(example, "get_phases", None)
-    multiphase = callable(phases) and bool(phases())
-
     receipt = base_receipt(
         task_id=args.task_id,
         domain=args.domain,
@@ -251,7 +245,8 @@ def main() -> int:
         recording_enabled=args.enable_recording,
     )
     receipt.update(
-        multiphase=multiphase,
+        multiphase=False,
+        agent_settings=None,
         started_at=utc_now(),
         transport_ok=False,
         evaluator_ran=False,
@@ -265,30 +260,36 @@ def main() -> int:
         sandbox_generation=None,
         wall_clock_s=None,
     )
-
-    settings = agent_settings(
-        args.agent_kind,
-        max_tokens=args.max_tokens,
-        temperature=args.temperature,
-        top_p=args.top_p,
-        max_trajectory_length=args.max_trajectory_length,
-    )
-    receipt["agent_settings"] = settings
-    agent = build_agent(
-        args.agent_kind,
-        model=args.model,
-        settings=settings,
-        client_password=args.client_password,
-    )
+    # Armed as soon as there is a receipt to record the outcome in: a task file
+    # or an agent constructor that hangs or raises is inside the deadline and
+    # inside the try below, not ahead of them.
+    _install_signal_handlers(args.deadline_seconds)
 
     env = None
+    multiphase = False
     scores: list[float] = []
     start = time.monotonic()
-    # Armed last, immediately before the try: everything above (task load, agent
-    # construction) runs outside it, where a signal would escape as a traceback
-    # with no receipt. From here every signal lands in a handled block.
-    _install_signal_handlers(args.deadline_seconds)
     try:
+        task_path = (args.tasks_dir / f"task_{args.task_id}.py").resolve()
+        example = task_loader.load_task_from_file(str(task_path))
+        instruction = example["instruction"]
+        phases = getattr(example, "get_phases", None)
+        multiphase = callable(phases) and bool(phases())
+        receipt["multiphase"] = multiphase
+        settings = agent_settings(
+            args.agent_kind,
+            max_tokens=args.max_tokens,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            max_trajectory_length=args.max_trajectory_length,
+        )
+        receipt["agent_settings"] = settings
+        agent = build_agent(
+            args.agent_kind,
+            model=args.model,
+            settings=settings,
+            client_password=args.client_password,
+        )
         env = DesktopEnv(
             provider_name="e2b",
             os_type="Ubuntu",
