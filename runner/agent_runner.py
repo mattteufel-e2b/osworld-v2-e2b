@@ -33,7 +33,7 @@ sys.path.insert(0, os.getcwd())
 from lazy_import import lazy_module  # noqa: E402
 
 # easyocr (and torch behind it) serves one OCR metric no release task uses;
-# load it on first use instead of in every one of 80 workers at startup.
+# load it on first use instead of in every parallel worker at startup.
 lazy_module("easyocr")
 import lib_run_single  # noqa: E402
 import task_loader  # noqa: E402  (checkout-local; cwd is the pinned checkout)

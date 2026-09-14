@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 # Maintainer-only release validation: the full 108-task OSWorld-V2
-# environment-path run with no model calls, bounded E2B concurrency. Not needed
+# environment-path run with no model calls, configurable E2B concurrency. Not needed
 # to run the benchmark (see README "Quick start"); it qualifies a template build.
-# A worker can briefly own two sandboxes during strict reset, so 80 workers peak
-# near 160 guest sandboxes; the two service sandboxes and retry headroom remain
-# below the account's 200-concurrent-sandbox ceiling.
+# Worker concurrency defaults to 100 with no repository-imposed upper bound.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -17,15 +15,11 @@ MANIFEST="${VALIDATION_MANIFEST:-$V2ROOT/validation/full-manifest.json}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-$REPO_ROOT/out/osworld-v2-evidence/full-suite}"
 RAW_DIR="${RAW_DIR:-$REPO_ROOT/out/osworld-v2-raw/full-suite}"
 OUTPUT="${OUTPUT:-$EVIDENCE_DIR/validate-run1.json}"
-PARALLEL_CONCURRENCY="${PARALLEL_CONCURRENCY:-80}"
+PARALLEL_CONCURRENCY="${PARALLEL_CONCURRENCY:-100}"
 UV="uv run --python 3.12 --with e2b==2.34.0"
 
 if [[ ! "$PARALLEL_CONCURRENCY" =~ ^[1-9][0-9]*$ ]]; then
     echo "PARALLEL_CONCURRENCY must be a positive integer" >&2
-    exit 2
-fi
-if [ "$PARALLEL_CONCURRENCY" -gt 80 ]; then
-    echo "PARALLEL_CONCURRENCY must not exceed 80 (strict reset can double guest use)" >&2
     exit 2
 fi
 if [[ ! "${GUEST_TEMPLATE:-}" =~ ^[a-z0-9-]+:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then

@@ -13,7 +13,7 @@ from services.fleetlib import campaign_budget_seconds, require_campaign_lifetime
 # Every knob the coordinator exports before the admission gate. The Python side
 # deliberately has no defaults of its own so it can never drift from the shell.
 ENV = {
-    "PARALLEL_CONCURRENCY": "80",
+    "PARALLEL_CONCURRENCY": "100",
     "RUN_TASK_082_CONCURRENT": "1",
     "AGENT_START_STAGGER_SECONDS": "0.25",
     "AGENT_TASK_TIMEOUT_SECONDS": "14400",
@@ -27,7 +27,7 @@ TASKS = [{"id": f"{i:03}"} for i in range(1, 109)]
 
 def test_budget_counts_only_the_waves_of_the_tasks_given():
     base = campaign_budget_seconds(TASKS, ENV)
-    assert 2 * 14400 < base < 3 * 14400  # 108 tasks at 80 workers = 2 waves
+    assert 2 * 14400 < base < 3 * 14400  # 108 tasks at 100 workers = 2 waves
     assert (
         campaign_budget_seconds(TASKS, {**ENV, "PARALLEL_CONCURRENCY": "1"})
         > 108 * 14400

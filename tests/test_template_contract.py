@@ -34,8 +34,7 @@ def test_path_harness_uses_namespaced_relay_control_port():
 def test_parallel_validator_owns_proxy_and_namespaces_task_service_ports():
     coordinator = (ROOT / "maintainer" / "validate_parallel.sh").read_text()
 
-    assert 'PARALLEL_CONCURRENCY="${PARALLEL_CONCURRENCY:-80}"' in coordinator
-    assert 'if [ "$PARALLEL_CONCURRENCY" -gt 80 ]' in coordinator
+    assert 'PARALLEL_CONCURRENCY="${PARALLEL_CONCURRENCY:-100}"' in coordinator
     assert 'HOSTMAP_PORT="8090"' in coordinator
     assert 'task_id" = "082"' in coordinator
     assert 'task_service_ports="3000:3000"' in coordinator
@@ -508,8 +507,7 @@ def test_full_agent_coordinator_bounds_sandboxes_and_namespaces_task_service_por
     coordinator = (ROOT / "runner" / "run_agent_parallel.sh").read_text()
     aggregator = (ROOT / "runner" / "aggregate_agent.py").read_text()
 
-    assert 'PARALLEL_CONCURRENCY="${PARALLEL_CONCURRENCY:-80}"' in coordinator
-    assert 'if [ "$PARALLEL_CONCURRENCY" -gt 80 ]' in coordinator
+    assert 'PARALLEL_CONCURRENCY="${PARALLEL_CONCURRENCY:-100}"' in coordinator
     assert 'HOSTMAP_PORT="8090"' in coordinator
     assert 'task_id" = "082"' in coordinator
     assert 'task_service_ports="3000:3000"' in coordinator

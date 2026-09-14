@@ -68,7 +68,7 @@ export MODEL="accounts/fireworks/models/minimax-m3"
 export AGENT_KIND=m3 M3_THINKING_BUDGET=2048 M3_MAX_LLM_RETRIES=0
 export OPENAI_API_KEY="..."                # upstream judge / simulator credentials (checked by preflight)
 
-AGENT_MANIFEST="$RUN_ROOT/full-manifest.json" PARALLEL_CONCURRENCY=80 MAX_STEPS=500 \
+AGENT_MANIFEST="$RUN_ROOT/full-manifest.json" PARALLEL_CONCURRENCY=100 MAX_STEPS=500 \
     AGENT_TASK_TIMEOUT_SECONDS=28800 RAW_DIR="$RUN_ROOT/agent-raw" \
     OUTPUT="$RUN_ROOT/agent-full.json" runner/run_agent_parallel.sh
 ```
@@ -220,7 +220,7 @@ same `run_agent_parallel.sh` invocation as Quick start, plus those two variables
 
 ```bash
 AGENT_MANIFEST="$RUN_ROOT/full-manifest.json" REQUIRE_NO_MODEL_COVERAGE=1 \
-    NO_MODEL_RECEIPT="$RUN_ROOT/no-model.json" PARALLEL_CONCURRENCY=80 MAX_STEPS=500 \
+    NO_MODEL_RECEIPT="$RUN_ROOT/no-model.json" PARALLEL_CONCURRENCY=100 MAX_STEPS=500 \
     AGENT_TASK_TIMEOUT_SECONDS=28800 RAW_DIR="$RUN_ROOT/agent-raw" \
     OUTPUT="$RUN_ROOT/agent-full.json" runner/run_agent_parallel.sh
 ```
@@ -299,11 +299,13 @@ Don't trim below these even though measured peaks look low:
 - **Fleet swap is required once**: the websites fleet's first-boot compose build (23 images)
   OOM-wedges an 8 GB sandbox without it; launchers add it idempotently.
 
-Account level: the full-suite parallel drivers (80 workers) peak near 160 guest sandboxes
-(strict reset briefly holds two per worker) plus the two fleet sandboxes — sized for a
-200-concurrent-sandbox ceiling. On the host, each worker is a relay plus a Python process
-holding upstream's evaluator stack (~270 MB RSS at startup; easyocr/torch load only if an
-OCR metric runs), so budget roughly 22 GB of host RAM for 80 workers.
+Both parallel drivers default to `PARALLEL_CONCURRENCY=100`. Set any positive integer to
+choose the maximum concurrent task workers; the repo imposes no upper bound. Optional retry
+waves use `AGENT_RETRY_CONCURRENCY` (default 4), also without a repo-imposed upper bound.
+Actual concurrency depends on the selected tasks, available host resources, and your E2B
+account capacity. Strict reset can briefly hold two guests per worker, plus the two fleet
+sandboxes. Each host worker runs a relay and upstream's evaluator stack (~270 MB RSS at
+startup; easyocr/torch load only if an OCR metric runs).
 
 ## Layout
 
@@ -315,10 +317,10 @@ OCR metric runs), so budget roughly 22 GB of host RAM for 80 workers.
   Host fixups, snapshot save/revert, timeout heartbeat. Port map: `server 5000`,
   `CDP 9222`, `VLC 8080`, plus `OSWORLD_TASK_SERVICE_PORTS` entries (`port` or
   `local:guest` for collision-free parallel workers).
-- **`runner/`** — pinned-checkout setup, the verification-ladder scripts, and parallel
-  drivers (`validate_parallel.sh`, `run_agent_parallel.sh`; default 80 workers stays under a
-  200-concurrent-sandbox ceiling since strict reset can briefly hold two guests per worker).
-  `profile_resources.sh` wraps the standalone profiler in `tools/`.
+- **`runner/`** — pinned-checkout setup and the benchmark driver `run_agent_parallel.sh`
+  (default 100 concurrent workers, configurable without a repo cap).
+- **`maintainer/`** — verification-ladder scripts, `validate_parallel.sh`, and
+  `profile_resources.sh`, which wraps the standalone profiler in `tools/`.
 - **`services/`** — website/GitLab fleet launchers; each fleet runs docker-compose inside
   one sandbox, launched per campaign for per-run isolation.
 - **`validation/`** — task manifests (10-task sample, full 108-task release) referencing

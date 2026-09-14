@@ -8,7 +8,7 @@ optional `REQUIRE_NO_MODEL_COVERAGE=1` gate in `runner/run_agent_parallel.sh` co
 
 | Script | Purpose |
 |---|---|
-| `validate_parallel.sh` | All manifest tasks, one worker each (80 max), aggregate gate |
+| `validate_parallel.sh` | All manifest tasks, one worker each (default 100 concurrent, configurable without a repo cap), aggregate gate |
 | `run_path_task.sh` | One no-model task on its own namespaced relay (worker for the above) |
 | `validate.sh` | Sequential variant, `VALIDATION_RUNS` passes over a manifest |
 | `harness.py` | The no-agent rollout: reset, observe, fail-closed evaluate, receipt |
