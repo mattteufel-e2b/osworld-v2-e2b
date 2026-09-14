@@ -1,0 +1,293 @@
+{
+  "kind": "Native M3 runtime-log audit; counts predict-level events, not SDK transport retries or billed requests",
+  "records": [
+    {
+      "task": "003",
+      "prediction_inputs": 358,
+      "model_responses": 358,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 0
+    },
+    {
+      "task": "007",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 0
+    },
+    {
+      "task": "008",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 2
+    },
+    {
+      "task": "011",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 1
+    },
+    {
+      "task": "015",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 0
+    },
+    {
+      "task": "019",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 1
+    },
+    {
+      "task": "023",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 1
+    },
+    {
+      "task": "024",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 1
+    },
+    {
+      "task": "025",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 1
+    },
+    {
+      "task": "026",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 0
+    },
+    {
+      "task": "031",
+      "prediction_inputs": 470,
+      "model_responses": 470,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 2
+    },
+    {
+      "task": "034",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 1
+    },
+    {
+      "task": "035",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 1
+    },
+    {
+      "task": "038",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 0
+    },
+    {
+      "task": "041",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 2
+    },
+    {
+      "task": "046",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 0
+    },
+    {
+      "task": "048",
+      "prediction_inputs": 0,
+      "model_responses": 0,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 0
+    },
+    {
+      "task": "050",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 1
+    },
+    {
+      "task": "053",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 0
+    },
+    {
+      "task": "057",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 0
+    },
+    {
+      "task": "059",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 1
+    },
+    {
+      "task": "067",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 0
+    },
+    {
+      "task": "069",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 0
+    },
+    {
+      "task": "074",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 1
+    },
+    {
+      "task": "078",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 0
+    },
+    {
+      "task": "079",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 0
+    },
+    {
+      "task": "082",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 1
+    },
+    {
+      "task": "083",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 1
+    },
+    {
+      "task": "087",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 1
+    },
+    {
+      "task": "092",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 0
+    },
+    {
+      "task": "093",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 0
+    },
+    {
+      "task": "095",
+      "prediction_inputs": 65,
+      "model_responses": 65,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 0
+    },
+    {
+      "task": "098",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 1
+    },
+    {
+      "task": "103",
+      "prediction_inputs": 500,
+      "model_responses": 500,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 1
+    },
+    {
+      "task": "105",
+      "prediction_inputs": 413,
+      "model_responses": 413,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 2
+    },
+    {
+      "task": "107",
+      "prediction_inputs": 283,
+      "model_responses": 283,
+      "empty_model_responses": 0,
+      "inference_exceptions": 0,
+      "parse_empty": 0
+    }
+  ]
+}

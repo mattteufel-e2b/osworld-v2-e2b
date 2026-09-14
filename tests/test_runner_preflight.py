@@ -213,6 +213,8 @@ def _admissible_inputs(tmp_path, monkeypatch):
     sys.path.insert(0, str(ROOT / "runner"))
     import preflight
 
+    monkeypatch.setattr("shutil.which", lambda name: f"/usr/bin/{name}")
+
     osworld, tasks, manifest, services = _minimal_inputs(tmp_path)
     (osworld / "e2b_relay.py").write_text("# test relay\n")
     runtime = {
@@ -275,6 +277,17 @@ def _admissible_inputs(tmp_path, monkeypatch):
     return preflight
 
 
+@pytest.mark.parametrize("tool", ["ffprobe", "identify"])
+def test_preflight_requires_native_evaluator_tools(tmp_path, monkeypatch, tool):
+    preflight = _admissible_inputs(tmp_path, monkeypatch)
+    monkeypatch.setenv("OSWORLD_EVAL_MODEL_API_KEY", "judge-key")
+    monkeypatch.setattr(
+        "shutil.which", lambda name: None if name == tool else f"/usr/bin/{name}"
+    )
+    with pytest.raises(SystemExit, match=f"host evaluator dependency {tool}"):
+        preflight.main()
+
+
 def test_preflight_requires_resolvable_judge_and_simulator_credentials(
     tmp_path, monkeypatch
 ):
@@ -319,6 +332,27 @@ def test_preflight_skips_credentials_for_no_model_validation(tmp_path, monkeypat
     preflight = _admissible_inputs(tmp_path, monkeypatch)
     monkeypatch.setenv("OSWORLD_EVAL_MODEL_MODE", "stub")
     assert preflight.main() == 0
+
+
+@pytest.mark.parametrize(
+    "incorrect,correct",
+    [
+        ("MODEL_NAME", "MODEL"),
+        ("MODEL_BASE_URL", "BASE_URL"),
+        ("MODEL_API_KEY", "API_KEY"),
+        ("MODEL_API_KEY_ENV", "API_KEY_ENV"),
+        ("MODEL_PROVIDER", "PROVIDER"),
+        ("MAX_OUTPUT_TOKENS", "MAX_TOKENS"),
+    ],
+)
+def test_preflight_rejects_ignored_simulator_settings(
+    tmp_path, monkeypatch, incorrect, correct
+):
+    preflight = _admissible_inputs(tmp_path, monkeypatch)
+    monkeypatch.setenv("OSWORLD_EVAL_MODEL_API_KEY", "judge-key")
+    monkeypatch.setenv(f"OSWORLD_USER_SIM_{incorrect}", "wrong-setting")
+    with pytest.raises(SystemExit, match=f"use OSWORLD_USER_SIM_{correct}"):
+        preflight.main()
 
 
 def _coordinator_inputs_past_preflight(tmp_path, *, agents_check_case: str):
@@ -401,3 +435,38 @@ def test_agent_coordinator_admits_agent_kinds_the_module_knows(tmp_path):
     )  # lifetime fake rejects
     assert Path(env["LIFETIME_CHECKED"]).exists()
     assert "AGENT_KIND" not in result.stderr
+
+
+def test_failed_live_model_probe_rejects_run_before_fleet_admission(tmp_path):
+    env = _coordinator_inputs_past_preflight(tmp_path, agents_check_case="exit 0")
+    uv = tmp_path / "bin" / "uv"
+    uv.write_text(
+        uv.read_text().replace(
+            'case "$*" in', 'case "$*" in\n  *check_models.py*) exit 1 ;;'
+        )
+    )
+    result = _run_coordinator(env)
+    assert result.returncode == 2
+    assert "Live judge/simulator check failed" in result.stderr
+    assert not Path(env["LIFETIME_CHECKED"]).exists()
+    assert not Path(env["RAW_DIR"], "workers").exists()
+
+
+def test_live_model_probe_preserves_relative_manifest_paths(tmp_path):
+    env = _coordinator_inputs_past_preflight(tmp_path, agents_check_case="exit 0")
+    env["AGENT_MANIFEST"] = "validation/full-manifest.json"
+    uv = tmp_path / "bin" / "uv"
+    uv.write_text(
+        uv.read_text().replace(
+            'case "$*" in',
+            """case "$*" in
+  *check_models.py*)
+    while [ "$1" != "--manifest" ]; do shift; done
+    test -f "$2"
+    exit $?
+    ;;""",
+        )
+    )
+    result = _run_coordinator(env)
+    assert result.returncode == 2  # fake lifetime check rejects after model probe
+    assert Path(env["LIFETIME_CHECKED"]).exists(), result.stderr

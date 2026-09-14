@@ -15,6 +15,76 @@ Release pin: `osworld-v2-2026.08.08`. OSWorld-V2 checkout: `d578d2d4e0dc82b43e27
 This ledger separates what was verified to match a stated reference, what was recorded
 without a reference to match against, and what is excluded or unexercised outright.
 
+## September 14 judge and 36-task full-inference verification
+
+The [36-task campaign](out/osworld-v2-evidence/sample-36/agent-main36-m3-500-20260914.json)
+used the unchanged upstream M3 agent on Fireworks with a 500-turn cap, 8,192 output tokens,
+2,048 thinking tokens, an eight-hour task deadline, and no task retries or prediction
+resampling. The native SDK's transport retries remain unchanged. Guest `0d796343…`, fleet
+`76176a74…`, and checkout `d578d2d` identify the exact inputs; the
+[manifest](out/osworld-v2-evidence/sample-36/manifest-36.json) and
+[settings](out/osworld-v2-evidence/sample-36/run-settings-20260914.json) record
+the configuration. This is targeted coverage, not a random sample or a 108-task model result.
+
+Thirty tasks exhausted the cap, four ended through native agent termination, and two failed
+without scores. **34 scores exactly match upstream result files; the campaign gate is FAIL**
+for 003 and 048. Task 003 killed its user-owned Python desktop control server through an agent
+terminal action and then failed while writing a missing screenshot. Task 048 exhausted five
+native 600-second setup-upload attempts on the Mac coordinator before any inference.
+
+A [separate Linux task-048 run](out/osworld-v2-evidence/sample-36/agent-linux-048-m3-500-20260914.json)
+installed the locked root and full upstream environments from scratch, transferred the exact
+274,509,060-byte pinned archive through the native E2B files API, and exhausted its 500-turn
+budget (499 actions and one ASK_USER turn). Its native score is 0.0 and its receipt gate is
+PASS. The downloaded raw archive passed SHA256 verification before runner deletion. This
+closes that task's cloud execution path; the original Mac failure remains in its own campaign.
+The Linux source bundle matches the final judge probe, tracker, preflight, and coordinator
+byte for byte. Fresh guest restores also match the patched server routes, APT wrapper, Chrome
+shim, and server requirements file, including the installed AnyIO 4.14.2 pin. These focused
+checks do not constitute a complete image inventory or a fresh template build.
+
+Judge and LLM simulator calls used `anthropic.claude-haiku-4-5` through AWS Mantle. Correct
+upstream simulator environment names are documented, ignored aliases are rejected, and a live
+text/image/simulator probe runs before rollout admission. Empty model results cannot count as
+successful calls. **43 known-answer judge controls and all six task-specific LLM simulator
+controls passed**: tiny budgets, spreadsheet positive/negative/partial-credit cases, single-
+and multiple-verdict visual checks, and structured/semantic text cases. The
+[control evidence](out/osworld-v2-evidence/sample-36/judge-controls-20260913.json) is separate
+from agent scores. Fireworks M3 awarded full credit to four of five blank-slide negative
+controls with reasoning disabled, so successful image transport does not qualify it as a
+judge. Haiku control results do not establish parity with the published benchmark's judge.
+
+The [main artifact audit](out/osworld-v2-evidence/sample-36/audit-main36-20260914.json)
+contains 16,588 trajectory entries, 16,565 action steps, 23 ASK_USER turns with nonempty replies,
+and 16,565 valid 1920×1080 PNGs. The additional empty PNG is the known task-003 failure;
+no referenced screenshot is missing. Nine real judge calls and three real LLM simulator
+calls succeeded. All 16,589 returned M3 responses were nonempty, with no logged inference
+exceptions. These are predict-level counts, not billed requests or token usage.
+
+Desktop-command success is a separate boundary: 25 tasks logged 350 native command-failure
+messages. In an isolated control, upstream M3's 1,000-character action generated 1,000 keypress
+calls with the guest's 0.1-second PyAutoGUI pause. The unchanged upstream controller returned
+`None` after 90.12 seconds while typing continued; completion appeared by 102.61 seconds.
+The [runtime controls](out/osworld-v2-evidence/sample-36/runtime-controls-20260914.json)
+record that failure mode and preserve it separately from inference success. No action timing,
+agent prompt, task, or scoring-function changes were made to improve these results.
+
+The same controls and actual setup logs establish unresolved fidelity gaps: missing or
+incompatible MuseScore/WPS/Blender applications; a FreeCAD package hold blocking native KiCad
+installation; HTTP fleet origins disabling notifications and clipboard APIs; task 026's stale
+active asset URL; and task 041's hardcoded GitLab URL. Successful native score reporting does
+not certify those starting conditions. Task 069 reached only phase 1 before its native gate
+stopped progression. Native media controls exercise XCF extraction, video decoding, MuseScore
+XML scoring, and REAPER scoring; the focused REAPER fixtures exclude safety-baseline setup.
+They do not establish GUI file compatibility or audio-rendering parity.
+
+[Cleanup verification](out/osworld-v2-evidence/sample-36/cleanup-20260914.json) found zero
+remaining campaign sandboxes across API-listed states and all 146 checked local ports free;
+service runtime and token files were removed. The Linux runner and isolated diagnostic guests
+were also deleted. The [review](out/osworld-v2-evidence/sample-36/review-20260914.md) separates
+PR findings from pre-existing fidelity blockers. These results support the judge fix and
+specific runtime paths, not customer readiness or QEMU/E2B benchmark parity.
+
 ## September 11 release validation and recording check (runner split)
 
 After the runner split (`runner/` = benchmark path, `maintainer/` = no-model ladder,
@@ -35,13 +105,16 @@ shifted like every other port. The aggregate gate reports **FAIL** on that recei
 
 A follow-up wave re-ran 043 and 082 on fresh sandboxes with the port freed:
 [receipt](out/osworld-v2-evidence/full-suite/validate-043-082-followup-20260911.json). Both
-`PATH_PASS` (043 in 33 s, 082 in 84 s), gate **PASS**. Read together, every one of the 108
-environment paths passed on this build; the 043 failure did not reproduce and is recorded as a
-transient post-reset guest-readiness fault, not a closed item.
+`PATH_PASS` (043 in 33 s, 082 in 84 s), gate **PASS**. Read together, all 108 tasks reached
+the harness's passing boundaries. Those checks did not establish application-launch or
+file-format compatibility: the [September 14 runtime controls](out/osworld-v2-evidence/sample-36/runtime-controls-20260914.json)
+confirm missing WPS/Blender/MuseScore launchers, an incompatible MuseScore version, and a
+package hold blocking KiCad installation on this build. The 043 failure did not reproduce
+and remains a transient post-reset guest-readiness fault, not a closed item.
 
 **Agent rollout with recording** (task 093, upstream M3 agent, `accounts/fireworks/models/minimax-m3`,
 500 steps, 2,048 thinking tokens, judge pointed at Fireworks MiniMax because the OpenAI key has
-no credits; the simulator inherits judge settings upstream, so the receipt shows it unset): [receipt](out/osworld-v2-evidence/sample-24/agent-093-recording-20260911.json).
+no credits; task 093 has no user simulator, and simulator overrides are unset in the receipt): [receipt](out/osworld-v2-evidence/sample-24/agent-093-recording-20260911.json).
 Path OK, 500 steps, score 0.25 matching upstream `result.txt`, no judge or simulator calls, gate **PASS**. The receipt records `recording_enabled: true` and the guest's ffmpeg capture landed as a 67 MB `recording.mp4` next to the trajectory in the raw result directory. Recording is therefore verified end to end and moves out of the excluded list below; it stays off unless a run opts in. All campaign sandboxes and both fleets were cleaned up.
 
 Unchanged from the September 10 entry: this is runtime verification on E2B, not a parity claim
@@ -56,8 +129,8 @@ re-ran the September 8 sample after agent construction moved into `runner/agents
 M3 agent, 500 steps, 2,048 thinking tokens, `M3_MAX_LLM_RETRIES=2`, no task retries), same
 guest template `0d796343…`. Every receipt records the resolved `agent_settings`
 (8192 tokens, temperature 0.6, trajectory 10, screenshot/pyautogui), i.e. the exact values
-the runner previously hardcoded. Judge and simulator ran upstream's defaults (OpenAI provider,
-`gpt-4o`) rather than the September 8 MiniMax overrides. 13 concurrent workers were requested;
+the runner previously hardcoded. Judge and simulator used upstream's per-task model defaults
+with the OpenAI provider rather than the September 8 MiniMax overrides. 13 concurrent workers were requested;
 the campaign ran as 7 + 6 because the local host, not E2B, was memory-constrained.
 
 Twelve tasks completed evaluation on unique sandboxes and every recorded score exactly matches
@@ -229,9 +302,11 @@ full native-result parity or a passing 24-task sample.
 - **Service fleet topology**: mocked websites and GitLab are self-hosted-in-sandbox per
   campaign (fresh fleet per campaign), not a team-hosted shared deployment — a deliberate
   choice (turns GitLab's shared-root-token problem into per-run isolation; deferred
-  alternative noted, not implemented). Functionally equivalent for task purposes (each
-  site's state is cookie-scoped via its own `/api/state`, so the deployment is stateless
-  across tasks) but the topology itself differs from any official hosted deployment.
+  alternative noted, not implemented). Each site's state is cookie-scoped via its own
+  `/api/state`; the September 14 audit found no cross-task cookie collisions across 22
+  standard website sessions. This does not establish full functional equivalence: the
+  HTTP guest origins disable notifications and the clipboard API used by some tasks.
+  The topology also differs from an official hosted deployment.
   `out/osworld-v2-evidence/services-websites.json`, `services-gitlab.json`.
 - **Ingress addressing mode**: per-port fanout + host+guest Host-mapping proxies, not
   single-port Caddy Host-header passthrough. Directly probed and ruled out: E2B ingress

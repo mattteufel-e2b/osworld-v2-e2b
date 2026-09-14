@@ -15,6 +15,7 @@ RUNNER_FILES = {
     "__init__.py",
     "agent_runner.py",  # one task: DesktopEnv(e2b) + upstream run_single_example
     "agents.py",  # the file customers edit
+    "check_models.py",  # live upstream judge/simulator preflight
     "aggregate_agent.py",  # campaign receipt + gate
     "evaluator_model_calls.py",  # judge/simulator call accounting
     "gated_data.py",  # gated task/asset download + verification

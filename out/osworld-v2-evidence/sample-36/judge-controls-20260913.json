@@ -1,0 +1,830 @@
+{
+  "verification_date_utc": "2026-09-14",
+  "upstream_commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154",
+  "release": "osworld-v2-2026.08.08",
+  "kind": "known-answer evaluator controls, separate from agent benchmark scores",
+  "mantle": {
+    "model": "anthropic.claude-haiku-4-5",
+    "provider": "anthropic",
+    "spreadsheet_controls": {
+      "kind": "known-answer native evaluator controls, not agent benchmark results",
+      "task_id": "035",
+      "controls": [
+        {
+          "control": "positive",
+          "expected": 1.0,
+          "actual": 1.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "screenshot_present": true,
+          "pass": true
+        },
+        {
+          "control": "negative",
+          "expected": 0.0,
+          "actual": 0.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "screenshot_present": true,
+          "pass": true
+        }
+      ],
+      "pass": true
+    },
+    "visual_controls": {
+      "kind": "native task079 visual-judge checkpoint controls, not agent results",
+      "controls": [
+        {
+          "slide": 3,
+          "control": "positive",
+          "expected": 5.0,
+          "score": 5.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "pass": true
+        },
+        {
+          "slide": 3,
+          "control": "negative",
+          "expected": 0.0,
+          "score": 0.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "pass": true
+        },
+        {
+          "slide": 6,
+          "control": "positive",
+          "expected": 5.0,
+          "score": 5.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "pass": true
+        },
+        {
+          "slide": 6,
+          "control": "negative",
+          "expected": 0.0,
+          "score": 0.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "pass": true
+        },
+        {
+          "slide": 8,
+          "control": "positive",
+          "expected": 5.0,
+          "score": 5.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "pass": true
+        },
+        {
+          "slide": 8,
+          "control": "negative",
+          "expected": 0.0,
+          "score": 0.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "pass": true
+        },
+        {
+          "slide": 17,
+          "control": "positive",
+          "expected": 5.0,
+          "score": 5.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "pass": true
+        },
+        {
+          "slide": 17,
+          "control": "negative",
+          "expected": 0.0,
+          "score": 0.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "pass": true
+        },
+        {
+          "slide": 22,
+          "control": "positive",
+          "expected": 5.0,
+          "score": 5.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "pass": true
+        },
+        {
+          "slide": 22,
+          "control": "negative",
+          "expected": 0.0,
+          "score": 0.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "pass": true
+        }
+      ],
+      "pass": true
+    },
+    "simulator_controls": {
+      "kind": "known-context native user simulator controls, not agent benchmark results",
+      "pass": true,
+      "judge_calls": 0,
+      "controls": [
+        {
+          "id": "007",
+          "pass": true,
+          "simulator_attempts": 1,
+          "simulator_successes": 1
+        },
+        {
+          "id": "024",
+          "pass": true,
+          "simulator_attempts": 1,
+          "simulator_successes": 1
+        },
+        {
+          "id": "026",
+          "pass": true,
+          "simulator_attempts": 1,
+          "simulator_successes": 1
+        },
+        {
+          "id": "034",
+          "pass": true,
+          "simulator_attempts": 1,
+          "simulator_successes": 1
+        },
+        {
+          "id": "095",
+          "pass": true,
+          "simulator_attempts": 1,
+          "simulator_successes": 1
+        },
+        {
+          "id": "098",
+          "pass": true,
+          "simulator_attempts": 1,
+          "simulator_successes": 1
+        }
+      ]
+    },
+    "spreadsheet_partial_credit_controls": {
+      "kind": "known-answer native evaluator controls, not agent benchmark results",
+      "task_id": "035",
+      "controls": [
+        {
+          "control": "partial",
+          "expected": 0.5,
+          "actual": 0.5,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "screenshot_present": true,
+          "approved_rows": 2,
+          "pass": true
+        },
+        {
+          "control": "protected-row-penalty",
+          "expected": 0.5,
+          "actual": 0.5,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "screenshot_present": true,
+          "approved_rows": 2,
+          "pass": true
+        },
+        {
+          "control": "row-order",
+          "expected": 1.0,
+          "actual": 1.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "screenshot_present": true,
+          "approved_rows": 2,
+          "pass": true
+        }
+      ],
+      "pass": true
+    },
+    "multiple_verdict_visual_controls": {
+      "kind": "native task087 multiple-verdict visual-judge controls, not agent results",
+      "controls": [
+        {
+          "slide": 5,
+          "control": "positive",
+          "expected": 5.0,
+          "score": 5.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "pass": true
+        },
+        {
+          "slide": 5,
+          "control": "negative",
+          "expected": 0.0,
+          "score": 0.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "pass": true
+        },
+        {
+          "slide": 13,
+          "control": "positive",
+          "expected": 2.0,
+          "score": 2.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "pass": true
+        },
+        {
+          "slide": 13,
+          "control": "negative",
+          "expected": 0.0,
+          "score": 0.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "pass": true
+        },
+        {
+          "slide": 18,
+          "control": "positive",
+          "expected": 2.0,
+          "score": 2.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "pass": true
+        },
+        {
+          "slide": 18,
+          "control": "negative",
+          "expected": 0.0,
+          "score": 0.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "pass": true
+        }
+      ],
+      "pass": true
+    }
+  },
+  "fireworks": {
+    "model": "accounts/fireworks/models/minimax-m3",
+    "provider": "openai_compatible",
+    "spreadsheet_controls": {
+      "kind": "known-answer native evaluator controls, not agent benchmark results",
+      "task_id": "035",
+      "controls": [
+        {
+          "control": "positive",
+          "expected": 1.0,
+          "actual": 1.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "screenshot_present": true,
+          "pass": true
+        },
+        {
+          "control": "negative",
+          "expected": 0.0,
+          "actual": 0.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "screenshot_present": true,
+          "pass": true
+        }
+      ],
+      "pass": true
+    },
+    "visual_controls": {
+      "kind": "native task079 visual-judge checkpoint controls, not agent results",
+      "controls": [
+        {
+          "slide": 3,
+          "control": "positive",
+          "expected": 5.0,
+          "score": 5.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "pass": true
+        },
+        {
+          "slide": 3,
+          "control": "negative",
+          "expected": 0.0,
+          "score": 5.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "pass": false
+        },
+        {
+          "slide": 6,
+          "control": "positive",
+          "expected": 5.0,
+          "score": 5.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "pass": true
+        },
+        {
+          "slide": 6,
+          "control": "negative",
+          "expected": 0.0,
+          "score": 5.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "pass": false
+        },
+        {
+          "slide": 8,
+          "control": "positive",
+          "expected": 5.0,
+          "score": 5.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "pass": true
+        },
+        {
+          "slide": 8,
+          "control": "negative",
+          "expected": 0.0,
+          "score": 0.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "pass": true
+        },
+        {
+          "slide": 17,
+          "control": "positive",
+          "expected": 5.0,
+          "score": 5.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "pass": true
+        },
+        {
+          "slide": 17,
+          "control": "negative",
+          "expected": 0.0,
+          "score": 5.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "pass": false
+        },
+        {
+          "slide": 22,
+          "control": "positive",
+          "expected": 5.0,
+          "score": 5.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "pass": true
+        },
+        {
+          "slide": 22,
+          "control": "negative",
+          "expected": 0.0,
+          "score": 5.0,
+          "judge_attempts": 1,
+          "judge_successes": 1,
+          "pass": false
+        }
+      ],
+      "pass": false
+    },
+    "simulator_controls": {
+      "kind": "known-context native user simulator controls, not agent benchmark results",
+      "pass": true,
+      "judge_calls": 0,
+      "controls": [
+        {
+          "id": "007",
+          "pass": true,
+          "simulator_attempts": 1,
+          "simulator_successes": 1
+        },
+        {
+          "id": "024",
+          "pass": true,
+          "simulator_attempts": 1,
+          "simulator_successes": 1
+        },
+        {
+          "id": "026",
+          "pass": true,
+          "simulator_attempts": 1,
+          "simulator_successes": 1
+        },
+        {
+          "id": "034",
+          "pass": true,
+          "simulator_attempts": 1,
+          "simulator_successes": 1
+        },
+        {
+          "id": "095",
+          "pass": true,
+          "simulator_attempts": 1,
+          "simulator_successes": 1
+        },
+        {
+          "id": "098",
+          "pass": true,
+          "simulator_attempts": 1,
+          "simulator_successes": 1
+        }
+      ]
+    }
+  },
+  "mantle_tiny_budget_controls": {
+    "cases": [
+      {
+        "kind": "text",
+        "budget": 5,
+        "expected": "YES",
+        "actual": "YES",
+        "pass": true
+      },
+      {
+        "kind": "text",
+        "budget": 5,
+        "expected": "NO",
+        "actual": "NO",
+        "pass": true
+      },
+      {
+        "kind": "image",
+        "budget": 5,
+        "expected": 1.0,
+        "actual": 1.0,
+        "pass": true
+      },
+      {
+        "kind": "image",
+        "budget": 5,
+        "expected": 0.0,
+        "actual": 0.0,
+        "pass": true
+      },
+      {
+        "kind": "text",
+        "budget": 10,
+        "expected": "YES",
+        "actual": "YES",
+        "pass": true
+      },
+      {
+        "kind": "text",
+        "budget": 10,
+        "expected": "NO",
+        "actual": "NO",
+        "pass": true
+      },
+      {
+        "kind": "image",
+        "budget": 10,
+        "expected": 1.0,
+        "actual": 1.0,
+        "pass": true
+      },
+      {
+        "kind": "image",
+        "budget": 10,
+        "expected": 0.0,
+        "actual": 0.0,
+        "pass": true
+      },
+      {
+        "kind": "text",
+        "budget": 16,
+        "expected": "YES",
+        "actual": "YES",
+        "pass": true
+      },
+      {
+        "kind": "text",
+        "budget": 16,
+        "expected": "NO",
+        "actual": "NO",
+        "pass": true
+      },
+      {
+        "kind": "image",
+        "budget": 16,
+        "expected": 1.0,
+        "actual": 1.0,
+        "pass": true
+      },
+      {
+        "kind": "image",
+        "budget": 16,
+        "expected": 0.0,
+        "actual": 0.0,
+        "pass": true
+      }
+    ],
+    "judge_attempts": 12,
+    "judge_successes": 12,
+    "pass": true
+  },
+  "basic_image_diagnostics": [
+    {
+      "provider": "openai_compatible",
+      "model": "accounts/fireworks/models/minimax-m3",
+      "expected": [
+        "red"
+      ],
+      "answer": "Red, Blue, Green, Yellow, Purple, Orange, Pink, Cyan, Magenta, Brown"
+    },
+    {
+      "provider": "openai_compatible",
+      "model": "accounts/fireworks/models/minimax-m3",
+      "expected": [
+        "blue",
+        "red"
+      ],
+      "answer": "Black, white"
+    },
+    {
+      "provider": "openai_compatible",
+      "model": "accounts/fireworks/models/minimax-m3",
+      "expected": [
+        "red",
+        "blue"
+      ],
+      "answer": "Red, Blue"
+    },
+    {
+      "provider": "openai_compatible",
+      "model": "accounts/fireworks/models/minimax-m3",
+      "expected": [
+        "green",
+        "red",
+        "blue"
+      ],
+      "answer": "Black, white, black"
+    },
+    {
+      "provider": "anthropic",
+      "model": "accounts/fireworks/models/minimax-m3",
+      "expected": [
+        "red"
+      ],
+      "answer": "No images were attached to your message. Please share the images you'd like me to analyze, and I'll identify the solid background"
+    },
+    {
+      "provider": "anthropic",
+      "model": "accounts/fireworks/models/minimax-m3",
+      "expected": [
+        "blue",
+        "red"
+      ],
+      "answer": "No images were attached to your message. Please share the images you'd like me to analyze."
+    },
+    {
+      "provider": "anthropic",
+      "model": "accounts/fireworks/models/minimax-m3",
+      "expected": [
+        "red",
+        "blue"
+      ],
+      "answer": ""
+    },
+    {
+      "provider": "anthropic",
+      "model": "accounts/fireworks/models/minimax-m3",
+      "expected": [
+        "green",
+        "red",
+        "blue"
+      ],
+      "answer": "No images were attached to your message. Please share the images you'd like me to analyze."
+    },
+    {
+      "provider": "anthropic",
+      "model": "anthropic.claude-haiku-4-5",
+      "expected": [
+        "red"
+      ],
+      "answer": "Red"
+    },
+    {
+      "provider": "anthropic",
+      "model": "anthropic.claude-haiku-4-5",
+      "expected": [
+        "blue",
+        "red"
+      ],
+      "answer": "Blue, Red"
+    },
+    {
+      "provider": "anthropic",
+      "model": "anthropic.claude-haiku-4-5",
+      "expected": [
+        "red",
+        "blue"
+      ],
+      "answer": "Red, Blue"
+    },
+    {
+      "provider": "anthropic",
+      "model": "anthropic.claude-haiku-4-5",
+      "expected": [
+        "green",
+        "red",
+        "blue"
+      ],
+      "answer": "Green, Red, Blue"
+    }
+  ],
+  "ocr_transport_diagnostics": [
+    {
+      "provider": "openai_compatible",
+      "model": "accounts/fireworks/models/minimax-m3",
+      "format": "png",
+      "expected": "Q7M4",
+      "actual": "Q7M4",
+      "pass": true
+    },
+    {
+      "provider": "openai_compatible",
+      "model": "accounts/fireworks/models/minimax-m3",
+      "format": "jpg",
+      "expected": "Q7M4",
+      "actual": "Q7M4",
+      "pass": true
+    },
+    {
+      "provider": "anthropic",
+      "model": "accounts/fireworks/models/minimax-m3",
+      "format": "png",
+      "expected": "Q7M4",
+      "actual": "",
+      "pass": false
+    },
+    {
+      "provider": "anthropic",
+      "model": "accounts/fireworks/models/minimax-m3",
+      "format": "jpg",
+      "expected": "Q7M4",
+      "actual": "",
+      "pass": false
+    },
+    {
+      "provider": "anthropic",
+      "model": "anthropic.claude-haiku-4-5",
+      "format": "png",
+      "expected": "Q7M4",
+      "actual": "Q7M4",
+      "pass": true
+    },
+    {
+      "provider": "anthropic",
+      "model": "anthropic.claude-haiku-4-5",
+      "format": "jpg",
+      "expected": "Q7M4",
+      "actual": "Q7M4",
+      "pass": true
+    }
+  ],
+  "agent_ocr_controls": [
+    {
+      "expected": "Q7M4",
+      "typed_characters": "Q7M4",
+      "pass": true
+    },
+    {
+      "expected": "9R2Z",
+      "typed_characters": "9R2Z",
+      "pass": true
+    }
+  ],
+  "limits": [
+    "Selected known-answer controls do not establish parity across judges or between QEMU and E2B.",
+    "The Fireworks visual judge controls used reasoning_effort=none.",
+    "Task fixtures, prompts, simulator facts, and raw gated outputs remain private."
+  ],
+  "mantle_native_text_controls": {
+    "kind": "native structured and semantic text judge controls; synthetic candidates, not agent results",
+    "controls": [
+      {
+        "task": "082",
+        "kind": "core_findings",
+        "control": "correct",
+        "expected": 1,
+        "score": 1.0,
+        "judge_attempts": 1,
+        "judge_successes": 1,
+        "pass": true
+      },
+      {
+        "task": "082",
+        "kind": "core_findings",
+        "control": "irrelevant",
+        "expected": 0,
+        "score": 0.0,
+        "judge_attempts": 1,
+        "judge_successes": 1,
+        "pass": true
+      },
+      {
+        "task": "082",
+        "kind": "core_findings",
+        "control": "partial",
+        "expected": 0.3333,
+        "score": 0.3333,
+        "judge_attempts": 1,
+        "judge_successes": 1,
+        "pass": true
+      },
+      {
+        "task": "082",
+        "kind": "remediation_plan",
+        "control": "correct",
+        "expected": 1,
+        "score": 1.0,
+        "judge_attempts": 1,
+        "judge_successes": 1,
+        "pass": true
+      },
+      {
+        "task": "082",
+        "kind": "remediation_plan",
+        "control": "irrelevant",
+        "expected": 0,
+        "score": 0.0,
+        "judge_attempts": 1,
+        "judge_successes": 1,
+        "pass": true
+      },
+      {
+        "task": "082",
+        "kind": "remediation_plan",
+        "control": "partial",
+        "expected": 0.5,
+        "score": 0.5,
+        "judge_attempts": 1,
+        "judge_successes": 1,
+        "pass": true
+      },
+      {
+        "task": "031",
+        "kind": "channel_judge",
+        "control": "correct",
+        "expected": true,
+        "score": true,
+        "judge_attempts": 1,
+        "judge_successes": 1,
+        "pass": true
+      },
+      {
+        "task": "031",
+        "kind": "channel_judge",
+        "control": "irrelevant",
+        "expected": false,
+        "score": false,
+        "judge_attempts": 1,
+        "judge_successes": 1,
+        "pass": true
+      },
+      {
+        "task": "031",
+        "kind": "channel_judge",
+        "control": "extra_violation",
+        "expected": false,
+        "score": false,
+        "judge_attempts": 1,
+        "judge_successes": 1,
+        "pass": true
+      },
+      {
+        "task": "031",
+        "kind": "channel_judge",
+        "control": "paraphrase",
+        "expected": true,
+        "score": true,
+        "judge_attempts": 1,
+        "judge_successes": 1,
+        "pass": true
+      }
+    ],
+    "pass": true
+  },
+  "live_invalid_judge_startup_rejection": {
+    "kind": "live startup rejection control, standalone model check without sandbox allocation",
+    "provider": "openai_compatible",
+    "model": "accounts/fireworks/models/minimax-m3",
+    "reasoning_effort_override": null,
+    "exit_code": 1,
+    "empty_response_rejected": true,
+    "incorrect_answer_rejected": false,
+    "pass": true
+  },
+  "control_summary": {
+    "mantle_judge_cases": 43,
+    "mantle_judge_passed": 43,
+    "mantle_simulator_cases": 6,
+    "mantle_simulator_passed": 6,
+    "scope": "Known-answer controls only; no agent scores included"
+  }
+}

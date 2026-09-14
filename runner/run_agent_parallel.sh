@@ -141,6 +141,12 @@ if ! (cd "$OSWORLD_ROOT" && PYTHONPATH="$OSWORLD_ROOT" uv run --locked --extra f
     exit 2
 fi
 
+if ! PYTHONPATH="$OSWORLD_ROOT" uv run --project "$OSWORLD_ROOT" --locked --extra full --python 3.12 \
+        python "$HERE/check_models.py" --manifest "$MANIFEST" --tasks-dir "$TASKS_DIR"; then
+    echo "Live judge/simulator check failed; verify OSWORLD_EVAL_MODEL_* and OSWORLD_USER_SIM_* settings" >&2
+    exit 2
+fi
+
 export PARALLEL_CONCURRENCY RUN_TASK_082_CONCURRENT AGENT_START_STAGGER_SECONDS
 if ! $UV python "$V2ROOT/services/fleetlib.py" --check-lifetime "$MANIFEST" \
     --runtime "$SERVICES_DIR/.runtime.json"; then

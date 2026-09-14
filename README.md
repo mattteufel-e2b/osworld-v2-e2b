@@ -18,10 +18,20 @@ a fresh copy of the pin and applies every committed patch in lexical order.
 only recorded, and what is excluded (no VNC, no ALSA kernel modules, pause/resume unused).
 Receipts live in `out/osworld-v2-evidence/`.
 
+This port is experimental. Full-inference verification found unresolved application,
+browser API, task URL, and process cleanup issues. See the
+[verification findings and follow-ups](docs/pr-1-verification.md) before interpreting scores;
+the results do not establish full-suite correctness or parity with QEMU.
+
 ## Quick start
 
 Prerequisites: `E2B_API_KEY=...` in `.env.local` at the repo root, `uv`, Node >=20.18.1,
-`npm`, `git`, and Hugging Face access to both gated OSWorld V2 datasets. Authenticate once
+`npm`, `git`, FFmpeg (`ffprobe`), ImageMagick (`identify`), and Hugging Face access to both
+gated OSWorld V2 datasets. Install the native evaluator tools on the **runner host** with
+`brew install ffmpeg imagemagick` on macOS or `sudo apt-get install ffmpeg imagemagick`
+on Ubuntu/Debian. Task 051 extracts XCF layers with ImageMagick, and task 095 probes video
+metadata with `ffprobe`; missing tools can otherwise become zero scores. Preflight checks both.
+Authenticate once
 with `uv run --locked hf auth login` after accepting their access gates.
 
 ```bash
@@ -44,8 +54,8 @@ uv run --env-file .env.local --locked python services/gitlab/launch.py
 
 That brings up the pinned template, the checkout, gated task data, and both service fleets.
 Running the benchmark is the default next step — no separate opt-in is required. Render the
-full 108-task manifest against the pinned template, export the model endpoint (Fireworks
-shown; any OpenAI-compatible endpoint works), and launch the parallel driver:
+full 108-task manifest against the pinned template, export the agent endpoint (Fireworks M3
+shown, using Anthropic Messages transport), and launch the parallel driver:
 
 ```bash
 RUN_ROOT="$(mktemp -d)"
@@ -74,16 +84,59 @@ rollout at the 500-step budget can then exceed the 14400 s (4 h) `AGENT_TASK_TIM
 default well before the agent is actually stuck. Set `AGENT_TASK_TIMEOUT_SECONDS=28800` (8 h,
 as shown above) for full runs so genuinely long tasks aren't cut off mid-rollout.
 
-Agent credentials are separate from the upstream judge and simulator credentials. Those use
-upstream's own settings unchanged: `OSWORLD_EVAL_MODEL_PROVIDER`, `OSWORLD_EVAL_MODEL_NAME`,
-`OSWORLD_EVAL_MODEL_BASE_URL`, `OSWORLD_EVAL_MODEL_API_KEY` (or `OSWORLD_EVAL_MODEL_API_KEY_ENV`)
-for the judge, and the same names under `OSWORLD_USER_SIM_` for the simulator, which inherits
-whatever it does not override. Both default to OpenAI with `OPENAI_API_KEY`. Preflight resolves
-the keys the way upstream does and fails before any sandbox launches if one is missing, because
-upstream would otherwise turn that failure into a 0.0 score hours later. Changing these settings
-is an experiment configuration change, not runtime parity. A failed judge or simulator model call
-invalidates the run even if upstream returns zero; simulator calls cannot satisfy judge coverage.
-These rollouts are not automatically retried.
+Agent credentials are separate from the upstream judge and simulator credentials. The default
+uses OpenAI with `OPENAI_API_KEY`; select another endpoint using upstream's settings:
+
+| Setting | Judge | User simulator |
+| --- | --- | --- |
+| Provider | `OSWORLD_EVAL_MODEL_PROVIDER` | `OSWORLD_USER_SIM_PROVIDER` |
+| Model | `OSWORLD_EVAL_MODEL_NAME` | `OSWORLD_USER_SIM_MODEL` |
+| Endpoint | `OSWORLD_EVAL_MODEL_BASE_URL` | `OSWORLD_USER_SIM_BASE_URL` |
+| API key | `OSWORLD_EVAL_MODEL_API_KEY` | `OSWORLD_USER_SIM_API_KEY` |
+| Key environment variable | `OSWORLD_EVAL_MODEL_API_KEY_ENV` | `OSWORLD_USER_SIM_API_KEY_ENV` |
+| Output token limit | `OSWORLD_EVAL_MODEL_MAX_OUTPUT_TOKENS` | `OSWORLD_USER_SIM_MAX_TOKENS` |
+
+Set the simulator model explicitly when changing providers. The release's LLM simulator tasks
+specify `gpt-4o`; that task setting takes precedence over the judge model. The simulator inherits
+judge provider, endpoint, and credentials only where neither its own environment nor task config
+overrides them. `OSWORLD_USER_SIM_MODEL_NAME` and `OSWORLD_USER_SIM_MODEL_BASE_URL` are invalid.
+Literal API keys take precedence over key-variable names; use `OSWORLD_USER_SIM_API_KEY`
+when overriding a literal judge key.
+
+For example, this AWS Mantle configuration passed the
+[native spreadsheet and visual-judge controls](out/osworld-v2-evidence/sample-36/judge-controls-20260913.json)
+used for this repo's validation. Set `AWS_MANTLE` to your Mantle API key:
+
+```bash
+export OSWORLD_EVAL_MODEL_PROVIDER=anthropic
+export OSWORLD_EVAL_MODEL_NAME=anthropic.claude-haiku-4-5
+export OSWORLD_EVAL_MODEL_BASE_URL=https://bedrock-mantle.us-east-1.api.aws/anthropic
+export OSWORLD_EVAL_MODEL_API_KEY_ENV=AWS_MANTLE
+export OSWORLD_USER_SIM_MODEL=anthropic.claude-haiku-4-5
+```
+
+Some task judges allow only 5–16 output tokens. Use a model that can return a verdict at that
+budget; reasoning can consume it before a verdict appears. Task-specific token limits take
+precedence over the judge environment setting. The agent's thinking budget is independent of
+these judge settings. Fireworks M3 returned false positives on four of five blank-slide judge
+controls even with reasoning disabled; its successful agent image calls do not validate it as
+a judge.
+
+Before creating rollout guests, the coordinator checks a text answer, reads random digits from
+an image, and checks the selected tasks' LLM simulator configurations through upstream's own
+clients. You can run that
+check before starting the service fleets as well:
+
+```bash
+(cd OSWorld-V2 && uv run --locked --extra full python ../runner/check_models.py \
+    --manifest "$RUN_ROOT/full-manifest.json" --tasks-dir ../tasks)
+```
+
+These probes establish basic text/image behavior and nonempty simulator responses, not
+benchmark scoring parity.
+Changing judge or simulator models changes the experiment configuration. A failed or empty judge
+or simulator call invalidates the run even if upstream returns zero; simulator calls cannot satisfy
+judge coverage. Task rollouts are not automatically retried.
 
 Preflight verifies the actual upstream commit and exact adapter patches; on drift it prints the
 `runner/setup.sh --restore` + re-apply command that repairs the checkout. The coordinator admits

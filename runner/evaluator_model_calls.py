@@ -12,6 +12,12 @@ from functools import wraps
 from typing import Callable
 
 
+def require_response(result: str) -> str:
+    if not isinstance(result, str) or not result.strip():
+        raise ValueError("empty model response from judge or user simulator")
+    return result
+
+
 class EvaluatorModelCallTracker:
     def __init__(self) -> None:
         self.call_attempts = 0
@@ -26,7 +32,7 @@ class EvaluatorModelCallTracker:
             prefix = "user_sim_" if self._in_user_sim.get() else ""
             attempts, successes = prefix + "call_attempts", prefix + "successes"
             setattr(self, attempts, getattr(self, attempts) + 1)
-            result = function(*args, **kwargs)
+            result = require_response(function(*args, **kwargs))
             setattr(self, successes, getattr(self, successes) + 1)
             return result
 

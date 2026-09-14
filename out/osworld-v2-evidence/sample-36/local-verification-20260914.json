@@ -1,0 +1,66 @@
+{
+  "reviewed_head": "5d359b19e78b7f46ad3f41218612a68c5e0fbce9",
+  "tests": [
+    {
+      "command": "uv run --locked pytest -q --ignore=tests/test_run_agent_lifecycle.py",
+      "passed": 284,
+      "seconds": 9.27
+    },
+    {
+      "command": "uv run --locked pytest -q tests/test_run_agent_lifecycle.py",
+      "passed": 19,
+      "seconds": 95.76
+    }
+  ],
+  "total_tests_passed": 303,
+  "final_checks": {
+    "fleet-cleanup": {
+      "exit_code": 0,
+      "log": "fleet-cleanup.log"
+    },
+    "final-artifact-audit": {
+      "exit_code": 0,
+      "log": "final-artifact-audit.log"
+    },
+    "final-inference-audit": {
+      "exit_code": 0,
+      "log": "final-inference-audit.log"
+    },
+    "lifecycle-tests": {
+      "exit_code": 0,
+      "log": "lifecycle-tests.log"
+    },
+    "final-ruff": {
+      "exit_code": 0,
+      "log": "final-ruff.log"
+    },
+    "final-ruff-format": {
+      "exit_code": 1,
+      "log": "final-ruff-format.log"
+    },
+    "final-shell-syntax": {
+      "exit_code": 0,
+      "log": "final-shell-syntax.log"
+    },
+    "final-source-verification": {
+      "exit_code": 0,
+      "log": "final-source-verification.log"
+    },
+    "final-diff-check": {
+      "exit_code": 0,
+      "log": "final-diff-check.log"
+    }
+  },
+  "workspace_formatting_exception": "The full workspace format check flags only the pre-existing untracked docs/superpowers/plans/2026-09-09-customer-experimentation.md, outside the PR and left unchanged.",
+  "exact_judge_runner_sources_match_completed_linux_run": true,
+  "earlier_unchanged_template_checks": {
+    "typescript_typecheck": "passed in the initial PR review",
+    "npm_audit_high": "zero vulnerabilities in the initial PR review"
+  },
+  "scope": "Tests were split to avoid taking the active campaign shared proxy port. Logs and raw trajectories remain private.",
+  "pr_scope_formatting": {
+    "command": "uv run --locked ruff format --check --extend-exclude docs .",
+    "exit_code": 0,
+    "files_already_formatted": 67
+  }
+}

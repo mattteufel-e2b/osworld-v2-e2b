@@ -82,6 +82,31 @@ def test_failed_call_counts_attempt_only():
     assert tracker.successes == 0
 
 
+@pytest.mark.parametrize("answer", ["", "  \n", None])
+def test_empty_response_cannot_validate_a_judge_or_simulator_call(answer):
+    tracker = _tracker_class()()
+    model_client = SimpleNamespace(
+        generate_text=lambda *a, **k: answer,
+        generate_chat=lambda *a, **k: answer,
+    )
+
+    class Simulator:
+        def respond(self, question):
+            return model_client.generate_chat([question])
+
+    tracker.install(
+        model_client=model_client,
+        llm_metrics=SimpleNamespace(generate_text=model_client.generate_text),
+        user_simulator=Simulator,
+    )
+    with pytest.raises(ValueError, match="empty model response"):
+        model_client.generate_text("judge")
+    with pytest.raises(ValueError, match="empty model response"):
+        Simulator().respond("question")
+    assert tracker.call_attempts == tracker.user_sim_call_attempts == 1
+    assert tracker.successes == tracker.user_sim_successes == 0
+
+
 def test_simulator_success_does_not_count_as_a_judge_success():
     tracker = _tracker_class()()
     model_client = SimpleNamespace(

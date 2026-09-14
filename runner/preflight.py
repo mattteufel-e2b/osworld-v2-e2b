@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import socket
 import stat
 import subprocess
@@ -37,6 +38,22 @@ def require_model_credentials() -> None:
     reached after that default, so it never applies; do not mirror it here."""
     if os.environ.get("OSWORLD_EVAL_MODEL_MODE") == "stub":
         return
+    # These look plausible (and were previously documented) but upstream
+    # silently ignores them, potentially sending a task's gpt-4o to another API.
+    aliases = {
+        "MODEL_NAME": "MODEL",
+        "MODEL_PROVIDER": "PROVIDER",
+        "MODEL_BASE_URL": "BASE_URL",
+        "MODEL_API_KEY": "API_KEY",
+        "MODEL_API_KEY_ENV": "API_KEY_ENV",
+        "MAX_OUTPUT_TOKENS": "MAX_TOKENS",
+    }
+    for incorrect, correct in aliases.items():
+        if os.environ.get(f"OSWORLD_USER_SIM_{incorrect}"):
+            fail(
+                f"OSWORLD_USER_SIM_{incorrect} is ignored by upstream; "
+                f"use OSWORLD_USER_SIM_{correct}"
+            )
     targets = [("judge model", ("OSWORLD_EVAL_MODEL",))]
     if any(
         os.environ.get(f"OSWORLD_USER_SIM_{suffix}")
@@ -201,6 +218,13 @@ def main() -> int:
             or f"exit {checkout_verification.returncode}"
         )
         fail(f"patched OSWorld checkout verification failed: {detail}")
+
+    for executable, package in (("ffprobe", "FFmpeg"), ("identify", "ImageMagick")):
+        if not shutil.which(executable):
+            fail(
+                f"host evaluator dependency {executable} is missing; "
+                f"install {package} on the runner host (see README prerequisites)"
+            )
 
     print(f"runner preflight ok: {len(selected)} task(s)")
     return 0
