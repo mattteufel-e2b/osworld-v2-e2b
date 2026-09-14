@@ -66,6 +66,9 @@ Concurrency defaults to and is capped at **80**. Results are in `$RUN_ROOT/agent
 trajectories are in `$RUN_ROOT/agent-raw`. Admitted runs stop their service fleets on exit.
 See [run configuration](docs/configuration.md) for cleanup, recording, and result interpretation.
 
+Run `services/stop.py --campaign-id "$OSWORLD_CAMPAIGN_ID" [--dry-run]` to remove exactly
+that campaign's fleets and any leftover guests, such as after a hard-killed run.
+
 ## Run with upstream's runner
 
 Upstream's scripts work unchanged once `runner/setup.sh` has patched the checkout. The M3
