@@ -3,16 +3,12 @@
 # environment-path run with no model calls, configurable E2B concurrency. Not needed
 # to run the benchmark (see README "Quick start"); it qualifies a template build.
 # Worker concurrency defaults to and is capped at 80: strict reset can double
-# guest use under the 200-concurrent-sandbox ceiling, and the 500-port relay slot
-# stride would push CDP listeners above 65535 from slot 93 (see run_agent_parallel.sh).
+# guest use under the 200-concurrent-sandbox ceiling. Each worker's harness owns
+# its own in-process bridge; nothing here to namespace or coordinate for that.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-V2ROOT="$(cd "$HERE/.." && pwd)"
-REPO_ROOT="$V2ROOT"
-SERVICES_DIR="${OSWORLD_SERVICES_DIR:-$V2ROOT/services}"
-OSWORLD_ROOT="${OSWORLD_ROOT:-$V2ROOT/OSWorld-V2}"
-TASKS_DIR="${OSWORLD_TASKS_DIR:-$V2ROOT/tasks}"
+source "$HERE/../runner/common.sh"
 MANIFEST="${VALIDATION_MANIFEST:-$V2ROOT/validation/full-manifest.json}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-$REPO_ROOT/out/osworld-v2-evidence/full-suite}"
 RAW_DIR="${RAW_DIR:-$REPO_ROOT/out/osworld-v2-raw/full-suite}"
@@ -25,24 +21,15 @@ if [[ ! "$PARALLEL_CONCURRENCY" =~ ^[1-9][0-9]*$ ]]; then
     exit 2
 fi
 if [ "$PARALLEL_CONCURRENCY" -gt 80 ]; then
-    echo "PARALLEL_CONCURRENCY must not exceed 80 (strict reset can double guest use; relay port slots end at 92)" >&2
+    echo "PARALLEL_CONCURRENCY must not exceed 80 (strict reset can double guest use)" >&2
     exit 2
 fi
-if [[ ! "${GUEST_TEMPLATE:-}" =~ ^[a-z0-9-]+:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
-    echo "GUEST_TEMPLATE must be an immutable name:build_id reference" >&2
-    exit 2
-fi
-export GUEST_TEMPLATE
-if [ -z "${OSWORLD_CAMPAIGN_ID:-}" ]; then echo "OSWORLD_CAMPAIGN_ID is required" >&2; exit 2; fi
-export OSWORLD_CAMPAIGN_ID
+require_immutable_guest_template
+require_campaign_id
 export OSWORLD_EVAL_MODEL_MODE=stub
 unset OPENAI_API_KEY OPENAI_API_KEY_CUA ANTHROPIC_API_KEY GEMINI_API_KEY MODEL_API_KEY
 unset OSWORLD_EVAL_MODEL_API_KEY OSWORLD_USER_SIM_API_KEY
-
-if [ -z "${E2B_API_KEY:-}" ] && [ -f "$REPO_ROOT/.env.local" ]; then
-    export E2B_API_KEY="$(grep '^E2B_API_KEY=' "$REPO_ROOT/.env.local" | cut -d= -f2)"
-fi
-if [ -z "${E2B_API_KEY:-}" ]; then echo "E2B_API_KEY is required" >&2; exit 2; fi
+resolve_e2b_api_key
 
 mkdir -p "$EVIDENCE_DIR" "$RAW_DIR/workers"
 proxy_pid=""
@@ -110,25 +97,21 @@ PY
 run_batch() {
     local -a batch=("$@")
     local -a pids=()
-    local task_id slot port_base task_service_ports output log pid
+    local task_id task_service_ports output log pid
     local batch_failed=0
-    slot=0
     for task_id in "${batch[@]}"; do
-        slot=$((slot + 1))
-        port_base=$((slot * 500))
         task_service_ports=""
         if [ "$task_id" = "082" ]; then
             task_service_ports="3000:3000"
         fi
         output="$RAW_DIR/workers/task_${task_id}.json"
         log="$RAW_DIR/workers/task_${task_id}.log"
-        OSWORLD_TASK_SERVICE_PORTS="$task_service_ports" \
-            TASK_ID="$task_id" PORT_BASE="$port_base" \
-            OUTPUT="$output" RAW_DIR="$RAW_DIR/workers" \
+        TASK_ID="$task_id" OUTPUT="$output" RAW_DIR="$RAW_DIR/workers" \
+            OSWORLD_TASK_SERVICE_PORTS="$task_service_ports" \
             "$HERE/run_path_task.sh" >"$log" 2>&1 &
         pid=$!
         pids+=("$pid")
-        echo "launched task $task_id port_base=$port_base pid=$pid"
+        echo "launched task $task_id pid=$pid"
     done
     for pid in "${pids[@]}"; do
         wait "$pid" || batch_failed=1

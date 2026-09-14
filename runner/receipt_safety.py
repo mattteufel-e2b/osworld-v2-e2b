@@ -8,9 +8,10 @@ import tempfile
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
-# Retry-wave allowlist. Keep in sync with agent_runner._classify_stage_and_cause
-# and write_timeout_receipt.py. "evaluator-or-agent" is a scored model attempt
-# and is deliberately never retried; a shell-enforced deadline ("task-timeout") is.
+# Retry-wave allowlist. Keep in sync with agent_runner._classify_stage_and_cause.
+# "evaluator-or-agent" is a scored model attempt and is never retried; the
+# runner's own deadline ("task-timeout") is. "interrupted" (SIGTERM from the
+# coordinator or operator) is not retried either: the operator cancelled it.
 RETRYABLE_ERROR_CAUSES = frozenset(
     {
         "transport",
@@ -92,12 +93,10 @@ def base_receipt(
     agent_kind: str,
     model: str,
     max_steps: int,
-    port_base: int,
     recording_enabled: bool | None = None,
 ) -> dict:
-    """The run-configuration fields every per-task receipt carries, whether it
-    is written by agent_runner.py or by the shell watchdog on a timeout. One
-    definition keeps the two writers from drifting apart."""
+    """The run-configuration fields every per-task receipt carries. One
+    definition keeps every receipt writer from drifting apart."""
     return {
         "id": task_id,
         "run_nonce": os.environ.get("OSWORLD_RUN_NONCE"),
@@ -128,8 +127,6 @@ def base_receipt(
         "user_sim_transport": public_transport(
             os.environ.get("OSWORLD_USER_SIM_BASE_URL")
         ),
-        "port_base": port_base,
-        "control_port": 14999 + port_base,
         "template": os.environ.get("GUEST_TEMPLATE"),
         "campaign_id": os.environ.get("OSWORLD_CAMPAIGN_ID"),
         "max_steps": max_steps,

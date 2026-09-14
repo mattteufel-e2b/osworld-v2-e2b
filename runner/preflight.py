@@ -152,7 +152,10 @@ def main() -> int:
 
     if not args.osworld_root.is_dir():
         fail(f"required patched OSWorld checkout missing: {args.osworld_root}")
-    require_file(args.osworld_root / "e2b_relay.py", "patched OSWorld relay")
+    require_file(
+        args.osworld_root / "desktop_env" / "providers" / "e2b" / "bridge.py",
+        "vendored E2B bridge",
+    )
     if not args.tasks_dir.is_dir():
         fail(f"required gated tasks directory missing: {args.tasks_dir}")
     if not (args.tasks_dir / "assets").is_dir():

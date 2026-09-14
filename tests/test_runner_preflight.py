@@ -55,9 +55,7 @@ def test_all_runners_fail_before_launching_when_service_runtime_is_missing(tmp_p
         "OSWORLD_SERVICES_DIR": str(services),
         "VALIDATION_MANIFEST": str(manifest),
         "AGENT_MANIFEST": str(manifest),
-        "TASK_ID": "001",
-        "DOMAIN": "test",
-        "PORT_BASE": "500",
+        "TASK_ID": "001",  # maintainer/run_path_task.sh gates on it before preflight
         "OUTPUT": str(tmp_path / "worker.json"),
         "RAW_DIR": str(tmp_path / "raw"),
         "EVIDENCE_DIR": str(tmp_path / "evidence"),
@@ -71,7 +69,6 @@ def test_all_runners_fail_before_launching_when_service_runtime_is_missing(tmp_p
         "maintainer/validate.sh",
         "maintainer/validate_parallel.sh",
         "maintainer/run_path_task.sh",
-        "runner/run_agent.sh",
         "runner/run_agent_parallel.sh",
     ):
         uv_called.unlink(missing_ok=True)
@@ -133,7 +130,10 @@ def test_preflight_rejects_busy_canonical_task_082_host_port(tmp_path, monkeypat
     import preflight
 
     osworld, tasks, manifest, services = _minimal_inputs(tmp_path)
-    (osworld / "e2b_relay.py").write_text("# test relay\n")
+    (osworld / "desktop_env" / "providers" / "e2b").mkdir(parents=True, exist_ok=True)
+    (osworld / "desktop_env" / "providers" / "e2b" / "bridge.py").write_text(
+        "# test bridge\n"
+    )
     (tasks / "task_001.py").unlink()
     (tasks / "task_082.py").write_text("TASK = {}\n")
     manifest.write_text(
@@ -216,7 +216,10 @@ def _admissible_inputs(tmp_path, monkeypatch):
     monkeypatch.setattr("shutil.which", lambda name: f"/usr/bin/{name}")
 
     osworld, tasks, manifest, services = _minimal_inputs(tmp_path)
-    (osworld / "e2b_relay.py").write_text("# test relay\n")
+    (osworld / "desktop_env" / "providers" / "e2b").mkdir(parents=True, exist_ok=True)
+    (osworld / "desktop_env" / "providers" / "e2b" / "bridge.py").write_text(
+        "# test bridge\n"
+    )
     runtime = {
         "websites": {
             "sandbox_id": "website-sandbox",

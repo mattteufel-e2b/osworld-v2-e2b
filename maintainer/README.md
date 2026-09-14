@@ -9,14 +9,16 @@ optional `REQUIRE_NO_MODEL_COVERAGE=1` gate in `runner/run_agent_parallel.sh` co
 | Script | Purpose |
 |---|---|
 | `validate_parallel.sh` | All manifest tasks, one worker each (default and cap of 80 concurrent), aggregate gate |
-| `run_path_task.sh` | One no-model task on its own namespaced relay (worker for the above) |
+| `run_path_task.sh` | One no-model task in its own process (worker for the above) |
 | `validate.sh` | Sequential variant, `VALIDATION_RUNS` passes over a manifest |
 | `harness.py` | The no-agent rollout: reset, observe, fail-closed evaluate, receipt |
 | `no_model.py`, `readiness.py` | Evaluator stubs and bounded observation retries used by the harness |
 | `profile_resources.sh` | Ladder rung 7: publish measured CPU/RAM/disk from evidence |
+| `receipt_summary.py` | Reduce a no-model aggregate receipt to the committable summary |
 
-Relay start-up, watchdog and process-group teardown are shared with the benchmark path
-through `runner/worker_lib.sh`; a lifecycle fix there applies to both.
+Each harness process owns its E2B guest through the provider's in-process bridge; there is
+no separate relay to start or clean up. Shared path and environment gates live in
+`runner/common.sh`.
 
 Run the commands below in Bash from the repository root, after building the templates,
 downloading the gated data, and starting a fleet campaign as described in the
@@ -44,6 +46,8 @@ VALIDATION_MANIFEST="$RUN_ROOT/full-manifest.json" VALIDATION_RUNS=1 \
     EVIDENCE_DIR="$RUN_ROOT/no-model-evidence" OUTPUT="$RUN_ROOT/no-model.json" \
     maintainer/validate_parallel.sh            # all 108 tasks, zero external model calls
 ```
+
+Commit the summary, not the receipt: `python3 maintainer/receipt_summary.py --input "$RUN_ROOT/no-model.json" --output out/osworld-v2-evidence/full-suite/<name>.summary.json`, and keep the full receipt under the gitignored `out/osworld-v2-raw/`.
 
 The no-model receipt distinguishes an evaluator path that returned normally (`PATH_PASS`) from one
 that propagated the intentional disabled-model sentinel (`MODEL_BOUNDARY_PASS`). Both are validated
@@ -112,7 +116,7 @@ AGENT_MANIFEST="$RUN_ROOT/sample24-manifest.json" REQUIRE_NO_MODEL_COVERAGE=1 \
 
 Rungs run in order; PATH_PASS is never reported as task success:
 
-1. Static checks (typecheck, compile, relay unit tests).
+1. Static checks (typecheck, compile, bridge unit tests).
 2. Live desktop smoke (windows present, first-run modals absent, non-empty a11y tree).
 3. Two-pass environment-path validation with fresh-sandbox-per-task proof.
 4. Snapshot save/revert probe.

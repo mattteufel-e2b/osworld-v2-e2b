@@ -1,8 +1,9 @@
 """Agent construction for OSWorld-V2 on E2B -- edit this file to run your own agent.
 
 This is the only place the runner constructs an agent. The rest of the runner
-(relay, sandbox lifecycle, upstream ``run_single_example`` loop, receipts) never
-looks inside the agent, so bringing your own is upstream's documented workflow:
+(the provider's in-process bridge and sandbox lifecycle, upstream
+``run_single_example`` loop, receipts) never looks inside the agent, so bringing
+your own is upstream's documented workflow:
 
   1. Implement upstream's agent interface: ``reset(runtime_logger=None)`` and
      ``predict(instruction, observation) -> (response, actions)``, plus

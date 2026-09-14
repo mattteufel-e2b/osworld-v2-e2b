@@ -24,6 +24,14 @@ sys.path.insert(0, str(V2_ROOT))
 from desktop_env.evaluators.backends.base import BackendConfig  # noqa: E402
 from desktop_env.evaluators.backends.openai_backend import OpenAIBackend  # noqa: E402
 
+bridge_spec = importlib.util.spec_from_file_location(
+    "desktop_env.providers.e2b.bridge", V2_ROOT / "provider" / "bridge.py"
+)
+bridge_module = importlib.util.module_from_spec(bridge_spec)
+assert bridge_spec.loader is not None
+sys.modules["desktop_env.providers.e2b.bridge"] = bridge_module
+bridge_spec.loader.exec_module(bridge_module)
+
 spec = importlib.util.spec_from_file_location(
     "e2b_provider_under_test", V2_ROOT / "provider" / "provider.py"
 )
@@ -77,27 +85,92 @@ class ProviderVolumeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "positive"):
             provider.prepare_volume("ignored", 0, "Ubuntu")
 
-    def test_finalize_volume_asks_relay_to_verify_the_requested_capacity(self):
+
+class FakeBridge:
+    def __init__(self, config):
+        self.config = config
+        self.started = False
+        self.calls = []
+        self.server_port, self.cdp_port, self.vlc_port = 50001, 50002, 50003
+
+    def start(self):
+        self.started = True
+        self.calls.append("start")
+
+    def reset(self, snapshot_name=None):
+        self.calls.append(("reset", snapshot_name))
+        return {"sandbox_id": "sbx-2", "generation": 2, "source": "template"}
+
+    def save(self, name):
+        self.calls.append(("save", name))
+        return "snap-1"
+
+    def check_volume(self, gb):
+        self.calls.append(("volume", gb))
+        return {"requested_gb": gb, "root_capacity_bytes": 10**11}
+
+    def state(self):
+        return {"sandbox_id": "sbx-1", "generation": 1}
+
+    def stop(self):
+        self.calls.append("stop")
+
+
+class ProviderBridgeTests(unittest.TestCase):
+    TEMPLATE = "osworld-v2-gnome:817519a3-6360-475f-bdae-77780743d6a5"
+
+    def setUp(self):
+        self.env = patch.dict(
+            os.environ, {"OSWORLD_CAMPAIGN_ID": "c", "GUEST_TEMPLATE": self.TEMPLATE}
+        )
+        self.env.start()
+        self.bridge_patch = patch.object(provider_module, "Bridge", FakeBridge)
+        self.bridge_patch.start()
+
+    def tearDown(self):
+        self.bridge_patch.stop()
+        self.env.stop()
+
+    def test_start_emulator_builds_and_starts_one_bridge_for_the_template(self):
         provider = provider_module.E2BProvider()
+        provider.start_emulator(self.TEMPLATE, headless=True)
+        provider.start_emulator(self.TEMPLATE, headless=True)  # after a revert
+        self.assertEqual(provider.bridge.calls, ["start"])
+        self.assertEqual(provider.bridge.config.template, self.TEMPLATE)
 
-        with patch.object(
-            provider_module, "_control", return_value={"requested_gb": 80}
-        ) as control:
-            provider.finalize_volume("ignored", 80, "Ubuntu", None, None, "password")
-
-        control.assert_called_once_with(
-            "/volume",
-            method="POST",
-            payload={"requested_gb": 80},
+    def test_ip_tuple_uses_the_bridge_ports_with_vnc_zero(self):
+        provider = provider_module.E2BProvider()
+        provider.start_emulator(self.TEMPLATE, headless=True)
+        self.assertEqual(
+            provider.get_ip_address(self.TEMPLATE), "127.0.0.1:50001:50002:0:50003"
         )
 
-    def test_finalize_volume_is_a_noop_without_a_request(self):
+    def test_revert_save_volume_and_stop_delegate_to_the_bridge(self):
         provider = provider_module.E2BProvider()
+        provider.start_emulator(self.TEMPLATE, headless=True)
+        self.assertEqual(
+            provider.revert_to_snapshot(self.TEMPLATE, "init_state"), self.TEMPLATE
+        )
+        provider.save_state(self.TEMPLATE, "mid")
+        provider.finalize_volume(self.TEMPLATE, 80, "Ubuntu", None, None, "pw")
+        provider.finalize_volume(self.TEMPLATE, None, "Ubuntu", None, None, "pw")
+        stopped = provider.bridge  # stop_emulator drops the stopped bridge
+        provider.stop_emulator(self.TEMPLATE)
+        self.assertEqual(
+            stopped.calls,
+            ["start", ("reset", "init_state"), ("save", "mid"), ("volume", 80), "stop"],
+        )
+        # A later start_emulator builds a fresh bridge rather than reusing the
+        # stopped one.
+        self.assertIsNone(provider.bridge)
+        provider.start_emulator(self.TEMPLATE, headless=True)
+        self.assertIsNot(provider.bridge, stopped)
+        self.assertEqual(provider.bridge.calls, ["start"])
 
-        with patch.object(provider_module, "_control") as control:
-            provider.finalize_volume("ignored", None, "Ubuntu", None, None, "password")
-
-        control.assert_not_called()
+    def test_get_ip_address_before_start_fails_closed(self):
+        provider = provider_module.E2BProvider()
+        with self.assertRaisesRegex(RuntimeError, "start_emulator"):
+            provider.get_ip_address(self.TEMPLATE)
 
 
 class ManagerIdentityTests(unittest.TestCase):

@@ -130,7 +130,7 @@ def campaign_id() -> str:
 
 def campaign_budget_seconds(tasks: list[dict], env: dict) -> int:
     """Worst-case seconds to run `tasks` once: every wave charged its full
-    per-task ceiling plus relay start-up, teardown and a local margin.
+    per-task ceiling plus bridge start-up, teardown and a local margin.
 
     Every knob comes from the coordinator's environment with no fallback here,
     so this can never budget with a default the shell no longer uses. A retry
@@ -150,10 +150,9 @@ def campaign_budget_seconds(tasks: list[dict], env: dict) -> int:
     waves = math.ceil((len(tasks) - solo) / concurrency) + solo
     per_task = (
         positive("AGENT_TASK_TIMEOUT_SECONDS")
-        + positive("RELAY_READY_TIMEOUT_SECONDS")
-        + 5 * positive("PROCESS_TERMINATION_GRACE_SECONDS")
-        + positive("RELAY_STOP_REQUEST_TIMEOUT_SECONDS")
-        + positive("AGENT_WATCHDOG_POLL_SECONDS")
+        # bridge start: sandbox create + readiness gate, then teardown
+        + positive("GUEST_READY_TIMEOUT_S")
+        + 120
         + 60  # local preflight margin
     )
     stagger = float(env["AGENT_START_STAGGER_SECONDS"])

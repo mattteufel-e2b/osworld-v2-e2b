@@ -17,6 +17,7 @@ RUNNER_FILES = {
     "agents.py",  # the file customers edit
     "check_models.py",  # live upstream judge/simulator preflight
     "aggregate_agent.py",  # campaign receipt + gate
+    "common.sh",  # paths, uv command, fail-closed env gates (no lifecycle code)
     "evaluator_model_calls.py",  # judge/simulator call accounting
     "gated_data.py",  # gated task/asset download + verification
     "lazy_import.py",
@@ -25,14 +26,10 @@ RUNNER_FILES = {
     "prepare_agent_run.py",
     "receipt_safety.py",
     "render_manifest.py",
-    "requirements-e2b.txt",  # relay/provider pins layered onto the checkout env
+    "requirements-e2b.txt",  # bridge/provider pins layered onto the checkout env
     "retry_candidates.py",
-    "run_agent.sh",  # one worker
     "run_agent_parallel.sh",  # the coordinator
     "setup.sh",  # pinned checkout + provider patches
-    "worker_env.sh",
-    "worker_lib.sh",
-    "write_timeout_receipt.py",
 }
 MAINTAINER_FILES = {
     "README.md",
@@ -40,16 +37,12 @@ MAINTAINER_FILES = {
     "no_model.py",
     "profile_resources.sh",
     "readiness.py",
+    "receipt_summary.py",  # full ladder receipt -> committed summary evidence
     "run_path_task.sh",
     "validate.sh",
     "validate_parallel.sh",
 }
-SPIKE_FILES = {
-    "smoke.py",
-    "snapshot_probe.py",
-    "spike_audio.py",
-    "spike_ingress.py",
-}
+SPIKE_FILES = {"spike_audio.py", "spike_ingress.py"}
 
 
 def _files(directory: Path) -> set[str]:

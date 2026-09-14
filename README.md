@@ -2,7 +2,8 @@
 
 Run OSWorld 2.0 agents and benchmarks on E2B Firecracker sandboxes. This repo adapts the
 upstream desktop environment to E2B while keeping OSWorld's tasks, agents, and evaluators.
-It includes a desktop template, the E2B provider, service fleets, and a parallel runner.
+It includes a desktop template, the E2B provider with its in-process sandbox bridge, service
+fleets, and an optional parallel coordinator.
 
 The port is experimental. See the [verified results and known limitations](docs/pr-1-verification.md).
 
@@ -65,6 +66,56 @@ Concurrency defaults to and is capped at **80**. Results are in `$RUN_ROOT/agent
 trajectories are in `$RUN_ROOT/agent-raw`. Admitted runs stop their service fleets on exit.
 See [run configuration](docs/configuration.md) for cleanup, recording, and result interpretation.
 
+Run `services/stop.py --campaign-id "$OSWORLD_CAMPAIGN_ID" [--dry-run]` to remove exactly
+that campaign's fleets and any leftover guests, such as after a hard-killed run.
+
+## Run with upstream's runner
+
+Upstream's scripts work unchanged once `runner/setup.sh` has patched the checkout. The M3
+multi-env runner accepts `--provider_name e2b` (one of `setup.sh`'s four one-line patches);
+each env process owns its own E2B guest and loopback ports, so `--num_envs` is the only
+concurrency knob. Fleets from Quick start step 2 must be running.
+
+Upstream's loader resolves task classes at `OSWorld-V2/evaluation_examples/task_class/`;
+`runner/gated_data.py` downloads them to `tasks/` instead, so copy them into the checkout
+first (harmless: `setup.sh --verify` compares the checkout's own tracked files against the
+pin, and the copied `task_*.py` files are untracked there).
+The coordinator also starts the host hostmap proxy for you; on this path start it yourself,
+or task setup and evaluators on the host cannot reach `*.127.0.0.1.nip.io:8090`.
+
+```bash
+export WEBSITE_HOST_SUFFIX=127.0.0.1.nip.io:8090 GITLAB_URL=http://gitlab.127.0.0.1.nip.io:8090
+export GITLAB_PRIVATE_TOKEN="$(cat services/.gitlab-token)"
+export HOSTMAP_PROXY_SCRIPT="$PWD/services/hostmap_proxy.py" OSWORLD_FLEET_RULES="$PWD/services/.runtime.json"
+export OSWORLD_FILE_BASE_URL="$PWD/tasks/assets"
+cp tasks/task_*.py OSWorld-V2/evaluation_examples/task_class/
+
+HOSTMAP_PORT=8090 FLEET_RUNTIME_FILE="$PWD/services/.runtime.json" \
+    uv run --python 3.12 --with e2b==2.34.0 python services/hostmap_proxy.py &
+
+cd OSWorld-V2
+uv run --locked --extra full --python 3.12 --with e2b==2.34.0 --with aiohttp==3.14.1 \
+    python scripts/python/run_multienv_m3.py \
+        --provider_name e2b --num_envs 8 --headless \
+        --model accounts/fireworks/models/minimax-m3 \
+        --base_url https://api.fireworks.ai/inference --api_key "$MODEL_API_KEY" \
+        --client_password osworld-public-evaluation --max_steps 500 \
+        --test_all_meta_path evaluation_examples/test_v2.json --result_dir ./results
+```
+
+`GUEST_TEMPLATE`, `OSWORLD_CAMPAIGN_ID` and `E2B_API_KEY` come from Quick start. Every sandbox
+the run creates carries `OSWORLD_CAMPAIGN_ID` in its metadata, so use a fresh id per run.
+Stop the hostmap proxy (kill its backgrounded pid) when the run ends; the coordinator does
+both the starting and the stopping for you.
+
+Task 082 dials `localhost:3000` on the host, so it runs in its own single-env invocation:
+copy `evaluation_examples/test_v2.json` to a file with the `"082"` entry removed, run
+that file as above with `--test_all_meta_path`, then 082 alone with `--num_envs 1
+--specific_task_id 082` and `OSWORLD_TASK_SERVICE_PORTS=3000` exported. Without that mapping
+the task's setup cannot reach its service and the bridge logs a hint naming the variable.
+The coordinator in Quick start step 3 does this carve-out for you and adds a judge probe,
+per-task deadlines and receipts; it is optional.
+
 ## Use your own agent
 
 Register your agent in [`runner/agents.py`](runner/agents.py), implementing upstream's
@@ -78,3 +129,4 @@ See [agent configuration and examples](docs/configuration.md#bring-your-own-agen
 - [Runtime, resources, networking, and snapshots](docs/runtime.md)
 - [Maintainer validation](maintainer/README.md)
 - [Verification evidence](FIDELITY.md) and [known issues](docs/pr-1-verification.md)
+- [Architecture walkthrough](docs/architecture.md)

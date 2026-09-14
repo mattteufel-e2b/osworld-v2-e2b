@@ -8,7 +8,6 @@ because the pinned checkout is not importable from the repo's own venv.
 from __future__ import annotations
 
 import importlib
-import json
 import os
 import subprocess
 import sys
@@ -162,44 +161,6 @@ def test_agent_runner_exposes_upstream_generation_flags():
     runner = (RUNNER / "agent_runner.py").read_text()
     for flag in ("--max-tokens", "--temperature", "--top-p", "--max-trajectory-length"):
         assert f'"{flag}"' in runner, flag
-
-
-def test_timeout_receipt_accepts_any_agent_kind(tmp_path):
-    output = tmp_path / "receipt.json"
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(RUNNER / "write_timeout_receipt.py"),
-            "--output",
-            str(output),
-            "--task-id",
-            "001",
-            "--domain",
-            "test",
-            "--port-base",
-            "900",
-            "--model",
-            "provider/model",
-            "--agent-kind",
-            "custom",
-            "--max-steps",
-            "3",
-            "--timeout-seconds",
-            "1",
-            "--wall-clock-seconds",
-            "1.5",
-        ],
-        env={**os.environ, "OSWORLD_RUN_NONCE": "nonce"},
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr
-    receipt = json.loads(output.read_text())
-    assert receipt["agent_kind"] == "custom"
-    # Same key set as agent_runner's receipt: a timeout record carries the
-    # field even though only a started agent can resolve it.
-    assert "agent_settings" in receipt and receipt["agent_settings"] is None
 
 
 def _stub_upstream_packages(root: Path) -> None:

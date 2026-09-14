@@ -101,14 +101,7 @@ The implementation, regression tests, corrected configuration documentation, and
 
 ## Deferred correctness fix: process-group cleanup
 
-The PR introduces [runner/worker_lib.sh](../runner/worker_lib.sh). Its `terminate_process_group` function checks only the leader PID before signaling and while waiting. Normal-exit and relay shutdown paths also rely on leader liveness.
-
-- If the leader already exited, surviving children can receive no termination signal.
-- If the leader exits after TERM while a child ignores TERM, the helper can conclude cleanup succeeded and skip KILL.
-
-Both surviving-child cases were reproduced with the real helper. This is a correctness defect in the PR's lifecycle guarantees, not merely a missing benchmark capability.
-
-Acceptance: check and clean up the process group independently of leader liveness, while preserving handling for the brief interval before the child establishes its session. Add regressions for normal leader exit, timeout, and TERM-resistant descendants. Verify no descendant or occupied worker port remains on those paths. A new lifecycle framework is unnecessary.
+This defect lived in the worker layer's `terminate_process_group`, which decided both signaling and completion from the leader PID alone, so surviving children could go unsignaled or escape KILL. Removing that layer resolved it: the coordinator now launches `agent_runner.py` directly and each of those processes owns its E2B guest through the provider's in-process bridge, so there is no worker process group to reap and no long-lived listener to leave behind. `tests/test_coordinator.py` covers cancellation reaping workers before fleets stop.
 
 The completed verification campaign itself left no matching processes or campaign sandboxes; all 146 checked ports were free. The reproduced defect is an edge case, not evidence that this campaign leaked resources.
 
