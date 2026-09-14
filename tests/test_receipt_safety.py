@@ -5,9 +5,15 @@ import stat
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runner"))
 import receipt_safety  # noqa: E402
-from receipt_safety import public_error, public_transport  # noqa: E402
+from receipt_safety import (  # noqa: E402
+    classify_failure,
+    public_error,
+    public_transport,
+)
 
 
 def test_public_error_never_serializes_exception_text():
@@ -137,3 +143,46 @@ def test_base_receipt_prefers_the_explicit_recording_flag_over_the_environment(
         recording_enabled=False,
     )
     assert receipt["recording_enabled"] is False
+
+
+class _Timeout(BaseException):
+    pass
+
+
+def test_scored_attempt_is_never_reclassified_as_transport(tmp_path):
+    (tmp_path / "result.txt").write_text("0.0")
+    cause, transport_ok, evaluator_ran = classify_failure(
+        tmp_path, RuntimeError("Connection reset by peer while logging completion")
+    )
+    assert (cause, evaluator_ran) == ("evaluator-or-agent", True)
+
+
+def test_timeout_type_wins_over_everything(tmp_path):
+    (tmp_path / "result.txt").write_text("0.0")
+    cause, _, evaluator_ran = classify_failure(
+        tmp_path, _Timeout("deadline"), timeout_types=(_Timeout,)
+    )
+    assert (cause, evaluator_ran) == ("task-timeout", True)
+
+
+@pytest.mark.parametrize(
+    "message, cause",
+    [
+        ("HTTPConnectionPool: Max retries exceeded", "transport"),
+        ("503 Service Unavailable from ingress", "transport"),
+        ("BrowserType.connect_over_cdp: Unexpected status 500", "chrome-cdp"),
+        ("EnvironmentSetupError: compose failed", "environment-setup"),
+    ],
+)
+def test_unscored_failures_classify_by_message(tmp_path, message, cause):
+    assert classify_failure(tmp_path, RuntimeError(message))[0] == cause
+
+
+def test_unscored_failure_with_frames_is_evaluator_or_agent(tmp_path):
+    (tmp_path / "step_1.png").write_bytes(b"x")
+    cause, transport_ok, _ = classify_failure(tmp_path, RuntimeError("boom"))
+    assert (cause, transport_ok) == ("evaluator-or-agent", True)
+
+
+def test_unscored_failure_without_frames_is_reset_or_observation(tmp_path):
+    assert classify_failure(tmp_path, RuntimeError("boom"))[0] == "reset-or-observation"

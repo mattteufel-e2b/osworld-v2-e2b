@@ -8,7 +8,8 @@ import tempfile
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
-# Retry-wave allowlist. Keep in sync with agent_runner._classify_stage_and_cause.
+# Retry-wave allowlist. It pairs with classify_failure() below -- the one
+# classifier every caller uses -- so the two never drift across files.
 # "evaluator-or-agent" is a scored model attempt and is never retried; the
 # runner's own deadline ("task-timeout") is. "interrupted" (SIGTERM from the
 # coordinator or operator) is not retried either: the operator cancelled it.
@@ -21,6 +22,60 @@ RETRYABLE_ERROR_CAUSES = frozenset(
         "task-timeout",
     }
 )
+
+
+_TRANSPORT_WORDS = (
+    "connection",
+    "timed out",
+    "max retries",
+    "502",
+    "503",
+    "504",
+    "bad gateway",
+    "service unavailable",
+)
+_CDP_WORDS = ("cdp", "playwright", "websocket", "connect_over_cdp")
+
+
+def classify_failure(
+    result_dir: Path,
+    error: BaseException,
+    *,
+    timeout_types: tuple[type, ...] = (),
+    interrupt_types: tuple[type, ...] = (),
+) -> tuple[str, bool, bool]:
+    """Return (cause, transport_ok, evaluator_ran) for a failed rollout.
+
+    Precedence: the caller's own deadline/cancel types; then a scored attempt
+    (result.txt exists -> "evaluator-or-agent", never retried) regardless of the
+    exception text; then transport / chrome-cdp / environment-setup by message;
+    then "evaluator-or-agent" if frames were produced, else "reset-or-observation".
+    transport_ok means reset+observation produced at least one frame;
+    evaluator_ran means result.txt landed (evaluate completed).
+    Exception text is read only to pick a public bucket; it is never returned.
+    """
+    evaluator_ran = (result_dir / "result.txt").exists()
+    transport_ok = any(result_dir.glob("*.png")) or (result_dir / "traj.jsonl").exists()
+    if timeout_types and isinstance(error, timeout_types):
+        return "task-timeout", False, evaluator_ran
+    if interrupt_types and isinstance(error, interrupt_types):
+        return "interrupted", False, evaluator_ran
+    if evaluator_ran:
+        # A scored attempt: whatever failed afterwards, never retry it -- a
+        # retry would overwrite a real score with a fresh rollout.
+        return "evaluator-or-agent", transport_ok, True
+    detail = f"{type(error).__name__}: {error}".lower()
+    if any(word in detail for word in _TRANSPORT_WORDS):
+        cause = "transport"
+    elif any(word in detail for word in _CDP_WORDS):
+        cause = "chrome-cdp"
+    elif "environmentsetuperror" in detail:
+        cause = "environment-setup"
+    elif transport_ok:
+        cause = "evaluator-or-agent"
+    else:
+        cause = "reset-or-observation"
+    return cause, transport_ok, False
 
 
 def public_error(error: BaseException) -> dict[str, str]:
