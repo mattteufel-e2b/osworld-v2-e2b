@@ -48,7 +48,6 @@ def main() -> int:
         agent_kind=args.agent_kind,
         model=args.model,
         max_steps=args.max_steps,
-        port_base=args.port_base,
     )
     receipt.update(
         finished_at=_utc_now(),

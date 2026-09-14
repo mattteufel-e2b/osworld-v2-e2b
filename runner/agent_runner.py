@@ -2,11 +2,12 @@
 """Single-task REAL-agent rollout for the OSWorld-V2 -> E2B conversion (rung 6).
 
 One invocation drives exactly one manifest task end to end: it builds a
-``DesktopEnv`` on the ``e2b`` provider (paired to this worker's namespaced relay
-via ``OSWORLD_RELAY_PORT_BASE``), runs the pinned checkout's own
+``DesktopEnv`` on the ``e2b`` provider (the provider owns its in-process bridge
+and picks free loopback ports), runs the pinned checkout's own
 ``lib_run_single.run_single_example`` agent loop with the agent selected by
-``--agent-kind`` (screenshot observation, pyautogui actions), and records a
-redacted per-task receipt. Trajectories, screenshots and model IO stay under the
+``--agent-kind``, and records a redacted per-task receipt on every exit path:
+success, any exception, the ``--deadline-seconds`` alarm (exit 124) and
+SIGTERM (exit 143). Trajectories, screenshots and model IO stay under the
 gitignored raw dir; the receipt carries ids, path booleans, timings and the
 evaluator's partial-credit score only -- never task or evaluator text.
 
@@ -22,11 +23,11 @@ import argparse
 import json
 import math
 import os
+import signal
 import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.request import urlopen
 
 
 sys.path.insert(0, os.getcwd())
@@ -47,14 +48,25 @@ def utc_now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _port_base() -> int:
-    return int(os.environ.get("OSWORLD_RELAY_PORT_BASE", "0"))
+class AgentTaskTimeout(BaseException):
+    """--deadline-seconds elapsed; raised from SIGALRM in the main thread."""
 
 
-def relay_state() -> dict:
-    port = 14999 + _port_base()
-    with urlopen(f"http://127.0.0.1:{port}/state", timeout=15) as response:
-        return json.load(response)
+class AgentInterrupted(BaseException):
+    """SIGTERM received; the coordinator or operator cancelled this rollout."""
+
+
+def _install_signal_handlers(deadline_seconds: int | None) -> None:
+    def on_alarm(_signum, _frame):
+        raise AgentTaskTimeout(f"deadline of {deadline_seconds}s exceeded")
+
+    def on_term(_signum, _frame):
+        raise AgentInterrupted("SIGTERM")
+
+    signal.signal(signal.SIGTERM, on_term)
+    if deadline_seconds:
+        signal.signal(signal.SIGALRM, on_alarm)
+        signal.alarm(deadline_seconds)
 
 
 class _Args:
@@ -79,6 +91,10 @@ def _classify_stage_and_cause(
     """Return (path_stage, cause, transport_ok, evaluator_ran) from artifacts +
     the exception. transport_ok means reset+observation produced at least one
     frame; evaluator_ran means result.txt landed (evaluate completed)."""
+    if isinstance(error, AgentTaskTimeout):
+        return "failed", "task-timeout", False, (result_dir / "result.txt").exists()
+    if isinstance(error, AgentInterrupted):
+        return "failed", "interrupted", False, (result_dir / "result.txt").exists()
     detail = f"{type(error).__name__}: {error}".lower()
     saw_frames = any(result_dir.glob("*.png")) or (result_dir / "traj.jsonl").exists()
     evaluator_ran = (result_dir / "result.txt").exists()
@@ -200,6 +216,12 @@ def parse_args() -> argparse.Namespace:
     # default there and here.
     parser.add_argument("--enable-recording", action="store_true")
     parser.add_argument("--client-password", default="osworld-public-evaluation")
+    parser.add_argument(
+        "--deadline-seconds",
+        type=int,
+        default=None,
+        help="wall-clock limit for this rollout; on expiry the receipt records task-timeout and the process exits 124",
+    )
     return parser.parse_args()
 
 
@@ -210,7 +232,8 @@ def main() -> int:
         raise RuntimeError("OSWORLD_RUN_NONCE is required")
     evaluator_model_calls = EvaluatorModelCallTracker()
     evaluator_model_calls.install()
-    port_base = _port_base()
+    _install_signal_handlers(args.deadline_seconds)
+    exit_code = 0
     result_dir = args.result_dir.resolve()
     result_dir.mkdir(parents=True, exist_ok=True)
 
@@ -226,7 +249,6 @@ def main() -> int:
         agent_kind=args.agent_kind,
         model=args.model,
         max_steps=args.max_steps,
-        port_base=port_base,
         recording_enabled=args.enable_recording,
     )
     receipt.update(
@@ -288,6 +310,10 @@ def main() -> int:
         )
         receipt["path_status"] = "OK"
     except BaseException as error:  # noqa: BLE001 -- record and classify, never leak text
+        if isinstance(error, AgentTaskTimeout):
+            exit_code = 124
+        elif isinstance(error, AgentInterrupted):
+            exit_code = 143
         stage, cause, transport_ok, evaluator_ran = _classify_stage_and_cause(
             result_dir, error
         )
@@ -300,15 +326,18 @@ def main() -> int:
 
         (result_dir / "FAIL.trace.txt").write_text(traceback.format_exc())
     finally:
+        signal.alarm(0)
         # Capture the sandbox this rollout ran against (one reset == one sandbox)
         # before tearing anything down.
-        try:
-            state = relay_state()
-            receipt["sandbox_id"] = state.get("sandbox_id")
-            receipt["sandbox_generation"] = state.get("generation")
-            receipt["restricted_ingress"] = state.get("restricted_ingress")
-        except Exception as exc:  # noqa: BLE001
-            print(f"[agent] could not read relay state: {exc}", file=sys.stderr)
+        bridge = getattr(getattr(env, "provider", None), "bridge", None)
+        if bridge is not None:
+            try:
+                state = bridge.state()
+                receipt["sandbox_id"] = state.get("sandbox_id")
+                receipt["sandbox_generation"] = state.get("generation")
+                receipt["restricted_ingress"] = state.get("restricted_ingress")
+            except Exception as exc:  # noqa: BLE001
+                print(f"[agent] could not read bridge state: {exc}", file=sys.stderr)
         if env is not None:
             try:
                 env.close()
@@ -360,7 +389,7 @@ def main() -> int:
         ),
         file=sys.stderr,
     )
-    return 0
+    return exit_code
 
 
 if __name__ == "__main__":

@@ -605,7 +605,6 @@ def test_agent_receipt_records_reasoning_and_evaluator_provenance_without_keys(
         agent_kind="m3",
         model="model",
         max_steps=500,
-        port_base=0,
     )
 
     assert receipt["thinking_mode"] == "budget"

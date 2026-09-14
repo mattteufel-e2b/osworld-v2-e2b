@@ -42,7 +42,7 @@ def test_bare_python3_receipt_scripts_run_on_310():
     # These are invoked with system python3 (run_agent.sh:265,
     # run_agent_parallel.sh:328); `from datetime import UTC` needs 3.11+.
     runner = Path(__file__).resolve().parents[1] / "runner"
-    for name in ("write_timeout_receipt.py", "aggregate_agent.py", "receipt_safety.py"):
+    for name in ("aggregate_agent.py", "receipt_safety.py"):
         assert "from datetime import UTC" not in (runner / name).read_text(), name
 
 
@@ -81,11 +81,9 @@ def test_base_receipt_is_the_single_source_for_both_receipt_writers(monkeypatch)
         agent_kind="m3",
         model="provider/model",
         max_steps=500,
-        port_base=500,
     )
 
     assert receipt["run_nonce"] == "nonce-1"
-    assert receipt["control_port"] == 15499
     assert receipt["model_transport"] == "https://model.test/v1"
     assert receipt["eval_model_transport"] == "https://judge.test/v1"
     assert receipt["thinking_budget"] == 2048
@@ -100,13 +98,12 @@ def test_base_receipt_is_the_single_source_for_both_receipt_writers(monkeypatch)
             agent_kind="prompt",
             model="m",
             max_steps=1,
-            port_base=0,
         )["m3_max_llm_retries"]
         is None
     )
 
     runner = Path(__file__).resolve().parents[1] / "runner"
-    for name in ("agent_runner.py", "write_timeout_receipt.py"):
+    for name in ("agent_runner.py",):
         source = (runner / name).read_text()
         assert "base_receipt(" in source, name
         assert '"eval_model_transport": public_transport' not in source, name
@@ -121,7 +118,6 @@ def test_base_receipt_records_screen_recording_opt_in(monkeypatch):
         agent_kind="m3",
         model="m",
         max_steps=1,
-        port_base=0,
     )
     assert receipt["recording_enabled"] is True
 
@@ -137,7 +133,6 @@ def test_base_receipt_prefers_the_explicit_recording_flag_over_the_environment(
         agent_kind="m3",
         model="m",
         max_steps=1,
-        port_base=0,
         recording_enabled=False,
     )
     assert receipt["recording_enabled"] is False
