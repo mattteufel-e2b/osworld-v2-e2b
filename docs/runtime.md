@@ -60,8 +60,6 @@ account capacity. Each host worker also runs upstream's evaluator stack
 
 - **`template/`** — guest Template source: GNOME under Xvfb + software GL, pinned/held
   application installs, baked first-run-modal suppression, the guest server payload.
-- **`provider/`** — OSWorld provider ABC against E2B; `volume_size` maps to minimum root
-  filesystem capacity (18 tasks request 32–100 GB, `validation/volume-requirements.json`).
 - **`provider/`** — `provider.py` (OSWorld provider contract), `bridge.py` (in-process
   sandbox lifecycle + token-authenticated loopback proxy for HTTP, WebSocket and CDP on
   OS-assigned ports), `manager.py`.
@@ -84,7 +82,7 @@ the OS assigned.
 | `get_vm_path` | path to a `.qcow2` | immutable `GUEST_TEMPLATE` ref, validated fail-closed |
 | `start_emulator` | boot the VM | bridge binds loopback listeners, creates the guest, gates on `/screen_size` |
 | `get_ip_address` | IP + `server:cdp:vnc:vlc` ports | `127.0.0.1:<server>:<cdp>:0:<vlc>`, ports assigned at bind; VNC slot 0 (headless) |
-| `save_state` | named `savevm` | `create_snapshot()` (memory + filesystem); `/save` returns after the resumed guest answers |
+| `save_state` | named `savevm` | `create_snapshot()` (memory + filesystem); the call returns only after the resumed guest answers |
 | `revert_to_snapshot` | in-place `loadvm` | destroy-and-recreate: saved name → new sandbox from its snapshot id; unsaved name (`init_state`) → fresh sandbox from the template |
 | `prepare/finalize_volume` | size the root disk | requested GB asserted against the live root (`df`), fail-closed; not an E2B persistent Volume |
 | `stop_emulator` | power off | `bridge.stop()` kills the guest |
@@ -115,6 +113,6 @@ can seed any number of new sandboxes — the same contract as QEMU's named `save
 The name→id map lives in the bridge for the DesktopEnv's lifetime; both revert paths are
 live-probed (`out/osworld-v2-evidence/snapshot-probe.json`, 12/12). Snapshots are
 deleted when the environment closes. Set `OSWORLD_RETAIN_SNAPSHOTS=1` only for an intentional debugging
-session, then delete the recorded ids from `/save` or `/state` when finished.
-The capture briefly pauses the guest (dropping CDP sockets), so `/save` re-gates on
+session, then delete the recorded ids reported by `save_state` or `bridge.state()` when finished.
+The capture briefly pauses the guest (dropping CDP sockets), so `save_state` re-gates on
 readiness and the bridge retries WebSocket connects during the resume window.

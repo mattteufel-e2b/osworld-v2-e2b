@@ -78,7 +78,8 @@ concurrency knob. Fleets from Quick start step 2 must be running.
 
 Upstream's loader resolves task classes at `OSWorld-V2/evaluation_examples/task_class/`;
 `runner/gated_data.py` downloads them to `tasks/` instead, so copy them into the checkout
-first (harmless: the checkout is gitignored, so this doesn't affect `setup.sh --verify`).
+first (harmless: `setup.sh --verify` compares the checkout's own tracked files against the
+pin, and the copied `task_*.py` files are untracked there).
 The coordinator also starts the host hostmap proxy for you; on this path start it yourself,
 or task setup and evaluators on the host cannot reach `*.127.0.0.1.nip.io:8090`.
 
@@ -108,7 +109,8 @@ Stop the hostmap proxy (kill its backgrounded pid) when the run ends; the coordi
 both the starting and the stopping for you.
 
 Task 082 dials `localhost:3000` on the host, so it runs in its own single-env invocation:
-run the manifest without 082 as above, then 082 alone with `--num_envs 1
+copy `evaluation_examples/test_v2.json` to a file with the `"082"` entry removed, run
+that file as above with `--test_all_meta_path`, then 082 alone with `--num_envs 1
 --specific_task_id 082` and `OSWORLD_TASK_SERVICE_PORTS=3000` exported. Without that mapping
 the task's setup cannot reach its service and the bridge logs a hint naming the variable.
 The coordinator in Quick start step 3 does this carve-out for you and adds a judge probe,
