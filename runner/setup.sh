@@ -54,6 +54,7 @@ PATCHED_TRACKED=(
     desktop_env/providers/__init__.py
     scripts/python/run_multienv_m3.py
     mm_agents/m3/parser.py
+    desktop_env/controllers/python.py
 )
 VENDORED=(
     "desktop_env/providers/e2b/provider.py:$PROVIDER_DIR/provider.py"
@@ -222,6 +223,24 @@ if parser.exists():
         src = src.replace(import_anchor, import_anchor + '_M3_THINK_BLOCK = re.compile(r"<mm:think>.*?</mm:think>", re.S)\n', 1)
         parser.write_text(src)
         print("(f) m3/parser.py: patched ([INFEASIBLE] ignored inside <mm:think>)")
+
+# (g) controller: wait for the guest's verdict on an agent action -----------
+# The guest kills an action at its 120 s deadline and (with the E2B template's
+# guest-server patch) answers with an explicit error. Upstream's 90 s client
+# timeout returned None first, so typing continued for up to 30 s under the
+# next action (sample 2026-09-15, tasks 093/059/079/082). Only the /execute
+# action path changes; setup and script timeouts are untouched.
+controller = dest / "desktop_env/controllers/python.py"
+src = controller.read_text()
+deadline_anchor = "data=payload, timeout=90)"
+deadline_patched = "data=payload, timeout=130)"
+if deadline_patched in src:
+    print("(g) controllers/python.py action deadline: already applied")
+else:
+    count = src.count(deadline_anchor)
+    assert count == 1, f"controllers/python.py execute_python_command timeout found {count}x, need exactly 1 (OSWorld-V2 moved?)"
+    controller.write_text(src.replace(deadline_anchor, deadline_patched, 1))
+    print("(g) controllers/python.py: patched (action deadline 130 s covers the guest's 120 s kill)")
 
 EOF
 }

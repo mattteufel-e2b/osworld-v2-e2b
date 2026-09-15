@@ -97,6 +97,11 @@ PINNED_KEY_TABLE = (
 PINNED_INFEASIBLE = (
     '    if "[INFEASIBLE]" in response:\n        return "[INFEASIBLE]", ["FAIL"]\n'
 )
+PINNED_CONTROLLER = (
+    "                response = requests.post(self.http_server + \"/execute\", headers={'Content-Type': 'application/json'},\n"
+    "                                         data=payload, timeout=90)\n"
+    "    def run_python_script(self, script: str, timeout=90) -> Optional[Dict[str, Any]]:\n"
+)
 
 
 def _seed_minimal_checkout(dest: Path, parser_text: str, controller_text: str) -> None:
@@ -123,7 +128,7 @@ def test_setup_patches_the_m3_runner_provider_choices(tmp_path):
     _seed_minimal_checkout(
         dest,
         PINNED_PARSER_HEAD + PINNED_KEY_TABLE + PINNED_INFEASIBLE,
-        "data=payload, timeout=90)\n",
+        PINNED_CONTROLLER,
     )
     _apply_patches(dest)
     patched = (dest / "scripts" / "python" / "run_multienv_m3.py").read_text()
@@ -140,7 +145,7 @@ def test_setup_maps_m3_super_key_to_x11_win(tmp_path):
     _seed_minimal_checkout(
         dest,
         PINNED_PARSER_HEAD + PINNED_KEY_TABLE + PINNED_INFEASIBLE,
-        "data=payload, timeout=90)\n",
+        PINNED_CONTROLLER,
     )
     _apply_patches(dest)
     patched = (dest / "mm_agents" / "m3" / "parser.py").read_text()
@@ -156,7 +161,7 @@ def test_setup_ignores_infeasible_marker_inside_the_thinking_block(tmp_path):
     _seed_minimal_checkout(
         dest,
         PINNED_PARSER_HEAD + PINNED_KEY_TABLE + PINNED_INFEASIBLE,
-        "data=payload, timeout=90)\n",
+        PINNED_CONTROLLER,
     )
     _apply_patches(dest)
     patched = (dest / "mm_agents" / "m3" / "parser.py").read_text()
@@ -178,3 +183,20 @@ def test_patched_infeasible_check_semantics():
     outside = "<mm:think>reasoning</mm:think>\n[INFEASIBLE]"
     assert "[INFEASIBLE]" not in think.sub("", inside)
     assert "[INFEASIBLE]" in think.sub("", outside)
+
+
+def test_setup_extends_the_action_deadline_past_the_guest_kill(tmp_path):
+    dest = tmp_path / "OSWorld-V2"
+    _seed_minimal_checkout(
+        dest,
+        PINNED_PARSER_HEAD + PINNED_KEY_TABLE + PINNED_INFEASIBLE,
+        PINNED_CONTROLLER,
+    )
+    _apply_patches(dest)
+    patched = (dest / "desktop_env" / "controllers" / "python.py").read_text()
+    assert "data=payload, timeout=130)" in patched
+    assert (
+        "def run_python_script(self, script: str, timeout=90)" in patched
+    )  # untouched
+    _apply_patches(dest)
+    assert patched == (dest / "desktop_env" / "controllers" / "python.py").read_text()
