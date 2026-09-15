@@ -537,6 +537,14 @@ def test_template_installs_wps_office_for_the_wpp_tasks():
     assert "common\\system_check\\no_necessary_symbol_fonts=false" in conf
 
 
+def test_template_installs_blender_lts_with_the_task_launcher_name():
+    template = (ROOT / "template" / "template.ts").read_text()
+
+    assert "blender-4.5.14-linux-x64.tar.xz" in template
+    assert "9ba871ff2ecd36526b77432745980b7e6664ecd0c7ca11c48849073dcfe06da3" in template
+    assert "ln -sf /opt/blender/blender /usr/local/bin/blender" in template
+
+
 def test_full_agent_coordinator_bounds_sandboxes_and_namespaces_task_service_ports():
     coordinator = (ROOT / "runner" / "run_agent_parallel.sh").read_text()
     aggregator = (ROOT / "runner" / "aggregate_agent.py").read_text()

@@ -235,6 +235,19 @@ export const template = Template({ fileContextPath: filesDir })
     'apt-mark hold wps-office',
     'test -x /usr/bin/wpp && test -x /usr/bin/wps && test -x /usr/bin/et',
   ])
+  // ---- Blender 4.5 LTS (task 092 invokes `blender`) -----------------------
+  // jammy's apt blender is 3.0.1; the reference desktop has a current
+  // Blender. Vendor tarball, sha256 from the release's .sha256 file.
+  .runCmd([
+    'apt-get install -y libxi6 libxxf86vm1 libxfixes3 libxrender1 libgl1 libxkbcommon0 libsm6',
+    'curl -fsSL -o /tmp/blender.tar.xz "https://download.blender.org/release/Blender4.5/blender-4.5.14-linux-x64.tar.xz"',
+    'echo "9ba871ff2ecd36526b77432745980b7e6664ecd0c7ca11c48849073dcfe06da3  /tmp/blender.tar.xz" | sha256sum -c -',
+    'mkdir -p /opt/blender',
+    'tar -xJf /tmp/blender.tar.xz -C /opt/blender --strip-components=1',
+    'rm -f /tmp/blender.tar.xz',
+    'ln -sf /opt/blender/blender /usr/local/bin/blender',
+    "printf '[Desktop Entry]\\nName=Blender\\nExec=/usr/local/bin/blender %%f\\nType=Application\\nStartupWMClass=Blender\\nCategories=Graphics;3DGraphics;\\nMimeType=application/x-blender;\\n' > /usr/share/applications/blender.desktop",
+  ])
   // ---- create OSWorld's uid-1000 `user` account ---------------------------
   .runCmd([
     'id user >/dev/null 2>&1 || useradd -m -u 1000 -s /bin/bash user',
