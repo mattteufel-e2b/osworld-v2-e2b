@@ -288,6 +288,15 @@ export const template = Template({ fileContextPath: filesDir })
     'chmod +x /tmp/freecad.AppImage',
     'mkdir -p /opt/freecad && cd /opt/freecad && /tmp/freecad.AppImage --appimage-extract >/dev/null',
     'rm -f /tmp/freecad.AppImage',
+    // Tasks 103/104 grade with an extractor that imports numpy, and their
+    // setups apt-install python3-numpy for the system interpreter that apt
+    // FreeCAD used. The AppImage runs its own bundled py311 instead, which
+    // cannot see system site-packages, and the extractor swallows a missing
+    // numpy into {"error": "numpy_unavailable"} rather than failing. The
+    // bundle does ship it (numpy 1.26.4, scipy 1.16.3, conda-forge py311.14 -
+    // probe: out/osworld-v2-raw/template-probe/freecad-appimage-numpy.txt);
+    // assert it at build time so a future re-pin that drops it fails loudly.
+    "/opt/freecad/squashfs-root/AppRun freecadcmd -c 'import numpy; print(\"NUMPY_OK\", numpy.__version__)' 2>&1 | grep -q NUMPY_OK",
     "printf '[Desktop Entry]\\nName=FreeCAD\\nExec=/usr/local/bin/freecad %%F\\nType=Application\\nStartupWMClass=FreeCAD\\nCategories=Graphics;Science;Engineering;\\nMimeType=application/x-extension-fcstd;\\n' > /usr/share/applications/freecad.desktop",
   ])
   .copy('freecad-launcher.sh', '/usr/local/bin/freecad', { mode: 0o755 })

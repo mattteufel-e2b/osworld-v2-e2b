@@ -11,6 +11,32 @@ sys.path.insert(0, str(ROOT / "runner"))
 from receipt_safety import RETRYABLE_ERROR_CAUSES  # noqa: E402
 
 
+def _apt_lines_naming_freecad(template: str) -> list[str]:
+    """Every apt path in template.ts that would (re-)install FreeCAD.
+
+    Covers both shapes the file uses for a command - a quoted entry in a
+    `.runCmd([...])` array and a single-line `.runCmd('...')` - plus a bare
+    package entry in the `.aptInstall([...])` list, which is the file's primary
+    apt entry point. `//` comment lines are dropped first so the KiCad block's
+    prose (which must quote the apt error naming freecad) does not match.
+    """
+    code = [
+        line for line in template.splitlines() if not line.lstrip().startswith("//")
+    ]
+    names_freecad = re.compile(r"freecad", re.IGNORECASE).search
+    hits = [
+        line.strip()
+        for line in code
+        if ("apt-get install" in line or "apt-mark hold" in line)
+        and names_freecad(line)
+    ]
+    apt_install_body = "\n".join(code).split(".aptInstall([")[1].split("])")[0]
+    hits += [
+        line.strip() for line in apt_install_body.splitlines() if names_freecad(line)
+    ]
+    return hits
+
+
 def test_reaper_uses_clone_safe_startup_launcher():
     template = (ROOT / "template" / "template.ts").read_text()
     launcher = (ROOT / "template" / "files" / "reaper-launcher.sh").read_text()
@@ -554,19 +580,11 @@ def test_template_preinstalls_kicad_10_and_freecad_appimage_without_the_occt_con
     assert "ppa:kicad/kicad-10.0-releases" in template  # task 107's own source
     assert "apt-mark hold kicad" in template
     assert "'apt-get install -y musescore3 shotcut freecad openboard'" not in template
-    # No apt path may install or hold FreeCAD: jammy's apt freecad 0.19 is the
+    # No apt path may (re-)introduce FreeCAD: jammy's apt freecad 0.19 is the
     # package the KiCad PPA's libocct 7.6 breaks, so FreeCAD must come from the
     # AppImage only. (States the intent of the brief's positional substring
     # assertion, which the mandated KiCad comment text cannot satisfy.)
-    apt_freecad_lines = [
-        line.strip()
-        for line in template.splitlines()
-        # a runCmd command is a quoted string literal; skip // comment prose
-        if line.lstrip()[:1] in {"'", '"'}
-        and ("apt-get install" in line or "apt-mark hold" in line)
-        and re.search(r"\bfreecad\b", line, re.IGNORECASE)
-    ]
-    assert apt_freecad_lines == [], apt_freecad_lines
+    assert not _apt_lines_naming_freecad(template)
     assert "FreeCAD_1.1.3-Linux-x86_64-py311.AppImage" in template
     assert (
         "3a853eb69ee595f779f2255dbf80a765926981d8ff68903cefee4dfb03a8f5ef" in template
@@ -575,6 +593,10 @@ def test_template_preinstalls_kicad_10_and_freecad_appimage_without_the_occt_con
     assert "exec /opt/freecad/squashfs-root/AppRun" in launcher
     # tasks 103/104 grade by running `freecadcmd`, which apt FreeCAD supplied.
     assert "ln -sfn /usr/local/bin/freecad /usr/local/bin/freecadcmd" in template
+    # Their extractor degrades silently to {"error": "numpy_unavailable"}, so
+    # the build must assert numpy under the AppImage's own bundled py311.
+    assert "freecadcmd -c 'import numpy;" in template
+    assert "grep -q NUMPY_OK" in template
 
 
 def test_full_agent_coordinator_bounds_sandboxes_and_namespaces_task_service_ports():
