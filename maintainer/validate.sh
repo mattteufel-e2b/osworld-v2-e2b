@@ -71,7 +71,9 @@ then :; else
     echo "127.0.0.1:8090 is already occupied; refusing an ambiguous fleet proxy" >&2
     exit 2
 fi
-HOSTMAP_PORT="8090" FLEET_RUNTIME_FILE="$SERVICES_DIR/.runtime.json" \
+HOSTMAP_PORT="8090" HOSTMAP_TLS_PORTS="8090" \
+    HOSTMAP_TLS_CERT="$HOSTMAP_TLS_CERT" HOSTMAP_TLS_KEY="$HOSTMAP_TLS_KEY" \
+    FLEET_RUNTIME_FILE="$SERVICES_DIR/.runtime.json" \
     $UV python "$SERVICES_DIR/hostmap_proxy.py" >"$RAW_DIR/validate-hostmap-proxy.log" 2>&1 &
 proxy_pid=$!
 if ! wait_for_hostmap_proxy "$proxy_pid" "validation" "$RAW_DIR/validate-hostmap-proxy.log"; then

@@ -633,3 +633,28 @@ def test_host_proxy_readiness_is_shared_and_bounded():
         text = (ROOT / script).read_text()
         assert "wait_for_hostmap_proxy" in text, script
         assert "api/state?cookie=" not in text, script  # no private curl loops left
+
+
+def test_host_proxy_is_started_with_tls_and_probed_over_https():
+    common = (ROOT / "runner" / "common.sh").read_text()
+    for script in (
+        "runner/run_agent_parallel.sh",
+        "maintainer/validate.sh",
+        "maintainer/validate_parallel.sh",
+    ):
+        text = (ROOT / script).read_text()
+        assert 'HOSTMAP_PORT="8090" HOSTMAP_TLS_PORTS="8090"' in text, script
+        assert (
+            'HOSTMAP_TLS_CERT="$HOSTMAP_TLS_CERT" HOSTMAP_TLS_KEY="$HOSTMAP_TLS_KEY"'
+            in text
+        ), script
+        assert "export_fleet_wiring" in text, script
+    assert (
+        'curl -fsS --connect-timeout 2 --max-time 5 --cacert "$OSWORLD_CA_CERT"'
+        in common
+    )
+    # --resolve makes curl present the site name as SNI and Host so the leaf's
+    # SAN matches; connecting to the bare IP would fail certificate verification.
+    assert "--resolve 'mailhub.127.0.0.1.nip.io:8090:127.0.0.1'" in common
+    assert '"https://mailhub.127.0.0.1.nip.io:8090/api/state?cookie=$cookie"' in common
+    assert "export REQUESTS_CA_BUNDLE SSL_CERT_FILE" in common
