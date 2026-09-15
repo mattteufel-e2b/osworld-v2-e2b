@@ -456,6 +456,27 @@ def ensure_docker(sbx: Sandbox) -> float:
 # --- host-side Host-mapping proxy ------------------------------------------
 
 
+def tls_env() -> dict:
+    """Proxy TLS environment derived from the runtime `tls` section (see
+    campaign_tls.ensure_campaign_tls); {} before that section exists or before
+    a leaf certificate has been issued into it.
+
+    HOSTMAP_TLS_PORTS is derived from HOSTMAP_PORT the same way
+    restart_host_proxy derives its own ports list, so the two never drift
+    apart -- the coordinator has no plain port, so every port it lists to the
+    proxy terminates TLS.
+    """
+    section = read_runtime().get("tls")
+    if not isinstance(section, dict) or not section.get("leaf_cert"):
+        return {}
+    ports = os.environ.get("HOSTMAP_PORT", "8090")
+    return {
+        "HOSTMAP_TLS_PORTS": ports,
+        "HOSTMAP_TLS_CERT": section["leaf_cert"],
+        "HOSTMAP_TLS_KEY": section["leaf_key"],
+    }
+
+
 def restart_host_proxy() -> dict:
     """(Re)start the host-side Host-mapping proxy from the current runtime file.
     Best-effort: on this macOS host, binding 127.0.0.1:80 needs elevation, so a
@@ -477,7 +498,7 @@ def restart_host_proxy() -> dict:
             [sys.executable, str(PROXY_SCRIPT)],
             stdout=output,
             stderr=subprocess.STDOUT,
-            env={**os.environ, "HOSTMAP_PORT": ports_env},
+            env={**os.environ, "HOSTMAP_PORT": ports_env, **tls_env()},
         )
     time.sleep(1.5)
     if proc.poll() is not None:
@@ -518,14 +539,21 @@ def stop_host_proxy() -> None:
 
 def verify_host_proxy_path(sample_host: str, path: str, port: int) -> dict:
     """Drive the full Host-mapping proxy path from the host: GET
-    http://<sample_host>:<port><path>. nip.io resolves <sample_host> to
-    127.0.0.1, so this exercises the proxy's Host->fleet-ingress routing."""
+    <scheme>://<sample_host>:<port><path>. nip.io resolves <sample_host> to
+    127.0.0.1, so this exercises the proxy's Host->fleet-ingress routing.
+    Speaks HTTPS, trusting the campaign CA, once the runtime `tls` section
+    exists; keeps today's plain HTTP before that."""
+    import ssl
     import urllib.request
 
-    url = f"http://{sample_host}:{port}{path}"
+    scheme = "https" if tls_env() else "http"
+    context = None
+    if scheme == "https":
+        context = ssl.create_default_context(cafile=read_runtime()["tls"]["ca_cert"])
+    url = f"{scheme}://{sample_host}:{port}{path}"
     try:
         req = urllib.request.Request(url)  # Host header defaults to sample_host
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30, context=context) as resp:
             body = resp.read(300).decode("utf-8", "replace")
             return {"url": url, "status": resp.status, "body_prefix": body}
     except Exception as exc:  # noqa: BLE001
