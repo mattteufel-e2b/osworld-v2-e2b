@@ -349,6 +349,8 @@ def main() -> int:
         # already failed keeps the cause classify_failure gave it.
         receipt["path_status"] = "ERROR"
         receipt["error_cause"] = "evaluator-or-agent"
+    # Token counts only -- the tracker never sees prompt or response text.
+    receipt["model_usage"] = evaluator_model_calls.usage
 
     atomic_write_json(args.output, receipt)
     # Redacted one-liner to stderr (safe: ids + booleans + score only).

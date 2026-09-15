@@ -214,6 +214,9 @@ def test_success_path_records_bridge_sandbox(tmp_path):
     assert data["path_status"] == "OK"
     assert data["score"] == 0.5
     assert data["sandbox_id"] == "sbx-fake"
+    # Token accounting is always present, even with no SDK on the path.
+    assert sorted(data["model_usage"]) == ["agent", "judge", "simulator"]
+    assert data["model_usage"]["agent"]["calls"] == 0
 
 
 def test_a_second_sigterm_during_teardown_cannot_cost_the_receipt(tmp_path):

@@ -71,6 +71,10 @@ def test_multiphase_steps_are_not_collapsed_across_phases(agent_runner, tmp_path
 
 
 def test_single_phase_rows_without_phase_index_still_count(agent_runner, tmp_path):
-    rows = [{"step_num": 1, "action": "click"}, {"step_num": 1, "action": "click"}, {"step_num": 2, "action": "x"}]
+    rows = [
+        {"step_num": 1, "action": "click"},
+        {"step_num": 1, "action": "click"},
+        {"step_num": 2, "action": "x"},
+    ]
     (tmp_path / "traj.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
     assert agent_runner._count_steps(tmp_path) == 2

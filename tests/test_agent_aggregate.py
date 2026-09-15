@@ -642,3 +642,95 @@ def test_main_writes_campaign_receipt_atomically_with_private_perms(
     # No --no-model-receipt was passed on argv, so main() must record the
     # coverage gate as unenforced rather than silently defaulting to True.
     assert receipt["execution"]["no_model_coverage_enforced"] is False
+
+
+def _usage(calls: int, inp: int | None, out: int | None, unmeasured: int = 0) -> dict:
+    return {
+        "calls": calls,
+        "input_tokens": inp,
+        "output_tokens": out,
+        "unmeasured_calls": unmeasured,
+    }
+
+
+def _aggregate_defaults(manifest: Path, workers: Path):
+    return aggregate(
+        manifest,
+        workers,
+        model="model",
+        agent_kind="m3",
+        model_transport="https://example.test/v1",
+        eval_model="judge",
+        eval_provider="openai_compatible",
+        eval_transport="https://example.test/v1",
+        user_sim_model="simulator",
+        user_sim_provider="openai_compatible",
+        user_sim_transport="https://example.test/v1",
+        max_steps=500,
+        concurrency=1,
+        thinking_mode=None,
+        thinking_budget=2048,
+        m3_max_llm_retries=2,
+        task_082_concurrent=True,
+        run_nonce="run-nonce-1",
+        campaign_id="campaign-1",
+        required_eval_model_ids=set(),
+        no_model_coverage_enforced=False,
+    )
+
+
+def test_model_usage_sums_per_role_across_attested_records(tmp_path):
+    manifest, workers = _inputs(tmp_path)
+    manifest_data = json.loads(manifest.read_text())
+    manifest_data["tasks"].append({"id": "002", "domain": "release"})
+    manifest.write_text(json.dumps(manifest_data))
+    first = json.loads((workers / "task_001.json").read_text())
+    first["model_usage"] = {
+        "agent": _usage(3, 1000, 200),
+        "judge": _usage(1, 50, 5),
+        "simulator": _usage(0, None, None),
+    }
+    (workers / "task_001.json").write_text(json.dumps(first))
+    second = dict(first)
+    second["id"] = "002"
+    second["sandbox_id"] = "sandbox-2"
+    second["model_usage"] = {
+        "agent": _usage(2, 400, 60, unmeasured=1),
+        "judge": _usage(0, None, None),
+        "simulator": _usage(1, 7, 2),
+    }
+    (workers / "task_002.json").write_text(json.dumps(second))
+
+    run, ok = _aggregate_defaults(manifest, workers)
+
+    assert ok
+    assert run["summary"]["model_usage"] == {
+        "agent": _usage(5, 1400, 260, unmeasured=1),
+        "judge": _usage(1, 50, 5),
+        "simulator": _usage(1, 7, 2),
+    }
+
+
+def test_model_usage_tokens_stay_null_when_nothing_was_measured(tmp_path):
+    manifest, workers = _inputs(tmp_path)
+    record = json.loads((workers / "task_001.json").read_text())
+    record["model_usage"] = {
+        "agent": _usage(2, None, None, unmeasured=2),
+        "judge": _usage(0, None, None),
+        "simulator": _usage(0, None, None),
+    }
+    (workers / "task_001.json").write_text(json.dumps(record))
+
+    run, ok = _aggregate_defaults(manifest, workers)
+
+    assert ok
+    assert run["summary"]["model_usage"]["agent"] == _usage(2, None, None, unmeasured=2)
+
+
+def test_model_usage_is_null_when_no_record_carries_it(tmp_path):
+    manifest, workers = _inputs(tmp_path)
+
+    run, ok = _aggregate_defaults(manifest, workers)
+
+    assert ok
+    assert run["summary"]["model_usage"] is None

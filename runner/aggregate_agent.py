@@ -21,6 +21,39 @@ def _valid_score(value: object) -> bool:
     )
 
 
+def _sum_model_usage(records: list[dict]) -> dict | None:
+    """Per-role token totals, or None when no record carries the field.
+
+    Old receipts predate token accounting; reporting zeros for them would read
+    as "this campaign spent nothing" rather than "this was never measured".
+    """
+    fields = ("calls", "input_tokens", "output_tokens", "unmeasured_calls")
+    totals = {
+        role: dict.fromkeys(fields, 0) for role in ("agent", "judge", "simulator")
+    }
+    measured_any = False
+    for record in records:
+        usage = record.get("model_usage")
+        if not isinstance(usage, dict):
+            continue
+        measured_any = True
+        for role, role_totals in totals.items():
+            bucket = usage.get(role)
+            if not isinstance(bucket, dict):
+                continue
+            for field in fields:
+                value = bucket.get(field)
+                if isinstance(value, int) and not isinstance(value, bool):
+                    role_totals[field] += value
+    if not measured_any:
+        return None
+    for role_totals in totals.values():
+        if role_totals["calls"] - role_totals["unmeasured_calls"] <= 0:
+            role_totals["input_tokens"] = None
+            role_totals["output_tokens"] = None
+    return totals
+
+
 def aggregate(
     manifest_path: Path,
     worker_dir: Path,
@@ -188,6 +221,7 @@ def aggregate(
         "binary_accuracy": (
             sum(score == 1.0 for score in scores) / len(scores) if scores else None
         ),
+        "model_usage": _sum_model_usage(accepted_records),
         "unique_sandboxes": len(set(sandbox_ids)),
         "all_recorded_sandboxes_unique": len(set(sandbox_ids)) == len(sandbox_ids),
     }
