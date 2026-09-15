@@ -56,11 +56,35 @@ def _lookup(receipt: dict, field: str):
     return False, None
 
 
-def summarize(receipt: dict, source_name: str) -> dict:
-    # The no-model ladder writes evaluation_mode into its own summary block;
-    # an agent campaign receipt (runner/aggregate_agent.py) never does.
+def _is_no_model(receipt: dict) -> bool:
+    """Decide whether this receipt came from a no-model ladder run.
+
+    The no-model ladder usually writes evaluation_mode into its own summary
+    block; an agent campaign receipt (runner/aggregate_agent.py) never does.
+    But a serial-harness no-model receipt can omit evaluation_mode from its
+    summary block too, so fall back to the records: every record from a
+    no-model run stamps its own evaluation_mode == "no-model-stub", which an
+    agent record never does.
+    """
     summary_block = receipt.get("summary")
-    no_model = isinstance(summary_block, dict) and "evaluation_mode" in summary_block
+    if isinstance(summary_block, dict) and "evaluation_mode" in summary_block:
+        return True
+    records = receipt.get("records")
+    return (
+        isinstance(records, list)
+        and bool(records)
+        and all(
+            isinstance(r, dict) and r.get("evaluation_mode") == "no-model-stub"
+            for r in records
+        )
+    )
+
+
+def summarize(receipt: dict, source_name: str) -> dict:
+    # One flag drives both the receipt's overall kind and each record's
+    # shape below, so a no-model record can never end up with a dict shape
+    # (or vice versa) just because it happens to carry a "score" key.
+    no_model = _is_no_model(receipt)
     kind = "no-model-ladder-summary" if no_model else "agent-run-summary"
     summary: dict = {"kind": kind, "source_receipt": source_name}
     for field in IDENTITY_FIELDS + GATE_FIELDS:
@@ -72,12 +96,12 @@ def summarize(receipt: dict, source_name: str) -> dict:
     for record in records if isinstance(records, list) else []:
         if not isinstance(record, dict) or not isinstance(record.get("id"), str):
             continue
-        if "score" in record:
+        if no_model:
+            tasks[record["id"]] = record.get("path_status")
+        else:
             tasks[record["id"]] = {
                 key: record[key] for key in PER_TASK_FIELDS if key in record
             }
-        else:
-            tasks[record["id"]] = record.get("path_status")
     summary["task_count"] = len(tasks)
     # Not "tasks": the source receipt uses that key for an integer count.
     summary["task_statuses"] = dict(sorted(tasks.items()))
