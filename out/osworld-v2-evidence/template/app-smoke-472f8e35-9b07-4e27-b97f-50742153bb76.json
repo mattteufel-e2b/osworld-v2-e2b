@@ -1,0 +1,85 @@
+{
+  "template": "osworld-v2-gnome:472f8e35-9b07-4e27-b97f-50742153bb76",
+  "sandbox_id": "i1iyi1ls3iw0xgpcengcs",
+  "apps": {
+    "musescore": {
+      "args": [
+        "musescore",
+        "/home/user/Desktop/music_init.mscz"
+      ],
+      "launch_status": 200,
+      "launch_body": "musescore /home/user/Desktop/music_init.mscz launched successfully",
+      "window_found": true,
+      "first_run_titles": [],
+      "seconds_to_window": 12.7,
+      "settle_seconds": 45,
+      "screenshot_bytes": 304234,
+      "windows": [
+        "0x01e00014  0 e2b.local music_init",
+        "0x01e0001b  0 e2b.local MuseScore Studio"
+      ]
+    },
+    "wpp": {
+      "args": [
+        "wpp",
+        "/home/user/Desktop/nexachain_pitch_template.pptx"
+      ],
+      "launch_status": 200,
+      "launch_body": "wpp /home/user/Desktop/nexachain_pitch_template.pptx launched successfully",
+      "window_found": true,
+      "first_run_titles": [],
+      "seconds_to_window": 18.7,
+      "settle_seconds": 45,
+      "screenshot_bytes": 26453,
+      "windows": [
+        "0x01e0000f  0 e2b.local nexachain_pitch_template.pptx - Presentation"
+      ]
+    },
+    "blender": {
+      "args": [
+        "blender"
+      ],
+      "launch_status": 200,
+      "launch_body": "blender launched successfully",
+      "window_found": true,
+      "first_run_titles": [],
+      "seconds_to_window": 9.4,
+      "settle_seconds": 45,
+      "screenshot_bytes": 400955,
+      "windows": [
+        "0x01e00002  0 e2b.local (Unsaved) - Blender 4.5.14 LTS"
+      ]
+    },
+    "kicad": {
+      "args": [
+        "kicad",
+        "/home/user/Desktop/smoke_kicad/heart_rate_power.kicad_pro"
+      ],
+      "launch_status": 200,
+      "launch_body": "kicad /home/user/Desktop/smoke_kicad/heart_rate_power.kicad_pro launched successfully",
+      "window_found": true,
+      "first_run_titles": [],
+      "seconds_to_window": 15.6,
+      "settle_seconds": 45,
+      "screenshot_bytes": 110762,
+      "windows": [
+        "0x01e00017  0 e2b.local heart_rate_power \u2014 KiCad 10.0"
+      ]
+    },
+    "freecad": {
+      "args": [
+        "freecad"
+      ],
+      "launch_status": 200,
+      "launch_body": "freecad launched successfully",
+      "window_found": true,
+      "first_run_titles": [],
+      "seconds_to_window": 33.9,
+      "settle_seconds": 45,
+      "screenshot_bytes": 116218,
+      "windows": [
+        "0x01e00040  0 e2b.local FreeCAD 1.1.3"
+      ]
+    }
+  }
+}

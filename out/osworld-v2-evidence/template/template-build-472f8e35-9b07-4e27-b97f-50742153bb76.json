@@ -1,19 +1,19 @@
 {
   "name": "osworld-v2-gnome",
-  "buildId": "0eecdb03-552a-44f9-a366-8f4bda1b136d",
+  "buildId": "472f8e35-9b07-4e27-b97f-50742153bb76",
   "templateId": "q5r3wzxbxwc1iodjs3pd",
-  "reference": "osworld-v2-gnome:0eecdb03-552a-44f9-a366-8f4bda1b136d",
+  "reference": "osworld-v2-gnome:472f8e35-9b07-4e27-b97f-50742153bb76",
   "cpuCount": 4,
   "memoryMB": 8192,
   "diskSizeMB": 114834,
   "diskSizeMBRequested": 100000,
   "diskSizeMBNote": "E2B project disk entitlement supplies root capacity; verified from the exact immutable build.",
   "rootCapacityBytes": 114834632704,
-  "rootUsedBytes": 17381019648,
+  "rootUsedBytes": 17381183488,
   "rootUsedNote": "Bytes used on / by a freshly booted sandbox of this build, before any task writes. This is the image footprint, not a live-run peak.",
   "minimumRootCapacityGB": 100,
   "applicationInventory": [
-    "google-chrome-stable 153.0.8010.36-1",
+    "google-chrome-stable 153.0.8010.47-1",
     "kicad 10.0.6~ubuntu22.04.1",
     "wps-office 11.1.0.11723.XA",
     "x11vnc 0.9.16-8",
@@ -30,7 +30,7 @@
   ],
   "applicationInventoryNote": "Package versions and launcher payloads observed in the smoke sandbox of this exact build: dpkg versions, the Blender banner, the MuseScore 4 and FreeCAD AppImage binaries, and the presence of both VNC user units. Recorded only; a launcher resolving is not evidence that the application opens a document.",
   "unpinnableVersionsNote": "google-chrome-stable and kicad have no source sha256 pin: they come from mutable apt sources (Google's Chrome repo and ppa:kicad/kicad-10.0-releases), which serve whatever version is current at build time. Both are apt-mark hold inside the guest, and the versions in applicationInventory are frozen for every sandbox by this immutable build id, not by a pin in template/template.ts. Re-running the build can install newer versions; only the build id guarantees the ones recorded here.",
-  "smokeSandboxId": "ioo2syfec8aqf3t4c08dy",
+  "smokeSandboxId": "iy887w60qhqj326i7ckq3",
   "networkPolicy": {
     "denyOut": [
       "10.0.0.0/8",
@@ -49,7 +49,7 @@
     ],
     "allowPublicTraffic": false
   },
-  "timestamp": "2026-09-15T19:07:45.735Z",
+  "timestamp": "2026-09-15T22:03:01.310Z",
   "lockfileRelease": "osworld-v2-2026.08.08",
   "osworldServerCommit": "a3cc3f0c64e463f020d1a44780307e9b46cbcab1"
 }

@@ -34,14 +34,14 @@ sandbox-metrics API; 15 sandboxes, no CPU/memory/disk saturation flags):
 | Fleet ×2 (websites, GitLab) | 4 | 8 GB (+8 GB swap at launch) | same entitlement | first compose build is the heavy phase (~524 s) |
 
 The guest disk entry is the image footprint, not a live-run peak: the build's own smoke sandbox
-on `osworld-v2-gnome:0eecdb03-552a-44f9-a366-8f4bda1b136d` reported 17,381,019,648 bytes used of
+on `osworld-v2-gnome:472f8e35-9b07-4e27-b97f-50742153bb76` reported 17,381,183,488 bytes used of
 114,834,632,704 usable on `/` before any task wrote anything (`rootUsedBytes` in that build's
 receipt, committed at
-`out/osworld-v2-evidence/template/template-build-0eecdb03-552a-44f9-a366-8f4bda1b136d.json`),
+`out/osworld-v2-evidence/template/template-build-472f8e35-9b07-4e27-b97f-50742153bb76.json`),
 so a running task only adds to it. The cell previously read ~7 GiB, a live-run peak
 measured on an earlier build that did not yet carry the applications below; the two figures are
 not directly comparable. That footprint covers the preinstalled application set recorded in the
-receipt's `applicationInventory` — Google Chrome 153.0.8010.36-1 and KiCad 10.0.6~ubuntu22.04.1
+receipt's `applicationInventory` — Google Chrome 153.0.8010.47-1 and KiCad 10.0.6~ubuntu22.04.1
 (apt, `apt-mark hold`, version frozen by the build id rather than by a source pin), WPS Office
 11.1.0.11723.XA, Blender 4.5.14 LTS, x11vnc 0.9.16-8, novnc 1:1.0.0-5, websockify
 0.10.0+dfsg1-2build1 and libnss3-tools 2:3.98-0ubuntu0.22.04.4 — plus the sha256-pinned MuseScore

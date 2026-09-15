@@ -33,6 +33,7 @@ RUNNER_FILES = {
 }
 MAINTAINER_FILES = {
     "README.md",
+    "app_smoke.py",  # fresh-guest application launcher smoke -> committed evidence
     "harness.py",
     "no_model.py",
     "profile_resources.sh",

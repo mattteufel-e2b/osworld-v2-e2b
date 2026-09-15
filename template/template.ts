@@ -411,6 +411,49 @@ export const template = Template({ fileContextPath: filesDir })
   // use them fall back to a substitute face.
   .makeDir('/home/user/.config/Kingsoft')
   .copy('wps-office.conf', '/home/user/.config/Kingsoft/Office.conf')
+  // ---- Blender first-run suppression (config Blender writes itself) ------
+  // Observed on a scratch sandbox of build 0eecdb03: a fresh `blender` opens
+  // a "Quick Setup" panel (Language / Theme / Keymap / Mouse Select /
+  // Spacebar Action, Continue) in front of the default scene, and once that
+  // is answered it still opens the ordinary splash ("New File / Getting
+  // Started") over the viewport on every launch. Both live in
+  // ~/.config/blender/4.5/config/userpref.blend: Quick Setup runs only while
+  // that file is absent, and the splash is its `show_splash` view preference.
+  // That file is a 173 KB binary .blend, so rather than commit an opaque blob
+  // Blender writes it here itself in background mode - the same file its GUI
+  // would write - and the one setting that differs from factory defaults
+  // stays readable on this line. Verified on that guest: with the file in
+  // place `blender` opens straight onto the default cube, no panel.
+  // Running it under HOME=/home/user also leaves a ~/.cache behind, which the
+  // GNOME session would otherwise create itself at first login; baking that
+  // directory into the image was the one environmental difference between
+  // this build and 0eecdb03, so the cleanup below puts /home/user back to
+  // exactly what it held before, plus the config file.
+  .runCmd([
+    'HOME=/home/user blender --background --factory-startup --python-expr "import bpy; bpy.context.preferences.view.show_splash = False; bpy.ops.wm.save_userpref()"',
+    'test -s /home/user/.config/blender/4.5/config/userpref.blend',
+    'rm -rf /home/user/.cache/blender',
+    'rmdir /home/user/.cache 2>/dev/null || true',
+    'chown -R user:user /home/user/.config/blender',
+  ])
+  // ---- KiCad 10 first-run suppression (captured config) ------------------
+  // Observed on a scratch sandbox of build 0eecdb03: a fresh `kicad` opens a
+  // modal "KiCad Setup" wizard - "KiCad is starting for the first time, or
+  // some of its configuration files are missing" - and the project passed on
+  // the command line never opens behind it. Escape and Cancel both leave the
+  // wizard on screen. kicad-config/ is what KiCad itself wrote after that
+  // wizard was stepped through to Finish on that guest, with `kicad` launched
+  // with no project so the history lists stay empty, copied verbatim; the
+  // per-editor files it writes at exit (eeschema/pcbnew/cvpcb/3d_viewer/...)
+  // are session state, not first-run state, and are left out.
+  // The decisive thing is the set, not one key. Both narrower guesses were
+  // tested on that guest and the wizard came back: `first_run_shown` in
+  // kicad.json is still false after the wizard finishes, so flipping it does
+  // nothing, and the three library tables on their own are not enough either.
+  // With these six files present, `kicad <project>` opened straight into
+  // "heart_rate_power - KiCad 10.0" with the project tree loaded.
+  .makeDir('/home/user/.config/kicad/10.0')
+  .copy('kicad-config', '/home/user/.config/kicad/10.0')
   // ---- system-wide dconf defaults: a11y + interface + DPI/scaling ---------
   // Matches the OSWorld reference GNOME session: toolkit-accessibility on (so
   // GTK/Qt apps expose AT-SPI trees), Adwaita cursor/theme, 1.0 text scaling
