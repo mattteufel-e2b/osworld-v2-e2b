@@ -85,6 +85,34 @@ def test_ensure_for_a_different_campaign_starts_fresh(tmp_path):
     assert Path(second["ca_cert"]).read_bytes() != first_ca_bytes
 
 
+def test_ensure_is_idempotent_for_same_campaign_and_hosts(tmp_path):
+    tls, _ = load(tmp_path)
+    hosts = ["mailhub.127.0.0.1.nip.io"]
+    first = tls.ensure_campaign_tls("camp-a", hosts)
+    ca_bytes = Path(first["ca_cert"]).read_bytes()
+    leaf_bytes = Path(first["leaf_cert"]).read_bytes()
+    second = tls.ensure_campaign_tls("camp-a", hosts)
+
+    assert Path(second["ca_cert"]).read_bytes() == ca_bytes
+    assert Path(second["leaf_cert"]).read_bytes() == leaf_bytes
+
+
+def test_ensure_reissues_leaf_when_leaf_material_is_missing(tmp_path):
+    tls, _ = load(tmp_path)
+    hosts = ["mailhub.127.0.0.1.nip.io"]
+    first = tls.ensure_campaign_tls("camp-a", hosts)
+    ca_bytes = Path(first["ca_cert"]).read_bytes()
+    Path(first["leaf_cert"]).unlink()
+    Path(first["leaf_key"]).unlink()
+
+    second = tls.ensure_campaign_tls("camp-a", hosts)
+
+    assert Path(second["leaf_cert"]).is_file()
+    assert Path(second["leaf_key"]).is_file()
+    assert set(hosts) <= san_list(Path(second["leaf_cert"]))
+    assert Path(second["ca_cert"]).read_bytes() == ca_bytes
+
+
 def test_remove_deletes_material_and_section(tmp_path):
     tls, fleetlib = load(tmp_path)
     tls.ensure_campaign_tls("camp-a", ["mailhub.127.0.0.1.nip.io"])

@@ -118,15 +118,21 @@ def ensure_campaign_tls(campaign_id: str, hosts: list[str]) -> dict:
             "-out",
             str(ca_cert),
         )
-    if not same_campaign or set(current.get("hosts") or []) != set(wanted):
+    leaf_cert, leaf_key = TLS_DIR / "leaf.crt", TLS_DIR / "leaf.key"
+    if (
+        not same_campaign
+        or set(current.get("hosts") or []) != set(wanted)
+        or not leaf_cert.is_file()
+        or not leaf_key.is_file()
+    ):
         _leaf(wanted, ca_key, ca_cert)
     bundle = _bundle(ca_cert)
     info = {
         "campaign_id": campaign_id,
         "hosts": wanted,
         "ca_cert": str(ca_cert),
-        "leaf_cert": str(TLS_DIR / "leaf.crt"),
-        "leaf_key": str(TLS_DIR / "leaf.key"),
+        "leaf_cert": str(leaf_cert),
+        "leaf_key": str(leaf_key),
         "bundle": str(bundle),
     }
     fl.write_runtime_section("tls", info)
