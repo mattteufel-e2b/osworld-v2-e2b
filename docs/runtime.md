@@ -106,6 +106,88 @@ right ingress port + token (guest port 8080 stays reserved for VLC). `SANDBOX_TI
 (default 1 h) is an *idle* ceiling: the heartbeat re-arms it while guest traffic flows, so
 active multi-hour tasks survive and abandoned guests expire.
 
+## Fleet origins and trust
+
+Fleet origins terminate TLS under a per-campaign CA the coordinator generates in
+`services/.campaign-tls/` (`campaign_tls.py`'s `ensure_campaign_tls`): a self-signed CA
+(`ca.key`/`ca.crt`) signs a leaf (`leaf.key`/`leaf.crt`) whose SAN list is every fleet
+hostname. The CA's private key never leaves the coordinator; the leaf key does, because the
+guest's root-owned Host-mapping proxy is the only thing that terminates TLS and needs it to
+present the certificate. `ensure_campaign_tls` unions each launcher's own requested hosts with
+whatever the persisted `tls` section already covers for the same `campaign_id`, so whichever
+launcher (websites or GitLab) runs second only grows the leaf's SAN set and never drops a host
+the first launcher already added; a different `campaign_id`, or missing CA material, resets
+the whole directory instead.
+
+The host-side proxy (macOS, best-effort — binding `:80` needs elevation there) listens on
+whatever `HOSTMAP_PORT` lists (default `8090`) and, once a `tls` runtime section with leaf
+material exists, terminates TLS on every one of those ports: `fleetlib.tls_env()` sets
+`HOSTMAP_TLS_PORTS` to the same port list as `HOSTMAP_PORT` and `HOSTMAP_TLS_CERT`/
+`HOSTMAP_TLS_KEY` to the campaign leaf, because the coordinator never runs a plain listener
+once TLS material is available. In practice every fleet URL the coordinator hands the harness
+is `https://<site>.127.0.0.1.nip.io:8090`.
+
+The guest-side proxy (installed as root by `provider/bridge.py`'s `_install_guest_proxy` at
+session start) binds `80,443,8090`, with TLS on `443` and `8090`; plain `:80` stops proxying
+and instead answers every request with a `301` to a portless `https://<host><path>`, landing
+the client on the guest's own `:443` with no port carried over. Before a `tls` runtime section
+with leaf material exists, the guest falls back to serving `80,8090` in plain HTTP, matching
+pre-TLS behavior exactly.
+
+Trust is installed into the guest before Chrome ever starts: the CA cert is copied to
+`/usr/local/share/ca-certificates/osworld-campaign.crt` and picked up by
+`update-ca-certificates` (system trust store), and separately imported into Chrome's own NSS
+database with `certutil -d sql:/home/user/.pki/nssdb -A -t "C,," -n osworld-campaign -i
+ca.crt` — Chrome on Linux consults NSS, not just the system store, so both installs are
+required for `isSecureContext` to be true. Neither install command backgrounds or swallows its
+exit code, so a missing `certutil`/nssdb or a failed `update-ca-certificates` raises rather than
+silently leaving Chrome untrusting. Guest TLS material (`leaf.crt`, `leaf.key`,
+`ca.crt`) lives at `/opt/hostmap-tls/`, root-owned, `leaf.key` additionally mode `0600`, so the
+agent-controlled `user` account driving Chrome can never read the private key even though its
+browser trusts the CA that issued it.
+
+`REQUESTS_CA_BUNDLE`/`SSL_CERT_FILE`, both pointed at `campaign_tls.py`'s `bundle.crt`
+(certifi's public root bundle with the campaign CA appended), keep Python's own HTTPS clients
+working against both public endpoints and the campaign-signed fleet — `requests` (upstream's
+website-scheme probe, python-gitlab) and any stdlib `ssl` consumer trust both without separate
+configuration. `runner/common.sh`'s `export_fleet_wiring` reads `tls.bundle` out of
+`.runtime.json` to set both. The only three environment variables this plan introduces are
+`HOSTMAP_TLS_PORTS`, `HOSTMAP_TLS_CERT`, and `HOSTMAP_TLS_KEY`, consumed by `hostmap_proxy.py`
+itself.
+
+Task 026 depends on a Hugging Face-hosted zip whose upstream URL is dead. The websites
+launcher verifies the pinned local copy against a recorded sha256, uploads it into a
+`files.<suffix>` static nginx site (read-only bind mount, `Content-Disposition: attachment`)
+added to the fanout alongside the real control-plane sites, and records `{dead_url:
+served_url}` in the `websites.asset_url_map` runtime field. `hostmap_proxy.py` rewrites any
+occurrence of the dead URL inside `/api/state` request bodies to the fleet-served replacement
+before forwarding, so task setup that seeds state with the original Hugging Face link
+transparently gets the working one instead.
+
+Task 041 (`tasks/task_041.py:87`) hardcodes a public GitLab host, `54.174.16.65.sslip.io`,
+that the harness cannot control. `campaign_tls.py`'s `TASK_041_GITLAB_ALIAS` folds that
+hostname unconditionally into every campaign leaf's SAN set, and both the host and guest
+hostmap proxies route it as an alias of the real GitLab host (`gitlab.aliases` in
+`.runtime.json`) carrying a `canonical_host`, so GitLab's own canonical absolute URLs in
+responses get rewritten back to the alias authority the client actually used instead of
+leaking the real `gitlab.<suffix>` host.
+
+The `tls` section of `.runtime.json` — required by `preflight.py` before a run can proceed —
+carries `campaign_id`, `hosts` (the leaf's full SAN list), `ca_cert`, `leaf_cert`, `leaf_key`,
+and `bundle`, all absolute paths. There is no `ca_key` field: `ensure_campaign_tls`
+deliberately omits it when writing the section, and `preflight.py` derives the CA key's path
+itself (next to `ca_cert`, as `ca.key`) rather than trusting an extra published field, so
+nothing downstream of the coordinator can be handed the CA's private key even by mistake.
+`preflight.py` also requires both the leaf key and the derived CA key path to be private files
+(no group/world access) before a run starts.
+
+`services/stop.py` removes a `websites` or `gitlab` runtime entry with no `campaign_id` (a
+legacy entry, from before this plan) only when its recorded sandbox is confirmed gone; if the
+sandbox is still running or the liveness check is inconclusive, `stop_campaign` raises rather
+than guessing, naming the sandbox to kill manually. On a clean teardown, `remove_campaign_tls`
+deletes `services/.campaign-tls/` and the `tls` runtime section along with the rest of the
+campaign's state.
+
 ## Snapshots
 
 An E2B snapshot captures memory + filesystem, persists independently of its sandbox, and

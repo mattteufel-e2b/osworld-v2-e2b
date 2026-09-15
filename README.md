@@ -90,13 +90,23 @@ The coordinator also starts the host hostmap proxy for you; on this path start i
 or task setup and evaluators on the host cannot reach `*.127.0.0.1.nip.io:8090`.
 
 ```bash
-export WEBSITE_HOST_SUFFIX=127.0.0.1.nip.io:8090 GITLAB_URL=http://gitlab.127.0.0.1.nip.io:8090
+export WEBSITE_HOST_SUFFIX=127.0.0.1.nip.io:8090 GITLAB_URL=https://gitlab.127.0.0.1.nip.io:8090
 export GITLAB_PRIVATE_TOKEN="$(cat services/.gitlab-token)"
 export HOSTMAP_PROXY_SCRIPT="$PWD/services/hostmap_proxy.py" OSWORLD_FLEET_RULES="$PWD/services/.runtime.json"
 export OSWORLD_FILE_BASE_URL="$PWD/tasks/assets"
+# Fleet origins are HTTPS under a per-campaign CA (docs/runtime.md#fleet-origins-and-trust);
+# read the leaf/CA paths the launchers already wrote so both this shell's HTTPS clients and
+# the proxy itself trust them.
+read -r OSWORLD_CA_CERT OSWORLD_CA_BUNDLE HOSTMAP_TLS_CERT HOSTMAP_TLS_KEY < <(python3 -c '
+import json
+tls = json.load(open("services/.runtime.json"))["tls"]
+print(tls["ca_cert"], tls["bundle"], tls["leaf_cert"], tls["leaf_key"])')
+export OSWORLD_CA_CERT HOSTMAP_TLS_CERT HOSTMAP_TLS_KEY
+export REQUESTS_CA_BUNDLE="$OSWORLD_CA_BUNDLE" SSL_CERT_FILE="$OSWORLD_CA_BUNDLE"
 cp tasks/task_*.py OSWorld-V2/evaluation_examples/task_class/
 
-HOSTMAP_PORT=8090 FLEET_RUNTIME_FILE="$PWD/services/.runtime.json" \
+HOSTMAP_PORT=8090 HOSTMAP_TLS_PORTS=8090 HOSTMAP_TLS_CERT="$HOSTMAP_TLS_CERT" \
+    HOSTMAP_TLS_KEY="$HOSTMAP_TLS_KEY" FLEET_RUNTIME_FILE="$PWD/services/.runtime.json" \
     uv run --python 3.12 --with e2b==2.34.0 python services/hostmap_proxy.py &
 
 cd OSWorld-V2
