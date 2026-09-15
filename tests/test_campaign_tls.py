@@ -75,6 +75,41 @@ def test_ensure_reissues_leaf_when_new_hosts_appear_but_keeps_the_ca(tmp_path):
     assert "studio.streamview.127.0.0.1.nip.io" in san_list(Path(second["leaf_cert"]))
 
 
+def test_ensure_with_a_subset_of_hosts_keeps_covering_the_full_history(tmp_path):
+    # Regression: services/gitlab/launch.py only ever names its own host in its
+    # ensure_campaign_tls call. When the websites launcher ran first (the
+    # documented order), that single-host call must not drop every website SAN
+    # the leaf already covers.
+    tls, _ = load(tmp_path)
+    first = tls.ensure_campaign_tls(
+        "camp-a", ["mailhub.127.0.0.1.nip.io", "files.127.0.0.1.nip.io"]
+    )
+    assert "mailhub.127.0.0.1.nip.io" in san_list(Path(first["leaf_cert"]))
+
+    second = tls.ensure_campaign_tls("camp-a", ["gitlab.127.0.0.1.nip.io"])
+
+    sans = san_list(Path(second["leaf_cert"]))
+    assert {
+        "mailhub.127.0.0.1.nip.io",
+        "files.127.0.0.1.nip.io",
+        "gitlab.127.0.0.1.nip.io",
+        tls.TASK_041_GITLAB_ALIAS,
+    } <= sans
+
+
+def test_ensure_with_a_subset_of_hosts_does_not_reissue_the_leaf(tmp_path):
+    tls, _ = load(tmp_path)
+    first = tls.ensure_campaign_tls(
+        "camp-a", ["mailhub.127.0.0.1.nip.io", "gitlab.127.0.0.1.nip.io"]
+    )
+    leaf_bytes = Path(first["leaf_cert"]).read_bytes()
+
+    # Every host in this call is already covered -- must be a no-op reissue.
+    second = tls.ensure_campaign_tls("camp-a", ["gitlab.127.0.0.1.nip.io"])
+
+    assert Path(second["leaf_cert"]).read_bytes() == leaf_bytes
+
+
 def test_ensure_for_a_different_campaign_starts_fresh(tmp_path):
     tls, _ = load(tmp_path)
     first = tls.ensure_campaign_tls("camp-a", ["mailhub.127.0.0.1.nip.io"])

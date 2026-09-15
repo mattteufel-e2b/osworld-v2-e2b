@@ -4,7 +4,9 @@ import hashlib
 import importlib.util
 import json
 import os
+import shutil
 import stat
+import subprocess
 import sys
 import tempfile
 from contextlib import ExitStack
@@ -115,6 +117,14 @@ FAKE_TLS = {
     "leaf_key": "/fake/campaign-tls/leaf.key",
     "bundle": "/fake/campaign-tls/bundle.crt",
 }
+
+
+def _leaf_sans(cert_path: Path) -> set[str]:
+    out = subprocess.check_output(
+        ["openssl", "x509", "-in", str(cert_path), "-noout", "-ext", "subjectAltName"],
+        text=True,
+    )
+    return {p.strip().removeprefix("DNS:") for p in out.split("\n")[-2].split(",")}
 
 
 class FleetRuntimePolicyTests(unittest.TestCase):
@@ -1341,6 +1351,53 @@ class FleetRuntimePolicyTests(unittest.TestCase):
         )
         self.assertEqual(runtime["gitlab"]["aliases"], ["54.174.16.65.sslip.io"])
         self.assertEqual(runtime["gitlab"]["scheme"], "https")
+
+    def test_websites_then_gitlab_tls_calls_cover_both_fleets_in_the_documented_order(
+        self,
+    ):
+        # Documented launch order (README.md / maintainer/README.md): websites
+        # first, then gitlab. The gitlab launcher's ensure_campaign_tls call
+        # only ever names its own host -- campaign_tls.ensure_campaign_tls
+        # itself must union that with what the websites launcher already put
+        # in the leaf, or every website SAN silently disappears from the leaf
+        # the guest proxy actually serves.
+        if shutil.which("openssl") is None:
+            self.skipTest("openssl CLI required")
+        websites = load_websites_launcher()
+        gitlab = load_gitlab_launcher()
+        # Each load_*_launcher() call gets its own fresh `campaign_tls` module
+        # instance (load_websites_launcher/load_gitlab_launcher's patch.dict
+        # on sys.modules unwinds every module imported during exec, so the two
+        # launchers' `campaign_tls` attributes are NOT the same object here --
+        # matching production, where the two launchers are separate processes
+        # that each import their own copy). Both must be pointed at the same
+        # on-disk TLS_DIR, exactly as two real processes would share the same
+        # services/.campaign-tls path.
+        with tempfile.TemporaryDirectory() as directory:
+            runtime_file = Path(directory) / ".runtime.json"
+            tls_dir = Path(directory) / ".campaign-tls"
+            with (
+                patch.object(fleetlib, "RUNTIME_FILE", runtime_file),
+                patch.object(websites.campaign_tls, "TLS_DIR", tls_dir),
+                patch.object(gitlab.campaign_tls, "TLS_DIR", tls_dir),
+            ):
+                website_hosts = [
+                    f"mailhub.{fleetlib.HOST_SUFFIX}",
+                    f"files.{fleetlib.HOST_SUFFIX}",
+                    f"gitlab.{fleetlib.HOST_SUFFIX}",
+                ]
+                websites.campaign_tls.ensure_campaign_tls(
+                    "test-campaign", website_hosts
+                )
+                final = gitlab.campaign_tls.ensure_campaign_tls(
+                    "test-campaign", [f"gitlab.{fleetlib.HOST_SUFFIX}"]
+                )
+
+                sans = _leaf_sans(Path(final["leaf_cert"]))
+
+        self.assertIn(f"mailhub.{fleetlib.HOST_SUFFIX}", sans)
+        self.assertIn(f"files.{fleetlib.HOST_SUFFIX}", sans)
+        self.assertIn(f"gitlab.{fleetlib.HOST_SUFFIX}", sans)
 
 
 if __name__ == "__main__":
