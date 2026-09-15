@@ -21,6 +21,39 @@ def _valid_score(value: object) -> bool:
     )
 
 
+def _sum_model_usage(records: list[dict]) -> dict | None:
+    """Per-role token totals, or None when no record carries the field.
+
+    Old receipts predate token accounting; reporting zeros for them would read
+    as "this campaign spent nothing" rather than "this was never measured".
+    """
+    fields = ("calls", "input_tokens", "output_tokens", "unmeasured_calls")
+    totals = {
+        role: dict.fromkeys(fields, 0) for role in ("agent", "judge", "simulator")
+    }
+    measured_any = False
+    for record in records:
+        usage = record.get("model_usage")
+        if not isinstance(usage, dict):
+            continue
+        measured_any = True
+        for role, role_totals in totals.items():
+            bucket = usage.get(role)
+            if not isinstance(bucket, dict):
+                continue
+            for field in fields:
+                value = bucket.get(field)
+                if isinstance(value, int) and not isinstance(value, bool):
+                    role_totals[field] += value
+    if not measured_any:
+        return None
+    for role_totals in totals.values():
+        if role_totals["calls"] - role_totals["unmeasured_calls"] <= 0:
+            role_totals["input_tokens"] = None
+            role_totals["output_tokens"] = None
+    return totals
+
+
 def aggregate(
     manifest_path: Path,
     worker_dir: Path,
@@ -188,16 +221,33 @@ def aggregate(
         "binary_accuracy": (
             sum(score == 1.0 for score in scores) / len(scores) if scores else None
         ),
+        # Attested records only -- the spend of receipts that passed the gate --
+        # unlike the eval_model_* totals above, which sum every record.
+        "model_usage": _sum_model_usage(accepted_records),
         "unique_sandboxes": len(set(sandbox_ids)),
         "all_recorded_sandboxes_unique": len(set(sandbox_ids)) == len(sandbox_ids),
     }
-    # run_agent_parallel.sh copies the pre-retry receipt to
-    # task_<id>_before_retry_<n>.json before overwriting it, so the worker dir
-    # is the ground truth for whether the retry wave replaced any receipt.
+    # run_agent_parallel.sh writes the wave's own task list to retries.json
+    # after each retry wave; that is the ground truth for what was retried,
+    # not a glob over receipt files that stale attempt files (or a retry that
+    # produced no receipt) would otherwise mislead.
+    # A missing or truncated retries.json (a coordinator killed mid-write, or
+    # no retry wave at all) must not cost the whole campaign its receipt.
+    retry_waves: list = []
+    retries_path = worker_dir / "retries.json"
+    try:
+        parsed = json.loads(retries_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        parsed = None
+    if isinstance(parsed, list):
+        retry_waves = [wave for wave in parsed if isinstance(wave, dict)]
     retried_task_ids = sorted(
         {
-            path.name[len("task_") :].split("_before_retry_")[0]
-            for path in worker_dir.glob("task_*_before_retry_*.json")
+            tid
+            for wave in retry_waves
+            for tid in (
+                wave.get("task_ids") if isinstance(wave.get("task_ids"), list) else []
+            )
         }
     )
     run = {
@@ -235,6 +285,7 @@ def aggregate(
             "task_082_concurrent": task_082_concurrent,
             "host_proxy_owned_for_campaign": True,
             "retried_task_ids": retried_task_ids,
+            "retry_waves": retry_waves,
             "implicit_retries": bool(retried_task_ids),
             "no_model_coverage_enforced": no_model_coverage_enforced,
         },

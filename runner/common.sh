@@ -57,3 +57,21 @@ PY
     export HOSTMAP_PROXY_SCRIPT="$SERVICES_DIR/hostmap_proxy.py"
     export OSWORLD_FLEET_RULES="$SERVICES_DIR/.runtime.json"
 }
+
+# Poll the host-side hostmap proxy until it answers or the owning process
+# dies, bounded by a small connect/read timeout per attempt so a hung proxy
+# cannot stall the caller past ~30 iterations. Prints the log tail on failure.
+wait_for_hostmap_proxy() {
+    local pid="$1" cookie="$2" logfile="$3" _
+    for _ in $(seq 1 30); do
+        if ! kill -0 "$pid" 2>/dev/null; then break; fi
+        if curl -fsS --connect-timeout 2 --max-time 5 -H 'Host: mailhub.127.0.0.1.nip.io' \
+            "http://127.0.0.1:8090/api/state?cookie=$cookie" >/dev/null 2>&1; then
+            return 0
+        fi
+        sleep 2
+    done
+    echo "hostmap proxy did not become ready; last log lines:" >&2
+    tail -n 40 "$logfile" >&2 2>/dev/null
+    return 1
+}

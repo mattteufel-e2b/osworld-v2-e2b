@@ -431,7 +431,9 @@ def test_agent_aggregate_allows_zero_evaluator_calls_for_non_boundary_task(tmp_p
 
 def test_execution_block_reports_actual_retries(tmp_path):
     manifest, workers = _inputs(tmp_path)
-    (workers / "task_001_before_retry_1.json").write_text("{}")
+    (workers / "retries.json").write_text(
+        json.dumps([{"attempt": 1, "task_ids": ["001"]}])
+    )
 
     run, ok = aggregate(
         manifest,
@@ -460,6 +462,121 @@ def test_execution_block_reports_actual_retries(tmp_path):
     assert run["execution"]["retried_task_ids"] == ["001"]
     assert run["execution"]["implicit_retries"] is True
     assert run["execution"]["no_model_coverage_enforced"] is True
+    assert run["execution"]["retry_waves"] == [{"attempt": 1, "task_ids": ["001"]}]
+
+
+def test_retries_come_from_the_wave_list_not_stale_files(tmp_path):
+    manifest, workers = _inputs(tmp_path)
+    manifest_data = json.loads(manifest.read_text())
+    manifest_data["tasks"].append({"id": "002", "domain": "release"})
+    manifest.write_text(json.dumps(manifest_data))
+    record = json.loads((workers / "task_001.json").read_text())
+    record["id"] = "002"
+    record["sandbox_id"] = "sandbox-2"
+    (workers / "task_002.json").write_text(json.dumps(record))
+    # stale, from an old run that shared this worker dir
+    (workers / "task_002_before_retry_1.json").write_text("{}")
+    (workers / "retries.json").write_text(
+        json.dumps([{"attempt": 1, "task_ids": ["001"]}])
+    )
+
+    run, ok = aggregate(
+        manifest,
+        workers,
+        model="model",
+        agent_kind="m3",
+        model_transport="https://example.test/v1",
+        eval_model="judge",
+        eval_provider="openai_compatible",
+        eval_transport="https://example.test/v1",
+        user_sim_model="simulator",
+        user_sim_provider="openai_compatible",
+        user_sim_transport="https://example.test/v1",
+        max_steps=500,
+        concurrency=1,
+        thinking_mode=None,
+        thinking_budget=2048,
+        m3_max_llm_retries=2,
+        task_082_concurrent=True,
+        run_nonce="run-nonce-1",
+        campaign_id="campaign-1",
+        required_eval_model_ids=set(),
+        no_model_coverage_enforced=False,
+    )
+
+    assert run["execution"]["retried_task_ids"] == ["001"]
+    assert run["execution"]["retry_waves"] == [{"attempt": 1, "task_ids": ["001"]}]
+
+
+def test_malformed_retries_json_leaves_the_receipt_writable(tmp_path, monkeypatch):
+    # A coordinator killed mid-write leaves a truncated retries.json behind.
+    # The campaign receipt is the only durable record of the run, so a garbage
+    # retry ledger must degrade to "no retries", never crash the aggregate.
+    manifest, workers = _inputs(tmp_path)
+    (workers / "retries.json").write_text("{not json")
+    output = tmp_path / "campaign-receipt.json"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "aggregate_agent.py",
+            "--manifest",
+            str(manifest),
+            "--worker-dir",
+            str(workers),
+            "--output",
+            str(output),
+            "--model",
+            "model",
+            "--agent-kind",
+            "m3",
+            "--model-transport",
+            "https://example.test/v1",
+            "--eval-model",
+            "judge",
+            "--eval-provider",
+            "openai_compatible",
+            "--eval-transport",
+            "https://example.test/v1",
+            "--user-sim-model",
+            "simulator",
+            "--user-sim-provider",
+            "openai_compatible",
+            "--user-sim-transport",
+            "https://example.test/v1",
+            "--max-steps",
+            "500",
+            "--concurrency",
+            "1",
+            "--thinking-budget",
+            "2048",
+            "--m3-max-llm-retries",
+            "2",
+            "--task-082-concurrent",
+            "--run-nonce",
+            "run-nonce-1",
+            "--campaign-id",
+            "campaign-1",
+        ],
+    )
+
+    aggregate_agent.main()
+
+    receipt = json.loads(output.read_text())
+    assert receipt["execution"]["retried_task_ids"] == []
+    assert receipt["execution"]["retry_waves"] == []
+
+
+def test_retry_waves_that_are_not_wave_objects_are_ignored(tmp_path):
+    # A well-formed JSON document that is not a list of wave objects is just as
+    # unusable as truncated bytes; both mean "nothing attested as retried".
+    manifest, workers = _inputs(tmp_path)
+    (workers / "retries.json").write_text(json.dumps(["001", {"attempt": 1}]))
+
+    run, _ok = _aggregate_defaults(manifest, workers)
+
+    assert run["execution"]["retry_waves"] == [{"attempt": 1}]
+    assert run["execution"]["retried_task_ids"] == []
 
 
 def test_execution_block_without_retries(tmp_path):
@@ -596,3 +713,95 @@ def test_main_writes_campaign_receipt_atomically_with_private_perms(
     # No --no-model-receipt was passed on argv, so main() must record the
     # coverage gate as unenforced rather than silently defaulting to True.
     assert receipt["execution"]["no_model_coverage_enforced"] is False
+
+
+def _usage(calls: int, inp: int | None, out: int | None, unmeasured: int = 0) -> dict:
+    return {
+        "calls": calls,
+        "input_tokens": inp,
+        "output_tokens": out,
+        "unmeasured_calls": unmeasured,
+    }
+
+
+def _aggregate_defaults(manifest: Path, workers: Path):
+    return aggregate(
+        manifest,
+        workers,
+        model="model",
+        agent_kind="m3",
+        model_transport="https://example.test/v1",
+        eval_model="judge",
+        eval_provider="openai_compatible",
+        eval_transport="https://example.test/v1",
+        user_sim_model="simulator",
+        user_sim_provider="openai_compatible",
+        user_sim_transport="https://example.test/v1",
+        max_steps=500,
+        concurrency=1,
+        thinking_mode=None,
+        thinking_budget=2048,
+        m3_max_llm_retries=2,
+        task_082_concurrent=True,
+        run_nonce="run-nonce-1",
+        campaign_id="campaign-1",
+        required_eval_model_ids=set(),
+        no_model_coverage_enforced=False,
+    )
+
+
+def test_model_usage_sums_per_role_across_attested_records(tmp_path):
+    manifest, workers = _inputs(tmp_path)
+    manifest_data = json.loads(manifest.read_text())
+    manifest_data["tasks"].append({"id": "002", "domain": "release"})
+    manifest.write_text(json.dumps(manifest_data))
+    first = json.loads((workers / "task_001.json").read_text())
+    first["model_usage"] = {
+        "agent": _usage(3, 1000, 200),
+        "judge": _usage(1, 50, 5),
+        "simulator": _usage(0, None, None),
+    }
+    (workers / "task_001.json").write_text(json.dumps(first))
+    second = dict(first)
+    second["id"] = "002"
+    second["sandbox_id"] = "sandbox-2"
+    second["model_usage"] = {
+        "agent": _usage(2, 400, 60, unmeasured=1),
+        "judge": _usage(0, None, None),
+        "simulator": _usage(1, 7, 2),
+    }
+    (workers / "task_002.json").write_text(json.dumps(second))
+
+    run, ok = _aggregate_defaults(manifest, workers)
+
+    assert ok
+    assert run["summary"]["model_usage"] == {
+        "agent": _usage(5, 1400, 260, unmeasured=1),
+        "judge": _usage(1, 50, 5),
+        "simulator": _usage(1, 7, 2),
+    }
+
+
+def test_model_usage_tokens_stay_null_when_nothing_was_measured(tmp_path):
+    manifest, workers = _inputs(tmp_path)
+    record = json.loads((workers / "task_001.json").read_text())
+    record["model_usage"] = {
+        "agent": _usage(2, None, None, unmeasured=2),
+        "judge": _usage(0, None, None),
+        "simulator": _usage(0, None, None),
+    }
+    (workers / "task_001.json").write_text(json.dumps(record))
+
+    run, ok = _aggregate_defaults(manifest, workers)
+
+    assert ok
+    assert run["summary"]["model_usage"]["agent"] == _usage(2, None, None, unmeasured=2)
+
+
+def test_model_usage_is_null_when_no_record_carries_it(tmp_path):
+    manifest, workers = _inputs(tmp_path)
+
+    run, ok = _aggregate_defaults(manifest, workers)
+
+    assert ok
+    assert run["summary"]["model_usage"] is None

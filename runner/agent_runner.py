@@ -41,7 +41,12 @@ import task_loader  # noqa: E402  (checkout-local; cwd is the pinned checkout)
 from agents import AGENT_KINDS, agent_settings, build_agent  # noqa: E402
 from desktop_env.desktop_env import DesktopEnv  # noqa: E402
 from evaluator_model_calls import EvaluatorModelCallTracker  # noqa: E402
-from receipt_safety import atomic_write_json, base_receipt, public_error  # noqa: E402
+from receipt_safety import (  # noqa: E402
+    atomic_write_json,
+    base_receipt,
+    classify_failure,
+    public_error,
+)
 
 
 def utc_now() -> str:
@@ -83,45 +88,6 @@ class _Args:
         self.checkpoint_steps = ""
         self.trace_guest = False
         self.result_dir = result_dir
-
-
-def _classify_stage_and_cause(
-    result_dir: Path, error: BaseException
-) -> tuple[str, str, bool, bool]:
-    """Return (path_stage, cause, transport_ok, evaluator_ran) from artifacts +
-    the exception. transport_ok means reset+observation produced at least one
-    frame; evaluator_ran means result.txt landed (evaluate completed)."""
-    if isinstance(error, AgentTaskTimeout):
-        return "failed", "task-timeout", False, (result_dir / "result.txt").exists()
-    if isinstance(error, AgentInterrupted):
-        return "failed", "interrupted", False, (result_dir / "result.txt").exists()
-    detail = f"{type(error).__name__}: {error}".lower()
-    saw_frames = any(result_dir.glob("*.png")) or (result_dir / "traj.jsonl").exists()
-    evaluator_ran = (result_dir / "result.txt").exists()
-    if any(
-        w in detail
-        for w in (
-            "connection",
-            "timed out",
-            "max retries",
-            "502",
-            "504",
-            "bad gateway",
-            "service unavailable",
-        )
-    ):
-        cause = "transport"
-    elif any(
-        w in detail for w in ("cdp", "playwright", "websocket", "connect_over_cdp")
-    ):
-        cause = "chrome-cdp"
-    elif "environmentsetuperror" in detail:
-        cause = "environment-setup"
-    elif evaluator_ran or saw_frames:
-        cause = "evaluator-or-agent"
-    else:
-        cause = "reset-or-observation"
-    return "failed", cause, bool(saw_frames), bool(evaluator_ran)
 
 
 def _read_score(result_dir: Path) -> tuple[float | None, bool | None]:
@@ -183,7 +149,7 @@ def _count_steps(result_dir: Path) -> int:
             if row.get("action") in (None, "ASK_USER"):
                 continue
             if "step_num" in row:
-                steps.add(row["step_num"])
+                steps.add((row.get("phase_index", 1), row["step_num"]))
     return len(steps)
 
 
@@ -320,8 +286,11 @@ def main() -> int:
             exit_code = 124
         elif isinstance(error, AgentInterrupted):
             exit_code = 143
-        stage, cause, transport_ok, evaluator_ran = _classify_stage_and_cause(
-            result_dir, error
+        cause, transport_ok, evaluator_ran = classify_failure(
+            result_dir,
+            error,
+            timeout_types=(AgentTaskTimeout,),
+            interrupt_types=(AgentInterrupted,),
         )
         receipt["path_status"] = "ERROR"
         receipt["error_cause"] = cause
@@ -369,15 +338,19 @@ def main() -> int:
     receipt["eval_model_successes"] = evaluator_model_calls.successes
     receipt["user_sim_call_attempts"] = evaluator_model_calls.user_sim_call_attempts
     receipt["user_sim_successes"] = evaluator_model_calls.user_sim_successes
-    if (
+    if receipt["path_status"] == "OK" and (
         evaluator_model_calls.call_attempts != evaluator_model_calls.successes
         or evaluator_model_calls.user_sim_call_attempts
         != evaluator_model_calls.user_sim_successes
     ):
         # Upstream metrics may convert a transport exception to zero. Keep the
         # original score artifact, but do not attest or resample that rollout.
+        # Only an otherwise-clean rollout is reclassified here: a rollout that
+        # already failed keeps the cause classify_failure gave it.
         receipt["path_status"] = "ERROR"
         receipt["error_cause"] = "evaluator-or-agent"
+    # Token counts only -- the tracker never sees prompt or response text.
+    receipt["model_usage"] = evaluator_model_calls.usage
 
     atomic_write_json(args.output, receipt)
     # Redacted one-liner to stderr (safe: ids + booleans + score only).

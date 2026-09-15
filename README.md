@@ -46,16 +46,22 @@ This selects all 108 tasks. Add `--task-id 003` (repeat for more IDs) to select 
 
 **3. Configure your model and run.**
 
-This example uses Fireworks M3 for the agent and OpenAI for judging and user simulation.
-Export your keys in the shell. For other providers, including AWS Mantle, see
-[model configuration](docs/configuration.md#judge-and-user-simulator-configuration).
+This example uses Fireworks M3 for the agent and Claude Haiku 4.5 on AWS Bedrock (Mantle)
+for judging and user simulation. Export your keys in the shell. Any provider upstream
+supports works here; see the
+[configuration doc](docs/configuration.md#judge-and-user-simulator-configuration) for OpenAI.
 
 ```bash
 export MODEL_API_KEY="..."                 # your Fireworks API key
 export MODEL_BASE_URL="https://api.fireworks.ai/inference"
 export MODEL="accounts/fireworks/models/minimax-m3"
 export AGENT_KIND=m3 M3_THINKING_BUDGET=2048 M3_MAX_LLM_RETRIES=0
-export OPENAI_API_KEY="..."                # judge and user simulator
+export OSWORLD_EVAL_MODEL_PROVIDER=anthropic
+export OSWORLD_EVAL_MODEL_NAME=anthropic.claude-haiku-4-5
+export OSWORLD_EVAL_MODEL_BASE_URL=https://bedrock-mantle.us-east-1.api.aws/anthropic
+export OSWORLD_EVAL_MODEL_API_KEY_ENV=AWS_MANTLE
+export OSWORLD_USER_SIM_MODEL=anthropic.claude-haiku-4-5
+export AWS_MANTLE="..."                    # judge and user simulator
 
 AGENT_MANIFEST="$RUN_ROOT/full-manifest.json" PARALLEL_CONCURRENCY=80 MAX_STEPS=500 \
     AGENT_TASK_TIMEOUT_SECONDS=28800 RAW_DIR="$RUN_ROOT/agent-raw" \

@@ -619,3 +619,17 @@ def test_guest_server_dependency_contract_excludes_broken_anyio_release():
     }
 
     assert requirements.get("anyio") == "4.14.2"
+
+
+def test_host_proxy_readiness_is_shared_and_bounded():
+    common = (ROOT / "runner/common.sh").read_text()
+    assert "wait_for_hostmap_proxy()" in common
+    assert "--connect-timeout 2 --max-time 5" in common
+    for script in (
+        "runner/run_agent_parallel.sh",
+        "maintainer/validate.sh",
+        "maintainer/validate_parallel.sh",
+    ):
+        text = (ROOT / script).read_text()
+        assert "wait_for_hostmap_proxy" in text, script
+        assert "api/state?cookie=" not in text, script  # no private curl loops left

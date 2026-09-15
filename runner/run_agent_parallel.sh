@@ -165,7 +165,6 @@ if ! $UV python "$V2ROOT/services/fleetlib.py" --check-lifetime "$MANIFEST" \
     --runtime "$SERVICES_DIR/.runtime.json"; then
     exit 2
 fi
-fleets_admitted=1
 
 mkdir -p "$RAW_DIR/workers" "$(dirname "$OUTPUT")"
 RUN_NONCE="$(python3 "$HERE/prepare_agent_run.py" \
@@ -188,19 +187,7 @@ fi
 HOSTMAP_PORT="8090" FLEET_RUNTIME_FILE="$SERVICES_DIR/.runtime.json" \
     $UV python "$SERVICES_DIR/hostmap_proxy.py" >"$RAW_DIR/hostmap-proxy.log" 2>&1 &
 proxy_pid=$!
-proxy_ready=0
-for _ in $(seq 1 30); do
-    if ! kill -0 "$proxy_pid" 2>/dev/null; then break; fi
-    if curl -fsS --connect-timeout 2 --max-time 5 -H 'Host: mailhub.127.0.0.1.nip.io' \
-        'http://127.0.0.1:8090/api/state?cookie=agent-benchmark' >/dev/null 2>&1; then
-        proxy_ready=1
-        break
-    fi
-    sleep 2
-done
-if [ "$proxy_ready" -ne 1 ]; then
-    echo "fleet proxy or website service failed readiness" >&2
-    tail -40 "$RAW_DIR/hostmap-proxy.log" >&2
+if ! wait_for_hostmap_proxy "$proxy_pid" "agent-benchmark" "$RAW_DIR/hostmap-proxy.log"; then
     exit 1
 fi
 
@@ -274,6 +261,9 @@ run_batch() {
     return "$batch_failed"
 }
 
+# Everything above is local; from here a guest may exist, so an exit must stop the fleets.
+fleets_admitted=1
+
 overall=0
 batch=()
 task_082_row=""
@@ -321,6 +311,17 @@ for ((attempt=1; attempt <= AGENT_RETRY_ATTEMPTS; attempt++)); do
         echo "skipping retry attempt $attempt: fleets cannot outlast a ${#failed_rows[@]}-task retry wave" >&2
         break
     fi
+    python3 - "$RAW_DIR/workers/retries.json" "$attempt" "${failed_rows[@]}" <<'PY'
+import json, sys
+path, attempt, rows = sys.argv[1], int(sys.argv[2]), sys.argv[3:]
+try:
+    waves = json.load(open(path))
+except (FileNotFoundError, json.JSONDecodeError):
+    waves = []
+waves.append({"attempt": attempt, "task_ids": [row.split()[0] for row in rows]})
+json.dump(waves, open(path, "w"), indent=2)
+PY
+
     echo "retrying ${#failed_rows[@]} infrastructure/path failures (attempt $attempt)"
     overall=0
     retry_batch=()
@@ -329,6 +330,8 @@ for ((attempt=1; attempt <= AGENT_RETRY_ATTEMPTS; attempt++)); do
     export ATTEMPT_SUFFIX
     for row in "${failed_rows[@]}"; do
         read -r task_id _ <<<"$row"
+        # Audit copy for humans reading the raw dir; the aggregate reads
+        # retries.json, never these _before_retry_ files.
         cp "$RAW_DIR/workers/task_${task_id}.json" \
             "$RAW_DIR/workers/task_${task_id}_before_retry_${attempt}.json" 2>/dev/null || true
         if [ "$task_id" = "082" ]; then

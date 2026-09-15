@@ -91,3 +91,28 @@ def test_mixed_manifest_selects_only_retryable_rows(tmp_path):
     rows = _run(manifest, worker_dir)
 
     assert rows == ["001 release", "003 release"]
+
+
+def test_missing_receipt_with_result_txt_is_not_selected(tmp_path):
+    worker_dir = tmp_path / "workers"
+    (worker_dir / "task_001").mkdir(parents=True)
+    (worker_dir / "task_001" / "result.txt").write_text("1.0")
+    manifest = _write_manifest(tmp_path, ["001"])
+
+    rows = _run(manifest, worker_dir)
+
+    assert rows == []
+
+
+def test_retryable_receipt_with_result_txt_from_a_retry_dir_is_not_selected(tmp_path):
+    worker_dir = tmp_path / "workers"
+    (worker_dir / "task_001_retry_1").mkdir(parents=True)
+    (worker_dir / "task_001_retry_1" / "result.txt").write_text("0.0")
+    _write_receipt(
+        worker_dir, "001", {"path_status": "ERROR", "error_cause": "transport"}
+    )
+    manifest = _write_manifest(tmp_path, ["001"])
+
+    rows = _run(manifest, worker_dir)
+
+    assert rows == []

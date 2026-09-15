@@ -50,6 +50,7 @@ import task_loader  # noqa: E402  (checkout-local; cwd is the pinned checkout)
 from desktop_env.desktop_env import DesktopEnv  # noqa: E402
 from no_model import NoModelGuard, model_boundary_result  # noqa: E402
 from readiness import wait_for_nonempty  # noqa: E402
+from receipt_safety import classify_failure  # noqa: E402
 
 NO_MODEL_GUARD = NoModelGuard()
 
@@ -70,32 +71,6 @@ def osworld_commit(root: Path) -> str:
     return subprocess.check_output(
         ["git", "-C", str(root), "rev-parse", "HEAD"], text=True
     ).strip()
-
-
-def classify(stage: str, error: BaseException) -> tuple[str, str]:
-    detail = f"{type(error).__name__}: {error}"
-    low = detail.lower()
-    if isinstance(error, TaskTimeout):
-        return "task-timeout", detail
-    if any(
-        word in low for word in ("cdp", "playwright", "websocket", "connect_over_cdp")
-    ):
-        return "chrome-cdp", detail
-    if "environmentsetuperror" in low:
-        return "environment-setup", detail
-    if any(
-        word in low
-        for word in (
-            "connection",
-            "timed out",
-            "max retries",
-            "502",
-            "504",
-            "bad gateway",
-        )
-    ):
-        return "transport", detail
-    return f"environment/{stage}", detail
 
 
 def _score_of(result) -> float:
@@ -128,6 +103,10 @@ def run_task(
 ) -> dict:
     model_calls_before = NO_MODEL_GUARD.call_attempts
     task = task_loader.load_task_from_file(str(task_path))
+    # Each task owns an artifact directory under the raw dir, so the shared
+    # classifier sees this task's frames and no other task's.
+    task_dir = raw_dir / f"{run_id}-task_{item['id']}"
+    task_dir.mkdir(parents=True, exist_ok=True)
     phases = getattr(task, "get_phases", None)
     record = {
         "id": getattr(task, "id", item["id"]),
@@ -158,7 +137,7 @@ def run_task(
         if not screenshot:
             raise RuntimeError("OSWorld returned an empty screenshot observation")
         # Raw screenshot is evidence; it lives under the gitignored raw dir.
-        (raw_dir / f"{run_id}-task_{record['id']}-reset.png").write_bytes(screenshot)
+        (task_dir / "reset.png").write_bytes(screenshot)
         record["observation"] = {
             "screenshot_bytes": len(screenshot),
             "accessibility_characters": len(accessibility),
@@ -177,14 +156,18 @@ def run_task(
         record["path_status"] = "PATH_PASS"
         record["stage"] = "complete"
     except BaseException as error:
-        # classify() reads full text only to choose a public cause bucket. The
-        # shareable receipt never copies exception text; the traceback remains
-        # under the gitignored raw directory.
+        # classify_failure() -- the same classifier the agent runner uses --
+        # reads this task's own artifact directory and the exception text only
+        # to choose a public cause bucket. The shareable receipt never copies
+        # exception text; the traceback remains under the gitignored raw
+        # directory, and the stage stays in the record's own ``stage`` field.
         boundary = model_boundary_result(record["stage"], error)
         if boundary is not None:
             record.update(boundary)
         else:
-            cause, _full = classify(record["stage"], error)
+            cause, _transport_ok, _evaluator_ran = classify_failure(
+                task_dir, error, timeout_types=(TaskTimeout,)
+            )
             record.update(
                 path_status="PATH_FAIL",
                 cause=cause,
@@ -192,9 +175,7 @@ def run_task(
             )
         import traceback
 
-        (raw_dir / f"{run_id}-task_{record['id']}-FAIL.trace.txt").write_text(
-            traceback.format_exc()
-        )
+        (task_dir / "FAIL.trace.txt").write_text(traceback.format_exc())
     record["eval_model_call_attempts"] = (
         NO_MODEL_GUARD.call_attempts - model_calls_before
     )

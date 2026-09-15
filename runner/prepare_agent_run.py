@@ -24,7 +24,15 @@ def prepare(manifest_path: Path, worker_dir: Path) -> str:
 
     worker_dir.mkdir(parents=True, exist_ok=True)
     for task_id in task_ids:
-        (worker_dir / f"task_{task_id}.json").unlink(missing_ok=True)
+        for pattern in (
+            f"task_{task_id}.json",
+            f"task_{task_id}.log",
+            f"task_{task_id}_before_retry_*.json",
+            f"task_{task_id}_retry_*.log",
+        ):
+            for stale in worker_dir.glob(pattern):
+                stale.unlink()
+    (worker_dir / "retries.json").unlink(missing_ok=True)
     return str(uuid.uuid4())
 
 

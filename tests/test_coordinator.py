@@ -22,6 +22,27 @@ ROOT = Path(__file__).resolve().parents[1]
 IMMUTABLE_GUEST = "osworld-v2-gnome:11111111-2222-3333-4444-555555555555"
 
 
+def _hostmap_port_is_busy() -> bool:
+    """True when something already listens on the coordinator's hostmap port.
+
+    The coordinator refuses to start while 127.0.0.1:8090 is occupied, so every
+    test that drives it past admission needs the port free. A live campaign in
+    another terminal legitimately holds it; those tests skip rather than fail.
+    """
+    import socket
+
+    with socket.socket() as probe:
+        probe.settimeout(0.5)
+        return probe.connect_ex(("127.0.0.1", 8090)) == 0
+
+
+needs_free_hostmap_port = pytest.mark.skipif(
+    _hostmap_port_is_busy(),
+    reason="127.0.0.1:8090 is occupied (a campaign is running); "
+    "the coordinator refuses to start",
+)
+
+
 def _write_executable(path: Path, body: str) -> None:
     path.write_text(body)
     path.chmod(0o755)
@@ -226,7 +247,7 @@ def test_retry_selection_procsub_survives_macos_bash_3_2(tmp_path):
     assert rows == ["001 release"], (rows, result.stdout, result.stderr)
 
 
-def _coordinator_env(tmp_path, *, fleetlib_case: str) -> dict[str, str]:
+def _coordinator_env(tmp_path, *, fleetlib_case: str = "") -> dict[str, str]:
     env = _runner_env(tmp_path, task_timeout=1)
     env.update(
         PARALLEL_CONCURRENCY="1",
@@ -268,6 +289,7 @@ def _assert_process_gone(pid: int, timeout: float = 5) -> None:
     raise AssertionError(f"process {pid} survived coordinator cleanup")
 
 
+@needs_free_hostmap_port
 def test_coordinator_cancellation_reaps_workers_before_stopping_fleets(tmp_path):
     # Cancelling a campaign must terminate every worker before the fleets are
     # stopped. `$!` has to BE the worker, not an intermediate shell: an orphaned
@@ -340,9 +362,40 @@ def test_coordinator_rejected_before_admission_leaves_fleets_running(tmp_path):
     assert result.returncode == 2, (result.stdout, result.stderr)
     assert "left running" in result.stderr
     assert not Path(env["FLEET_STOPPED_FILE"]).exists()
-    assert not Path(env["RAW_DIR"], "workers").exists()  # nothing launched
 
 
+def test_occupied_hostmap_port_rejects_the_run_but_leaves_fleets_running(tmp_path):
+    # The 8090 occupancy probe runs after the fleet lifetime check but before
+    # the first batch launches; a purely local failure there must still leave
+    # the fleets running, exactly like a rejection at the lifetime gate.
+    import socket
+
+    blocker = socket.socket()
+    try:
+        blocker.bind(("127.0.0.1", 8090))
+    except OSError:
+        pytest.skip("127.0.0.1:8090 is already in use on this machine")
+    blocker.listen(1)
+    try:
+        env = _coordinator_env(tmp_path)
+        result = subprocess.run(
+            ["bash", str(ROOT / "runner/run_agent_parallel.sh")],
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            timeout=60,
+            check=False,
+        )
+    finally:
+        blocker.close()
+    assert result.returncode == 2, (result.stdout, result.stderr)
+    assert "already occupied" in result.stderr
+    assert "left running" in result.stderr
+    assert not Path(env["FLEET_STOPPED_FILE"]).exists()
+
+
+@needs_free_hostmap_port
 def test_retry_wave_is_skipped_when_fleets_cannot_outlast_it(tmp_path):
     # The first wave is admitted; the retry wave is budgeted separately against
     # the tasks that actually failed and skipped (not fatal) when it cannot fit.
@@ -364,6 +417,30 @@ def test_retry_wave_is_skipped_when_fleets_cannot_outlast_it(tmp_path):
     assert "skipping retry" in result.stdout + result.stderr
     assert result.returncode == 1  # the failed task is still a failure
     assert Path(env["FLEET_STOPPED_FILE"]).exists()  # admitted runs tear down
+
+
+@needs_free_hostmap_port
+def test_retry_wave_writes_retries_json_from_its_own_task_list(tmp_path):
+    # The coordinator writes the wave's own task list to retries.json, not a
+    # glob over receipt files aggregate_agent.py would otherwise have to infer
+    # retries from. The fleet lifetime check must pass here (opposite of
+    # test_retry_wave_is_skipped_when_fleets_cannot_outlast_it) so the retry
+    # wave actually runs.
+    env = _coordinator_env(tmp_path, fleetlib_case="  *fleetlib.py*) exit 0 ;;")
+    result = subprocess.run(
+        ["bash", str(ROOT / "runner/run_agent_parallel.sh")],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=60,
+    )
+    workers = Path(env["RAW_DIR"], "workers")
+    retries = json.loads((workers / "retries.json").read_text())
+    assert retries == [{"attempt": 1, "task_ids": ["001"]}], (
+        result.stdout,
+        result.stderr,
+    )
 
 
 def _coordinator_env_recording_agent_args(
@@ -472,6 +549,7 @@ def _run_coordinator_recording(env: dict[str, str]) -> subprocess.CompletedProce
     )
 
 
+@needs_free_hostmap_port
 def test_coordinator_forwards_generation_settings_and_deadline_to_the_runner(tmp_path):
     env, args_file = _coordinator_env_recording_agent_args(tmp_path)
     env.update(
@@ -491,6 +569,7 @@ def test_coordinator_forwards_generation_settings_and_deadline_to_the_runner(tmp
     assert "PORT_BASE" not in argv and "--port-base" not in argv
 
 
+@needs_free_hostmap_port
 def test_coordinator_leaves_generation_settings_to_agent_defaults_when_unset(tmp_path):
     env, args_file = _coordinator_env_recording_agent_args(tmp_path)
     for name in ("MAX_TOKENS", "TEMPERATURE", "TOP_P", "MAX_TRAJECTORY_LENGTH"):
@@ -501,6 +580,7 @@ def test_coordinator_leaves_generation_settings_to_agent_defaults_when_unset(tmp
         assert flag not in argv, flag
 
 
+@needs_free_hostmap_port
 def test_coordinator_forwards_recording_opt_in_only_when_set(tmp_path):
     env, args_file = _coordinator_env_recording_agent_args(tmp_path)
     env["ENABLE_RECORDING"] = "1"
@@ -520,6 +600,7 @@ def test_coordinator_rejects_non_boolean_recording_value(tmp_path):
     assert "ENABLE_RECORDING must be 0 or 1" in result.stderr
 
 
+@needs_free_hostmap_port
 def test_task_082_worker_gets_the_literal_service_port(tmp_path):
     env, args_file = _coordinator_env_recording_agent_args(tmp_path)
     manifest = Path(env["AGENT_MANIFEST"])
