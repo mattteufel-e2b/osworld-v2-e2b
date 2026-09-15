@@ -149,3 +149,32 @@ def test_setup_maps_m3_super_key_to_x11_win(tmp_path):
     assert '"super_l": "win",' in patched  # neighbours untouched
     _apply_patches(dest)  # idempotent
     assert patched == (dest / "mm_agents" / "m3" / "parser.py").read_text()
+
+
+def test_setup_ignores_infeasible_marker_inside_the_thinking_block(tmp_path):
+    dest = tmp_path / "OSWorld-V2"
+    _seed_minimal_checkout(
+        dest,
+        PINNED_PARSER_HEAD + PINNED_KEY_TABLE + PINNED_INFEASIBLE,
+        "data=payload, timeout=90)\n",
+    )
+    _apply_patches(dest)
+    patched = (dest / "mm_agents" / "m3" / "parser.py").read_text()
+    assert 'if "[INFEASIBLE]" in _M3_THINK_BLOCK.sub("", response):' in patched
+    assert '_M3_THINK_BLOCK = re.compile(r"<mm:think>.*?</mm:think>", re.S)' in patched
+    _apply_patches(dest)
+    assert patched == (dest / "mm_agents" / "m3" / "parser.py").read_text()
+
+
+def test_patched_infeasible_check_semantics():
+    # Pure-Python check of the exact expression the patch installs.
+    import re
+
+    think = re.compile(r"<mm:think>.*?</mm:think>", re.S)
+    inside = (
+        "<mm:think>maybe [INFEASIBLE]?\nno, try ctrl+c</mm:think>\n"
+        '<tool_call>{"action":"key","text":"ctrl+c"}</tool_call>'
+    )
+    outside = "<mm:think>reasoning</mm:think>\n[INFEASIBLE]"
+    assert "[INFEASIBLE]" not in think.sub("", inside)
+    assert "[INFEASIBLE]" in think.sub("", outside)

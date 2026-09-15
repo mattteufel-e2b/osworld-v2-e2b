@@ -198,6 +198,31 @@ if parser.exists():
         parser.write_text(src.replace(key_anchor, key_patched, 1))
         print("(e) m3/parser.py: patched (super -> win on Linux)")
 
+# (f) M3 parser: the [INFEASIBLE] terminal marker counts only outside the
+# model's thinking block. M3Agent._call_llm prepends thinking as
+# <mm:think>...</mm:think>; a marker mentioned while reasoning overrode an
+# actual tool call in the same response (sample 2026-09-15, task 067).
+if parser.exists():
+    src = parser.read_text()
+    inf_anchor = '    if "[INFEASIBLE]" in response:\n        return "[INFEASIBLE]", ["FAIL"]\n'
+    inf_patched = (
+        '    if "[INFEASIBLE]" in _M3_THINK_BLOCK.sub("", response):\n'
+        '        return "[INFEASIBLE]", ["FAIL"]\n'
+    )
+    if inf_patched in src:
+        print("(f) m3/parser.py infeasible marker: already applied")
+    else:
+        count = src.count(inf_anchor)
+        assert count == 1, f"m3/parser.py [INFEASIBLE] check found {count}x, need exactly 1 (OSWorld-V2 moved?)"
+        src = src.replace(inf_anchor, inf_patched, 1)
+        # Module constant next to the existing `import re` (unique line).
+        import_anchor = "import re\n"
+        count = src.count(import_anchor)
+        assert count == 1, f"m3/parser.py `import re` found {count}x, need exactly 1"
+        src = src.replace(import_anchor, import_anchor + '_M3_THINK_BLOCK = re.compile(r"<mm:think>.*?</mm:think>", re.S)\n', 1)
+        parser.write_text(src)
+        print("(f) m3/parser.py: patched ([INFEASIBLE] ignored inside <mm:think>)")
+
 EOF
 }
 
