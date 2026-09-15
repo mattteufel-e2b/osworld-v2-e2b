@@ -268,8 +268,11 @@ export const template = Template({ fileContextPath: filesDir })
   // ---- MuseScore 4 first-run suppression (baked config) -------------------
   // Fresh MuseScore 4 opens a first-launch setup wizard (language, playback,
   // cloud) and a tours prompt. `hasCompletedFirstLaunchSetup=true` skips the
-  // wizard. Captured from a guest after dismissing the dialogs once (Task 3 of
-  // the template-parity plan); same doctrine as the LibreOffice/VLC configs.
+  // wizard. This MuseScore4.ini is an initial, hand-written starter config,
+  // NOT yet captured from a running MuseScore 4 (unlike the genuinely
+  // guest-captured LibreOffice/VLC/REAPER configs below). Task 3 of the
+  // template-parity plan's application-launcher smoke is the gate that forces
+  // a real capture-and-replace if any first-run dialog still appears.
   .makeDir('/home/user/.config/MuseScore')
   .copy('MuseScore4.ini', '/home/user/.config/MuseScore/MuseScore4.ini')
   // ---- REAPER first-run suppression (baked config) ------------------------
