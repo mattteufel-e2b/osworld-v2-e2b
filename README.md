@@ -139,7 +139,7 @@ The template installs the following components whose terms you are responsible f
 | Google Chrome | `153.0.8010.36-1` in build `0eecdb03-552a-44f9-a366-8f4bda1b136d`; each build freezes whatever the Google repo served, recorded in the build's own `template/results/template-build.json` and committed for this build at `out/osworld-v2-evidence/template/template-build-0eecdb03-552a-44f9-a366-8f4bda1b136d.json` | [Google Chrome Terms of Service](https://www.google.com/chrome/terms/) |
 | WPS Office for Linux | 11.1.0.11723 | [Kingsoft EULA](https://www.wps.com/eula/) (proprietary) |
 | REAPER | 7.79 | [Evaluation licence](https://www.reaper.fm/purchase.php); a paid licence is required for continued use |
-| Visual Studio Code | 1.91.1 | Microsoft Software License; Microsoft's `.deb` build is proprietary, not the MIT-licensed `vscode` source |
+| Visual Studio Code | 1.91.1 | [Microsoft Software License](https://code.visualstudio.com/license); Microsoft's `.deb` build is proprietary, not the MIT-licensed `vscode` source |
 
 Open-source components installed from vendor releases or Ubuntu 22.04: MuseScore Studio 4.6.5 (GPL-3.0),
 Blender 4.5.14 (GPL-2.0-or-later), KiCad 10.0 (GPL-3.0-or-later, via the KiCad PPA), FreeCAD 1.1.3
