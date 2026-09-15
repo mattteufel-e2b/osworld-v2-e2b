@@ -94,12 +94,15 @@ def test_stop_reconciles_orphaned_campaign_sandboxes_before_deleting_state(tmp_p
 # --- legacy runtime sections (no campaign_id) and TLS cleanup --------------
 
 
-def test_legacy_section_without_campaign_is_removed_only_when_its_sandbox_is_gone():
+def test_legacy_section_without_campaign_is_removed_only_when_its_sandbox_is_gone(
+    tmp_path,
+):
     runtime = {
         "websites": {"sandbox_id": "old-w"},
         "gitlab": {"sandbox_id": "g", "campaign_id": "c"},
     }
     with (
+        patch.object(stop.fl, "SERVICES_DIR", tmp_path),
         patch.object(stop.fl, "read_runtime", return_value=runtime),
         patch.object(stop, "_sandbox_is_live", return_value=False) as live,
         patch.object(stop.fl, "delete_runtime_section") as delete,
@@ -144,12 +147,15 @@ def test_legacy_section_with_an_inconclusive_check_is_preserved_with_a_recovery_
     assert "e2b sandbox kill old-w" in message
 
 
-def test_legacy_section_without_a_sandbox_id_is_treated_as_stale_and_removed():
+def test_legacy_section_without_a_sandbox_id_is_treated_as_stale_and_removed(
+    tmp_path,
+):
     runtime = {
         "websites": {},
         "gitlab": {"sandbox_id": "g", "campaign_id": "c"},
     }
     with (
+        patch.object(stop.fl, "SERVICES_DIR", tmp_path),
         patch.object(stop.fl, "read_runtime", return_value=runtime),
         patch.object(stop, "_sandbox_is_live") as live,
         patch.object(stop.fl, "delete_runtime_section") as delete,
@@ -177,6 +183,33 @@ def test_foreign_campaign_section_is_still_refused_alongside_a_legacy_section():
         with pytest.raises(RuntimeError, match="gitlab"):
             stop.stop_campaign("c")
     live.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "raised, expected",
+    [
+        (None, True),
+        (stop.NotFoundException, False),
+        (stop.SandboxNotFoundException, False),
+        (RuntimeError, None),
+    ],
+)
+def test_sandbox_is_live_maps_the_real_exception_types_to_the_correct_tri_state(
+    raised, expected
+):
+    class _ConnectedSandbox:
+        def get_info(self):
+            return object()
+
+    def connect(sandbox_id):
+        if raised is not None:
+            raise raised("boom")
+        return _ConnectedSandbox()
+
+    with patch.object(stop.Sandbox, "connect", side_effect=connect):
+        result = stop._sandbox_is_live("sid")
+
+    assert result is expected
 
 
 def test_verified_teardown_removes_campaign_tls(tmp_path):
