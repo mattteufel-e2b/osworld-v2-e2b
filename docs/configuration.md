@@ -20,7 +20,29 @@ belongs to the [maintainer validation workflow](../maintainer/README.md).
 ## Judge and user simulator configuration
 
 Agent credentials are separate from the upstream judge and simulator credentials. The default
-uses OpenAI with `OPENAI_API_KEY`; select another endpoint using upstream's settings:
+uses OpenAI with `OPENAI_API_KEY`; select another endpoint using upstream's settings.
+
+### Recommended: Haiku 4.5 on Bedrock
+
+This AWS Mantle configuration passed the
+[native spreadsheet and visual-judge controls](../out/osworld-v2-evidence/sample-36/judge-controls-20260913.json)
+used for this repo's validation: Claude Haiku 4.5 returns a compliant verdict within the
+small output-token budgets some task judges enforce. Set `AWS_MANTLE` to your Mantle API key:
+
+```bash
+export OSWORLD_EVAL_MODEL_PROVIDER=anthropic
+export OSWORLD_EVAL_MODEL_NAME=anthropic.claude-haiku-4-5
+export OSWORLD_EVAL_MODEL_BASE_URL=https://bedrock-mantle.us-east-1.api.aws/anthropic
+export OSWORLD_EVAL_MODEL_API_KEY_ENV=AWS_MANTLE
+export OSWORLD_USER_SIM_MODEL=anthropic.claude-haiku-4-5
+```
+
+OpenAI remains available:
+
+```bash
+export OSWORLD_EVAL_MODEL_PROVIDER=openai
+export OSWORLD_EVAL_MODEL_NAME=gpt-4o   # key via OPENAI_API_KEY
+```
 
 | Setting | Judge | User simulator |
 | --- | --- | --- |
@@ -38,18 +60,6 @@ overrides them. `OSWORLD_USER_SIM_MODEL_NAME` and `OSWORLD_USER_SIM_MODEL_BASE_U
 Literal API keys take precedence over key-variable names; use `OSWORLD_USER_SIM_API_KEY`
 when overriding a literal judge key.
 
-For example, this AWS Mantle configuration passed the
-[native spreadsheet and visual-judge controls](../out/osworld-v2-evidence/sample-36/judge-controls-20260913.json)
-used for this repo's validation. Set `AWS_MANTLE` to your Mantle API key:
-
-```bash
-export OSWORLD_EVAL_MODEL_PROVIDER=anthropic
-export OSWORLD_EVAL_MODEL_NAME=anthropic.claude-haiku-4-5
-export OSWORLD_EVAL_MODEL_BASE_URL=https://bedrock-mantle.us-east-1.api.aws/anthropic
-export OSWORLD_EVAL_MODEL_API_KEY_ENV=AWS_MANTLE
-export OSWORLD_USER_SIM_MODEL=anthropic.claude-haiku-4-5
-```
-
 Some task judges allow only 5–16 output tokens. Use a model that can return a verdict at that
 budget; reasoning can consume it before a verdict appears. Task-specific token limits take
 precedence over the judge environment setting. The agent's thinking budget is independent of
@@ -57,9 +67,15 @@ these judge settings. Fireworks M3 returned false positives on four of five blan
 controls even with reasoning disabled; its successful agent image calls do not validate it as
 a judge.
 
+The campaign receipt records `model_usage` per role (`agent`, `judge`, `simulator`): each role
+carries `calls`, `input_tokens`, `output_tokens`, and `unmeasured_calls`, and the campaign
+receipt sums them under `summary.model_usage`.
+
 Before creating rollout guests, the coordinator checks a text answer, reads random digits from
 an image, and checks the selected tasks' LLM simulator configurations through upstream's own
-clients. You can run that
+clients; the text-answer check accepts any verdict upstream's own parser accepts (the first
+alphabetic token decides YES, and digit answers are compared after stripping non-digit
+characters). You can run that
 check before starting the service fleets as well:
 
 ```bash
