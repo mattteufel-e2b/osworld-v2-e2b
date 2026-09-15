@@ -291,3 +291,5 @@ def test_tls_listener_terminates_tls_and_plain_listener_redirects(tmp_path):
     finally:
         tls_server.shutdown()
         plain_server.shutdown()
+        tls_server.server_close()
+        plain_server.server_close()
