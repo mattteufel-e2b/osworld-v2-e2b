@@ -541,8 +541,40 @@ def test_template_installs_blender_lts_with_the_task_launcher_name():
     template = (ROOT / "template" / "template.ts").read_text()
 
     assert "blender-4.5.14-linux-x64.tar.xz" in template
-    assert "9ba871ff2ecd36526b77432745980b7e6664ecd0c7ca11c48849073dcfe06da3" in template
+    assert (
+        "9ba871ff2ecd36526b77432745980b7e6664ecd0c7ca11c48849073dcfe06da3" in template
+    )
     assert "ln -sf /opt/blender/blender /usr/local/bin/blender" in template
+
+
+def test_template_preinstalls_kicad_10_and_freecad_appimage_without_the_occt_conflict():
+    template = (ROOT / "template" / "template.ts").read_text()
+    launcher = (ROOT / "template" / "files" / "freecad-launcher.sh").read_text()
+
+    assert "ppa:kicad/kicad-10.0-releases" in template  # task 107's own source
+    assert "apt-mark hold kicad" in template
+    assert "'apt-get install -y musescore3 shotcut freecad openboard'" not in template
+    # No apt path may install or hold FreeCAD: jammy's apt freecad 0.19 is the
+    # package the KiCad PPA's libocct 7.6 breaks, so FreeCAD must come from the
+    # AppImage only. (States the intent of the brief's positional substring
+    # assertion, which the mandated KiCad comment text cannot satisfy.)
+    apt_freecad_lines = [
+        line.strip()
+        for line in template.splitlines()
+        # a runCmd command is a quoted string literal; skip // comment prose
+        if line.lstrip()[:1] in {"'", '"'}
+        and ("apt-get install" in line or "apt-mark hold" in line)
+        and re.search(r"\bfreecad\b", line, re.IGNORECASE)
+    ]
+    assert apt_freecad_lines == [], apt_freecad_lines
+    assert "FreeCAD_1.1.3-Linux-x86_64-py311.AppImage" in template
+    assert (
+        "3a853eb69ee595f779f2255dbf80a765926981d8ff68903cefee4dfb03a8f5ef" in template
+    )
+    assert ".copy('freecad-launcher.sh', '/usr/local/bin/freecad'" in template
+    assert "exec /opt/freecad/squashfs-root/AppRun" in launcher
+    # tasks 103/104 grade by running `freecadcmd`, which apt FreeCAD supplied.
+    assert "ln -sfn /usr/local/bin/freecad /usr/local/bin/freecadcmd" in template
 
 
 def test_full_agent_coordinator_bounds_sandboxes_and_namespaces_task_service_ports():

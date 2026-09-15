@@ -143,8 +143,9 @@ export const template = Template({ fileContextPath: filesDir })
   // ---- OSWorld 2.0 expanded application set (apt) -------------------------
   // Shotcut and OpenBoard ship in Ubuntu 22.04's universe repo. MuseScore 4
   // is installed separately below as a pinned AppImage (jammy's apt MuseScore
-  // package rejects task 067's score); FreeCAD moves to a later task in this
-  // plan.
+  // package rejects task 067's score). FreeCAD is deliberately absent here: the
+  // apt package blocks the KiCad 10 PPA install, so it ships as the 1.1.3
+  // AppImage below (see the KiCad block).
   // Each immutable template build freezes whatever version apt installed;
   // apt-mark hold keeps the guest from drifting (same pattern as Chrome).
   .runCmd([
@@ -248,6 +249,54 @@ export const template = Template({ fileContextPath: filesDir })
     'ln -sf /opt/blender/blender /usr/local/bin/blender',
     "printf '[Desktop Entry]\\nName=Blender\\nExec=/usr/local/bin/blender %%f\\nType=Application\\nStartupWMClass=Blender\\nCategories=Graphics;3DGraphics;\\nMimeType=application/x-blender;\\n' > /usr/share/applications/blender.desktop",
   ])
+  // ---- KiCad 10 (tasks 107/108 invoke `kicad`) ----------------------------
+  // Task 107's setup adds ppa:kicad/kicad-10.0-releases and installs kicad at
+  // runtime unless `command -v kicad` already succeeds. Preinstalling from the
+  // same PPA short-circuits that install, which is what makes the task work at
+  // all here: the PPA's OpenCASCADE 7.6 declares
+  //   Package: libocct-foundation-7.6
+  //   Breaks: libocct-foundation-7.4, libocct-foundation-7.5
+  // and jammy's apt FreeCAD 0.19 pulls the 7.5 set, so on a guest carrying apt
+  // FreeCAD the task's own `apt-get install -y kicad` dies with APT exit 100:
+  //   freecad : Depends: freecad-python3 but it is not going to be installed
+  //   E: Error, pkgProblemResolver::Resolve generated breaks, this may be
+  //      caused by held packages.
+  // (probe: out/osworld-v2-raw/template-probe/kicad-apt-conflict.txt, run on
+  // build 0d796343 where `freecad` was apt-installed and held). With apt
+  // FreeCAD gone the same install succeeds and `command -v kicad` resolves, so
+  // FreeCAD ships as the AppImage below instead of from apt.
+  // PPAs are mutable, so the installed version is apt-mark held and the
+  // immutable template build pins it across sandboxes (same as Chrome).
+  .runCmd([
+    'apt-get install -y --no-install-recommends software-properties-common',
+    'add-apt-repository -y ppa:kicad/kicad-10.0-releases',
+    'apt-get update',
+    'apt-get install -y kicad',
+    'apt-mark hold kicad',
+    'test -x /usr/bin/kicad',
+  ])
+  // ---- FreeCAD 1.1.3 AppImage (tasks 103/104 invoke `freecad`) ------------
+  // The AppImage bundles conda-forge OCCT 7.8.1 under its own prefix, so it
+  // has no apt OpenCASCADE dependency and cannot collide with the KiCad PPA's
+  // libocct 7.6 above. sha256 from the release's own
+  // FreeCAD_1.1.3-Linux-x86_64-py311.AppImage-SHA256.txt, re-checked against
+  // the downloaded file. Extracted at build time because the guest has no
+  // FUSE (same as MuseScore 4).
+  .runCmd([
+    'curl -fsSL -o /tmp/freecad.AppImage "https://github.com/FreeCAD/FreeCAD/releases/download/1.1.3/FreeCAD_1.1.3-Linux-x86_64-py311.AppImage"',
+    'echo "3a853eb69ee595f779f2255dbf80a765926981d8ff68903cefee4dfb03a8f5ef  /tmp/freecad.AppImage" | sha256sum -c -',
+    'chmod +x /tmp/freecad.AppImage',
+    'mkdir -p /opt/freecad && cd /opt/freecad && /tmp/freecad.AppImage --appimage-extract >/dev/null',
+    'rm -f /tmp/freecad.AppImage',
+    "printf '[Desktop Entry]\\nName=FreeCAD\\nExec=/usr/local/bin/freecad %%F\\nType=Application\\nStartupWMClass=FreeCAD\\nCategories=Graphics;Science;Engineering;\\nMimeType=application/x-extension-fcstd;\\n' > /usr/share/applications/freecad.desktop",
+  ])
+  .copy('freecad-launcher.sh', '/usr/local/bin/freecad', { mode: 0o755 })
+  // Tasks 103/104 grade by running `freecadcmd` (task_103.py:281,
+  // task_104.py:214), which jammy's apt FreeCAD used to supply. The AppImage's
+  // AppRun execs usr/bin/$1 when that name exists there, and it ships
+  // usr/bin/freecadcmd, so the launcher forwards its own invoked name and one
+  // file serves both commands.
+  .runCmd('ln -sfn /usr/local/bin/freecad /usr/local/bin/freecadcmd')
   // ---- create OSWorld's uid-1000 `user` account ---------------------------
   .runCmd([
     'id user >/dev/null 2>&1 || useradd -m -u 1000 -s /bin/bash user',
