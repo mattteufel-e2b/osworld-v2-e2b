@@ -111,7 +111,7 @@ def test_serial_harness_receipt_without_summary_evaluation_mode_is_still_a_ladde
             }
         ],
     }
-    summary = summarize(receipt, "validate-final.json")
+    summary = summarize(receipt, "stamped-records-no-summary-mode.json")
     assert summary["kind"] == "no-model-ladder-summary"
     assert summary["task_statuses"] == {"001": "PATH_PASS"}
 

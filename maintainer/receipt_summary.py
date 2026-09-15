@@ -59,12 +59,13 @@ def _lookup(receipt: dict, field: str):
 def _is_no_model(receipt: dict) -> bool:
     """Decide whether this receipt came from a no-model ladder run.
 
-    The no-model ladder usually writes evaluation_mode into its own summary
-    block; an agent campaign receipt (runner/aggregate_agent.py) never does.
-    But a serial-harness no-model receipt can omit evaluation_mode from its
-    summary block too, so fall back to the records: every record from a
-    no-model run stamps its own evaluation_mode == "no-model-stub", which an
-    agent record never does.
+    Detects two shapes: an evaluation_mode key in the receipt's own summary
+    block, or every record stamped evaluation_mode == "no-model-stub" (the
+    stamp is written by maintainer/harness.py and runner/model_coverage.py).
+    An agent campaign receipt (runner/aggregate_agent.py) carries neither
+    marker. Older no-model receipts that predate the per-record stamp also
+    carry neither marker, so they fall through and are summarized with the
+    agent-run shape instead.
     """
     summary_block = receipt.get("summary")
     if isinstance(summary_block, dict) and "evaluation_mode" in summary_block:
