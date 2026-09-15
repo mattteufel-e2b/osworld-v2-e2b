@@ -129,6 +129,24 @@ Register your agent in [`runner/agents.py`](runner/agents.py), implementing upst
 You can also use the included `prompt` agent with an OpenAI-compatible endpoint.
 See [agent configuration and examples](docs/configuration.md#bring-your-own-agent).
 
+## Licences you maintain
+
+You build the guest image yourself; this repository redistributes none of these binaries.
+The template installs the following components whose terms you are responsible for:
+
+| Component | Version | Licence |
+|---|---|---|
+| Google Chrome | 153.0.8010.36 in build `0eecdb03-552a-44f9-a366-8f4bda1b136d`; each build freezes whatever the Google repo served, recorded in `template/results/template-build.json` | [Google Chrome Terms of Service](https://www.google.com/chrome/terms/) |
+| WPS Office for Linux | 11.1.0.11723 | [Kingsoft EULA](https://www.wps.com/eula/) (proprietary) |
+| REAPER | 7.79 | [Evaluation licence](https://www.reaper.fm/purchase.php); a paid licence is required for continued use |
+
+Open-source components installed from vendor releases or Ubuntu 22.04: MuseScore Studio 4.6.5 (GPL-3.0),
+Blender 4.5.14 (GPL-2.0-or-later), KiCad 10.0 (GPL-3.0-or-later, via the KiCad PPA), FreeCAD 1.1.3
+(LGPL-2.1), Shotcut (GPL-3.0), OpenBoard (GPL-3.0), LibreOffice (MPL-2.0), VS Code 1.91.1
+(Microsoft Software License), x11vnc (GPL-2.0), noVNC (MPL-2.0), websockify (LGPL-3.0). The upstream
+guest server (`xlang-ai/osworld-server`) publishes no licence and is fetched at build time, never
+redistributed (see `docs/runtime.md`).
+
 ## Documentation
 
 - [Agent, judge, and run configuration](docs/configuration.md)
