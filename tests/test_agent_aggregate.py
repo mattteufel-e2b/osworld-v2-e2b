@@ -508,6 +508,77 @@ def test_retries_come_from_the_wave_list_not_stale_files(tmp_path):
     assert run["execution"]["retry_waves"] == [{"attempt": 1, "task_ids": ["001"]}]
 
 
+def test_malformed_retries_json_leaves_the_receipt_writable(tmp_path, monkeypatch):
+    # A coordinator killed mid-write leaves a truncated retries.json behind.
+    # The campaign receipt is the only durable record of the run, so a garbage
+    # retry ledger must degrade to "no retries", never crash the aggregate.
+    manifest, workers = _inputs(tmp_path)
+    (workers / "retries.json").write_text("{not json")
+    output = tmp_path / "campaign-receipt.json"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "aggregate_agent.py",
+            "--manifest",
+            str(manifest),
+            "--worker-dir",
+            str(workers),
+            "--output",
+            str(output),
+            "--model",
+            "model",
+            "--agent-kind",
+            "m3",
+            "--model-transport",
+            "https://example.test/v1",
+            "--eval-model",
+            "judge",
+            "--eval-provider",
+            "openai_compatible",
+            "--eval-transport",
+            "https://example.test/v1",
+            "--user-sim-model",
+            "simulator",
+            "--user-sim-provider",
+            "openai_compatible",
+            "--user-sim-transport",
+            "https://example.test/v1",
+            "--max-steps",
+            "500",
+            "--concurrency",
+            "1",
+            "--thinking-budget",
+            "2048",
+            "--m3-max-llm-retries",
+            "2",
+            "--task-082-concurrent",
+            "--run-nonce",
+            "run-nonce-1",
+            "--campaign-id",
+            "campaign-1",
+        ],
+    )
+
+    aggregate_agent.main()
+
+    receipt = json.loads(output.read_text())
+    assert receipt["execution"]["retried_task_ids"] == []
+    assert receipt["execution"]["retry_waves"] == []
+
+
+def test_retry_waves_that_are_not_wave_objects_are_ignored(tmp_path):
+    # A well-formed JSON document that is not a list of wave objects is just as
+    # unusable as truncated bytes; both mean "nothing attested as retried".
+    manifest, workers = _inputs(tmp_path)
+    (workers / "retries.json").write_text(json.dumps(["001", {"attempt": 1}]))
+
+    run, _ok = _aggregate_defaults(manifest, workers)
+
+    assert run["execution"]["retry_waves"] == [{"attempt": 1}]
+    assert run["execution"]["retried_task_ids"] == []
+
+
 def test_execution_block_without_retries(tmp_path):
     manifest, workers = _inputs(tmp_path)
 

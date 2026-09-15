@@ -11,14 +11,18 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _tracker_class():
+def _tracker_module():
     path = ROOT / "runner" / "evaluator_model_calls.py"
     assert path.is_file(), "evaluator model-call tracker is missing"
     spec = importlib.util.spec_from_file_location("evaluator_model_calls", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.EvaluatorModelCallTracker
+    return module
+
+
+def _tracker_class():
+    return _tracker_module().EvaluatorModelCallTracker
 
 
 def test_evaluator_model_tracker_counts_attempts_and_only_successful_returns():
@@ -236,8 +240,12 @@ def test_sdk_usage_is_attributed_by_role():
     }
 
 
-def test_usage_reports_zero_calls_with_null_tokens_for_every_role():
-    tracker = _tracker_class()()
+def test_usage_reports_zero_calls_with_null_tokens_for_every_role(monkeypatch):
+    # install() falls back to the real anthropic/openai SDK classes when neither
+    # is passed; stub the resolver out so this test never patches a real SDK.
+    module = _tracker_module()
+    monkeypatch.setattr(module, "_sdk_class", lambda *_args, **_kwargs: None)
+    tracker = module.EvaluatorModelCallTracker()
     tracker.install(
         model_client=types.SimpleNamespace(
             generate_text=lambda *a, **k: "x", generate_chat=lambda *a, **k: "x"
@@ -346,10 +354,13 @@ def test_judge_helper_called_inside_the_simulator_stays_simulator_usage():
     assert tracker.call_attempts == 0
 
 
-def test_install_without_sdks_still_reports_every_role():
+def test_install_without_sdks_still_reports_every_role(monkeypatch):
     # The runner's fake checkout has no anthropic/openai on the path; install()
-    # must tolerate that and still produce the three roles.
-    tracker = _tracker_class()()
+    # must tolerate that and still produce the three roles. The resolver is
+    # stubbed to None so the test does not depend on -- or wrap -- a real SDK.
+    module = _tracker_module()
+    monkeypatch.setattr(module, "_sdk_class", lambda *_args, **_kwargs: None)
+    tracker = module.EvaluatorModelCallTracker()
     tracker.install(
         model_client=types.SimpleNamespace(
             generate_text=lambda *a, **k: "x", generate_chat=lambda *a, **k: "x"

@@ -120,6 +120,14 @@ class EvaluatorModelCallTracker:
         anthropic_messages=None,
         openai_completions=None,
     ) -> None:
+        """Wrap the evaluator/simulator entry points so this tracker sees usage.
+
+        The SDK wrap lands on the class object and is therefore process-global
+        and bound to the first tracker that installs it -- a second tracker in
+        the same process records no token usage. Only the anthropic and openai
+        SDK classes are wrapped, so a judge on any other SDK (Gemini, say) still
+        reports its roles but with zero calls.
+        """
         if model_client is None or llm_metrics is None:
             from desktop_env.evaluators import model_client as real_model_client
             from desktop_env.evaluators.metrics import llm_metrics as real_llm_metrics

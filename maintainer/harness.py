@@ -73,19 +73,6 @@ def osworld_commit(root: Path) -> str:
     ).strip()
 
 
-def classify(task_dir: Path, error: BaseException) -> tuple[str, str]:
-    """One public cause bucket plus the full detail text for local use only.
-
-    The bucket comes from receipt_safety.classify_failure -- the same classifier
-    the agent runner uses -- reading this task's own artifact directory. The
-    stage the failure happened at stays in the record's own ``stage`` field.
-    """
-    cause, _transport_ok, _evaluator_ran = classify_failure(
-        task_dir, error, timeout_types=(TaskTimeout,)
-    )
-    return cause, f"{type(error).__name__}: {error}"
-
-
 def _score_of(result) -> float:
     """V2 evaluate() returns a float (legacy) or a dict with a 'score' field."""
     if isinstance(result, dict):
@@ -169,14 +156,18 @@ def run_task(
         record["path_status"] = "PATH_PASS"
         record["stage"] = "complete"
     except BaseException as error:
-        # classify() reads full text only to choose a public cause bucket. The
-        # shareable receipt never copies exception text; the traceback remains
-        # under the gitignored raw directory.
+        # classify_failure() -- the same classifier the agent runner uses --
+        # reads this task's own artifact directory and the exception text only
+        # to choose a public cause bucket. The shareable receipt never copies
+        # exception text; the traceback remains under the gitignored raw
+        # directory, and the stage stays in the record's own ``stage`` field.
         boundary = model_boundary_result(record["stage"], error)
         if boundary is not None:
             record.update(boundary)
         else:
-            cause, _full = classify(task_dir, error)
+            cause, _transport_ok, _evaluator_ran = classify_failure(
+                task_dir, error, timeout_types=(TaskTimeout,)
+            )
             record.update(
                 path_status="PATH_FAIL",
                 cause=cause,

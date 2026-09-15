@@ -330,6 +330,8 @@ PY
     export ATTEMPT_SUFFIX
     for row in "${failed_rows[@]}"; do
         read -r task_id _ <<<"$row"
+        # Audit copy for humans reading the raw dir; the aggregate reads
+        # retries.json, never these _before_retry_ files.
         cp "$RAW_DIR/workers/task_${task_id}.json" \
             "$RAW_DIR/workers/task_${task_id}_before_retry_${attempt}.json" 2>/dev/null || true
         if [ "$task_id" = "082" ]; then

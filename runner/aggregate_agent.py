@@ -221,6 +221,8 @@ def aggregate(
         "binary_accuracy": (
             sum(score == 1.0 for score in scores) / len(scores) if scores else None
         ),
+        # Attested records only -- the spend of receipts that passed the gate --
+        # unlike the eval_model_* totals above, which sum every record.
         "model_usage": _sum_model_usage(accepted_records),
         "unique_sandboxes": len(set(sandbox_ids)),
         "all_recorded_sandboxes_unique": len(set(sandbox_ids)) == len(sandbox_ids),
@@ -229,12 +231,24 @@ def aggregate(
     # after each retry wave; that is the ground truth for what was retried,
     # not a glob over receipt files that stale attempt files (or a retry that
     # produced no receipt) would otherwise mislead.
-    retry_waves = []
+    # A missing or truncated retries.json (a coordinator killed mid-write, or
+    # no retry wave at all) must not cost the whole campaign its receipt.
+    retry_waves: list = []
     retries_path = worker_dir / "retries.json"
-    if retries_path.exists():
-        retry_waves = json.loads(retries_path.read_text())
+    try:
+        parsed = json.loads(retries_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        parsed = None
+    if isinstance(parsed, list):
+        retry_waves = [wave for wave in parsed if isinstance(wave, dict)]
     retried_task_ids = sorted(
-        {tid for wave in retry_waves for tid in wave.get("task_ids", [])}
+        {
+            tid
+            for wave in retry_waves
+            for tid in (
+                wave.get("task_ids") if isinstance(wave.get("task_ids"), list) else []
+            )
+        }
     )
     run = {
         "schema_version": 2,

@@ -13,6 +13,9 @@ from urllib.parse import urlsplit, urlunsplit
 # "evaluator-or-agent" is a scored model attempt and is never retried; the
 # runner's own deadline ("task-timeout") is. "interrupted" (SIGTERM from the
 # coordinator or operator) is not retried either: the operator cancelled it.
+# A timed-out or interrupted rollout that already wrote result.txt keeps its
+# own cause, but is still never retried, because retry_candidates.py refuses
+# any task whose directory holds a result.txt.
 RETRYABLE_ERROR_CAUSES = frozenset(
     {
         "transport",
@@ -57,9 +60,9 @@ def classify_failure(
     evaluator_ran = (result_dir / "result.txt").exists()
     transport_ok = any(result_dir.glob("*.png")) or (result_dir / "traj.jsonl").exists()
     if timeout_types and isinstance(error, timeout_types):
-        return "task-timeout", False, evaluator_ran
+        return "task-timeout", transport_ok, evaluator_ran
     if interrupt_types and isinstance(error, interrupt_types):
-        return "interrupted", False, evaluator_ran
+        return "interrupted", transport_ok, evaluator_ran
     if evaluator_ran:
         # A scored attempt: whatever failed afterwards, never retry it -- a
         # retry would overwrite a real score with a fresh rollout.

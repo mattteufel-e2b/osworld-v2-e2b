@@ -165,6 +165,16 @@ def test_timeout_type_wins_over_everything(tmp_path):
     assert (cause, evaluator_ran) == ("task-timeout", True)
 
 
+def test_timeout_reports_the_frames_it_actually_produced(tmp_path):
+    # transport_ok means "reset+observation produced at least one frame", per
+    # classify_failure's contract. A rollout that timed out mid-run still got
+    # that far, so the receipt must not claim the transport never worked.
+    (tmp_path / "step_1.png").write_bytes(b"x")
+    assert classify_failure(
+        tmp_path, _Timeout("deadline"), timeout_types=(_Timeout,)
+    ) == ("task-timeout", True, False)
+
+
 @pytest.mark.parametrize(
     "message, cause",
     [
