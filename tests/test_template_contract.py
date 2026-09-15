@@ -516,6 +516,27 @@ def test_template_installs_musescore_4_with_the_task_launcher_name():
     assert "MuseScore4.ini" in template
 
 
+def test_template_installs_wps_office_for_the_wpp_tasks():
+    template = (ROOT / "template" / "template.ts").read_text()
+    conf = (ROOT / "template" / "files" / "wps-office.conf").read_text()
+
+    assert "<PASTE_SHA256_HERE>" not in template
+    assert "wps-office_11.1.0.11723.XA_amd64.deb" in template
+    assert (
+        "fe6326210f69d94efdbf2728914d293036be391b93a614f58cd0e1ff1d4923b3" in template
+    )
+    assert "apt-mark hold wps-office" in template
+    assert "libtiff5" in template
+    assert (
+        ".copy('wps-office.conf', '/home/user/.config/Kingsoft/Office.conf'" in template
+    )
+    assert conf.strip()
+    # The two keys WPS itself wrote when the EULA modal and the "System Check"
+    # missing-font warning were each dismissed once on a real guest.
+    assert "common\\AcceptedEULA=true" in conf
+    assert "common\\system_check\\no_necessary_symbol_fonts=false" in conf
+
+
 def test_full_agent_coordinator_bounds_sandboxes_and_namespaces_task_service_ports():
     coordinator = (ROOT / "runner" / "run_agent_parallel.sh").read_text()
     aggregator = (ROOT / "runner" / "aggregate_agent.py").read_text()

@@ -215,6 +215,26 @@ export const template = Template({ fileContextPath: filesDir })
     "printf '[Desktop Entry]\\nName=MuseScore 4\\nExec=/usr/local/bin/musescore %%F\\nType=Application\\nStartupWMClass=MuseScore4\\nCategories=AudioVideo;Audio;\\nMimeType=application/x-musescore;application/vnd.recordare.musicxml+xml;\\n' > /usr/share/applications/musescore4.desktop",
   ])
   .copy('musescore-launcher.sh', '/usr/local/bin/musescore', { mode: 0o755 })
+  // ---- WPS Office (tasks 049/060/077/079/087/090/096 invoke `wpp`; 063/066/
+  // 076/080/091 invoke `wps`) -------------------------------------------------
+  // Kingsoft ships only the current build (older build numbers return 403), so
+  // the .deb is sha256-pinned at the recorded build and apt-mark held. The
+  // sha256 was computed from the download itself, twice: once inside a scratch
+  // sandbox and once from the build host, both 318,892,996 bytes. libtiff5 is
+  // required by the bundled PDF engine (libpdfmain.so links libtiff.so.5).
+  // --no-install-recommends keeps ttf-mscorefonts-installer out (it fetches
+  // from SourceForge at install time behind an interactive EULA); Carlito and
+  // Caladea are the metric-compatible open fonts. Proprietary: the customer
+  // accepts the Kingsoft EULA at https://www.wps.com/eula/ .
+  .runCmd([
+    'curl -fsSL -o /tmp/wps-office.deb "https://wdl1.pcfg.cache.wpscdn.com/wpsdl/wpsoffice/download/linux/11723/wps-office_11.1.0.11723.XA_amd64.deb"',
+    'echo "fe6326210f69d94efdbf2728914d293036be391b93a614f58cd0e1ff1d4923b3  /tmp/wps-office.deb" | sha256sum -c -',
+    'apt-get install -y libtiff5 fonts-crosextra-carlito fonts-crosextra-caladea',
+    'apt-get install -y --no-install-recommends /tmp/wps-office.deb',
+    'rm -f /tmp/wps-office.deb',
+    'apt-mark hold wps-office',
+    'test -x /usr/bin/wpp && test -x /usr/bin/wps && test -x /usr/bin/et',
+  ])
   // ---- create OSWorld's uid-1000 `user` account ---------------------------
   .runCmd([
     'id user >/dev/null 2>&1 || useradd -m -u 1000 -s /bin/bash user',
@@ -288,6 +308,28 @@ export const template = Template({ fileContextPath: filesDir })
   // product's own window title, not a modal.
   .makeDir('/home/user/.config/REAPER')
   .copy('reaper.ini', '/home/user/.config/REAPER/reaper.ini')
+  // ---- WPS Office first-run suppression (baked config) --------------------
+  // Observed on a scratch sandbox of the current immutable guest with the .deb
+  // above installed: a fresh `wpp` opens exactly two things before the
+  // application is usable. First a modal titled "Kingsoft Office Software
+  // License Agreement and Privacy Policy" whose "I Confirm" button stays
+  // disabled until the "Have read and agreed to ..." checkbox is ticked.
+  // Dismissing it once reveals a second window titled "System Check":
+  // "Some formula symbols might not be displayed correctly due to missing
+  // fonts Symbol, Wingdings...", with a "Do not report again" checkbox.
+  // wps-office.conf is the Office.conf WPS itself wrote after both were
+  // dismissed once and WPS was quit cleanly, copied verbatim. The decisive
+  // keys are `common\AcceptedEULA=true` (EULA modal) and
+  // `common\system_check\no_necessary_symbol_fonts=false` (System Check);
+  // `[kdcsdk] NotFirstOpen=true` marks the suite as already started once.
+  // Verified on that same guest: with only this file present, `wpp`, `wps` and
+  // `et` each open a single application window and no dialog, and `wpp` on
+  // task 049's own googlenet_intro.pptx opens straight into the editor.
+  // Honest caveat: this suppresses the missing-font *warning*, it does not
+  // supply Symbol/Wingdings - those fonts are still absent, so documents that
+  // use them fall back to a substitute face.
+  .makeDir('/home/user/.config/Kingsoft')
+  .copy('wps-office.conf', '/home/user/.config/Kingsoft/Office.conf')
   // ---- system-wide dconf defaults: a11y + interface + DPI/scaling ---------
   // Matches the OSWorld reference GNOME session: toolkit-accessibility on (so
   // GTK/Qt apps expose AT-SPI trees), Adwaita cursor/theme, 1.0 text scaling
