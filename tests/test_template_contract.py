@@ -488,14 +488,32 @@ def test_openboard_snap_contract_maps_to_ubuntu_package_without_snapd():
     template = (ROOT / "template" / "template.ts").read_text()
     snap_compat = (ROOT / "template" / "files" / "snap-openboard-compat.sh").read_text()
 
-    assert "apt-get install -y musescore3 shotcut freecad openboard" in template
-    assert "apt-mark hold musescore3 shotcut freecad openboard" in template
+    assert "apt-get install -y shotcut openboard" in template
+    assert "apt-mark hold shotcut openboard" in template
     assert "mkdir -p /snap/bin" in template
     assert "ln -sfn /usr/bin/OpenBoard /snap/bin/openboard" in template
     assert ".copy('snap-openboard-compat.sh', '/usr/local/bin/snap'" in template
     assert 'if [ "$1" = "list" ] && [ "${2:-}" = "openboard" ]' in snap_compat
     assert 'if [ "$1" = "install" ] && [ "${2:-}" = "openboard" ]' in snap_compat
     assert "unsupported snap command" in snap_compat
+
+
+def test_template_installs_musescore_4_with_the_task_launcher_name():
+    template = (ROOT / "template" / "template.ts").read_text()
+    launcher = (ROOT / "template" / "files" / "musescore-launcher.sh").read_text()
+
+    assert "musescore3" not in template
+    assert not (ROOT / "template" / "files" / "MuseScore3.ini").exists()
+    assert "MuseScore-Studio-4.6.5.253511702-x86_64.AppImage" in template, (
+        "MuseScore 4.6.5 wrote task 067's score; pin that exact version"
+    )
+    assert (
+        "193daa0ea18bcfa90a47145a842275b8069b7b2b8d153e562b15fab5fe50fcaf" in template
+    )
+    assert "--appimage-extract" in template
+    assert ".copy('musescore-launcher.sh', '/usr/local/bin/musescore'" in template
+    assert "exec /opt/musescore/squashfs-root/AppRun" in launcher
+    assert "MuseScore4.ini" in template
 
 
 def test_full_agent_coordinator_bounds_sandboxes_and_namespaces_task_service_ports():

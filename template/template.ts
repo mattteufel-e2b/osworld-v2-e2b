@@ -9,7 +9,7 @@ import { Template, waitForPort } from 'e2b'
 // same Ubuntu release, GNOME family, screen geometry, user, major applications,
 // and OSWorld control interfaces. Relative to the V1 template it adds the V2
 // guest server (FastAPI/uvicorn, xlang-ai/osworld-server), the V2 expanded
-// application set (MuseScore 3, Shotcut, FreeCAD, Zotero, REAPER), and a
+// application set (MuseScore 4, Shotcut, FreeCAD, Zotero, REAPER), and a
 // userspace PulseAudio null sink for the V2 audio tasks. The V2 guest user
 // password is `osworld-public-evaluation` (the V2 harness su/sudo credential).
 // VS Code is pinned to the reference image's 1.91.1 via Microsoft's permanent
@@ -141,13 +141,15 @@ export const template = Template({ fileContextPath: filesDir })
     'apt-mark hold code',
   ])
   // ---- OSWorld 2.0 expanded application set (apt) -------------------------
-  // MuseScore 3, Shotcut, FreeCAD, and OpenBoard ship in Ubuntu 22.04's
-  // universe repo.
+  // Shotcut and OpenBoard ship in Ubuntu 22.04's universe repo. MuseScore 4
+  // is installed separately below as a pinned AppImage (jammy's apt MuseScore
+  // package rejects task 067's score); FreeCAD moves to a later task in this
+  // plan.
   // Each immutable template build freezes whatever version apt installed;
   // apt-mark hold keeps the guest from drifting (same pattern as Chrome).
   .runCmd([
-    'apt-get install -y musescore3 shotcut freecad openboard',
-    'apt-mark hold musescore3 shotcut freecad openboard',
+    'apt-get install -y shotcut openboard',
+    'apt-mark hold shotcut openboard',
     // Task 093 hard-codes the upstream image's snap launcher and snap package
     // probe. Preserve that narrow observable contract without installing the
     // privileged snapd daemon. Executing through this lowercase symlink also
@@ -198,6 +200,21 @@ export const template = Template({ fileContextPath: filesDir })
     "printf '[Desktop Entry]\\nName=REAPER\\nExec=/usr/local/bin/reaper\\nType=Application\\nStartupWMClass=REAPER\\nCategories=AudioVideo;Audio;\\n' > /usr/share/applications/reaper.desktop",
   ])
   .copy('reaper-launcher.sh', '/usr/local/bin/reaper', { mode: 0o755 })
+  // ---- MuseScore 4 (tasks 067/071 invoke `musescore`) ---------------------
+  // Task 067's score was written by MuseScore Studio 4.6.5, which the jammy
+  // apt MuseScore 3 package rejects at export. Pinned AppImage from the
+  // GitHub release; sha256 from the release's checksums.sha256.txt. Extracted
+  // at build time because the guest has no FUSE.
+  .runCmd([
+    'apt-get install -y libjack-jackd2-0',
+    'curl -fsSL -o /tmp/musescore.AppImage "https://github.com/musescore/MuseScore/releases/download/v4.6.5/MuseScore-Studio-4.6.5.253511702-x86_64.AppImage"',
+    'echo "193daa0ea18bcfa90a47145a842275b8069b7b2b8d153e562b15fab5fe50fcaf  /tmp/musescore.AppImage" | sha256sum -c -',
+    'chmod +x /tmp/musescore.AppImage',
+    'mkdir -p /opt/musescore && cd /opt/musescore && /tmp/musescore.AppImage --appimage-extract >/dev/null',
+    'rm -f /tmp/musescore.AppImage',
+    "printf '[Desktop Entry]\\nName=MuseScore 4\\nExec=/usr/local/bin/musescore %%F\\nType=Application\\nStartupWMClass=MuseScore4\\nCategories=AudioVideo;Audio;\\nMimeType=application/x-musescore;application/vnd.recordare.musicxml+xml;\\n' > /usr/share/applications/musescore4.desktop",
+  ])
+  .copy('musescore-launcher.sh', '/usr/local/bin/musescore', { mode: 0o755 })
   // ---- create OSWorld's uid-1000 `user` account ---------------------------
   .runCmd([
     'id user >/dev/null 2>&1 || useradd -m -u 1000 -s /bin/bash user',
@@ -248,17 +265,13 @@ export const template = Template({ fileContextPath: filesDir })
     'libreoffice-registrymodifications.xcu',
     '/home/user/.config/libreoffice/4/user/registrymodifications.xcu',
   )
-  // ---- MuseScore 3 first-run suppression (baked config) -------------------
-  // Fresh MuseScore 3 opens a modal "Startup Wizard", then a "Start Center"
-  // score picker, then a "Tour" popup - all agent-blocking. This ini was
-  // produced by MuseScore itself after setting Program Start = "Start empty"
-  // and unchecking show-start-center / show-tours / show-splash in
-  // Preferences, then captured verbatim. The decisive key is
-  // ui/.../sessionStart = EMPTY (@Variant), which is what actually stops the
-  // Start Center; the boolean flags alone do not. Same doctrine as the baked
-  // LibreOffice/VLC first-run configs. Path org/app = MuseScore/MuseScore3.
+  // ---- MuseScore 4 first-run suppression (baked config) -------------------
+  // Fresh MuseScore 4 opens a first-launch setup wizard (language, playback,
+  // cloud) and a tours prompt. `hasCompletedFirstLaunchSetup=true` skips the
+  // wizard. Captured from a guest after dismissing the dialogs once (Task 3 of
+  // the template-parity plan); same doctrine as the LibreOffice/VLC configs.
   .makeDir('/home/user/.config/MuseScore')
-  .copy('MuseScore3.ini', '/home/user/.config/MuseScore/MuseScore3.ini')
+  .copy('MuseScore4.ini', '/home/user/.config/MuseScore/MuseScore4.ini')
   // ---- REAPER first-run suppression (baked config) ------------------------
   // Fresh (unregistered) REAPER opens three windows on launch: the main
   // window, an "About REAPER" evaluation/license nag, and an "Error opening
