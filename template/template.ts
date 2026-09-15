@@ -79,6 +79,12 @@ export const template = Template({ fileContextPath: filesDir })
     'socat',
     'iproute2',
     'ffmpeg',
+    // ---- VNC stack for upstream's --enable_vnc path (units disabled) -------
+    'x11vnc',
+    'novnc',
+    'websockify',
+    // ---- certutil for per-campaign CA trust in Chrome's NSS db -------------
+    'libnss3-tools',
     // ---- audio: userspace PulseAudio + virtual sink -----------------------
     // The E2B guest kernel ships no ALSA device (no /proc/asound, snd-dummy
     // absent), so OSWorld 2.0's audio apps (REAPER/MuseScore/Shotcut) route
@@ -314,6 +320,10 @@ export const template = Template({ fileContextPath: filesDir })
     'echo "user:osworld-public-evaluation" | chpasswd',
     'mkdir -p /home/user/.local/share/keyrings /home/user/.config/vlc',
     'touch /home/user/.local/share/keyrings/login.keyring /home/user/.Xauthority',
+    // Chrome on Linux trusts extra CAs only through the user's NSS db. Create it
+    // empty at build so the bridge can `certutil -A` the campaign CA at start.
+    'mkdir -p /home/user/.pki/nssdb',
+    'certutil -N -d sql:/home/user/.pki/nssdb --empty-password',
     // One Chrome profile, two views: the google-chrome shim launches with
     // --user-data-dir=google-chrome-cdp (Chrome >=136 disables the debug port
     // on the default path, even passed explicitly - probed on Chrome 150),
@@ -419,6 +429,12 @@ export const template = Template({ fileContextPath: filesDir })
   .copy('server', '/opt/osworld-server')
   .copy('session_inner.sh', '/opt/osworld-server/session_inner.sh', { mode: 0o755 })
   .copy('start.sh', '/opt/osworld-server/start.sh', { mode: 0o755 })
+  // VNC units upstream's setup controller expects to be present (`systemctl
+  // --user stop novnc.service x11vnc.service || true` in
+  // OSWorld-V2/desktop_env/controllers/setup.py). The human-in-the-loop VNC
+  // path is deferred, so the units are installed but never enabled.
+  .copy('x11vnc.service', '/etc/systemd/user/x11vnc.service')
+  .copy('novnc.service', '/etc/systemd/user/novnc.service')
   .runCmd('python3 -m pip install --no-cache-dir -r /opt/osworld-server/requirements.txt')
   .runCmd([
     'ln -sf /usr/bin/python3 /usr/bin/python || true',

@@ -752,3 +752,18 @@ def test_host_proxy_readiness_is_shared_and_bounded():
         text = (ROOT / script).read_text()
         assert "wait_for_hostmap_proxy" in text, script
         assert "api/state?cookie=" not in text, script  # no private curl loops left
+
+
+def test_template_bakes_vnc_units_disabled_and_nss_trust_tooling():
+    template = (ROOT / "template" / "template.ts").read_text()
+    x11vnc = (ROOT / "template" / "files" / "x11vnc.service").read_text()
+    novnc = (ROOT / "template" / "files" / "novnc.service").read_text()
+
+    for pkg in ("x11vnc", "novnc", "websockify", "libnss3-tools"):
+        assert f"'{pkg}'" in template, pkg
+    assert ".copy('x11vnc.service', '/etc/systemd/user/x11vnc.service')" in template
+    assert ".copy('novnc.service', '/etc/systemd/user/novnc.service')" in template
+    assert "systemctl --user enable" not in template
+    assert "-localhost" in x11vnc and "-rfbport 5900" in x11vnc
+    assert "--web /usr/share/novnc 6080 localhost:5900" in novnc
+    assert "certutil -N -d sql:/home/user/.pki/nssdb --empty-password" in template
