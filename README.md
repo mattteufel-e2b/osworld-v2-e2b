@@ -136,14 +136,19 @@ The template installs the following components whose terms you are responsible f
 
 | Component | Version | Licence |
 |---|---|---|
-| Google Chrome | 153.0.8010.36 in build `0eecdb03-552a-44f9-a366-8f4bda1b136d`; each build freezes whatever the Google repo served, recorded in `template/results/template-build.json` | [Google Chrome Terms of Service](https://www.google.com/chrome/terms/) |
+| Google Chrome | `153.0.8010.36-1` in build `0eecdb03-552a-44f9-a366-8f4bda1b136d`; each build freezes whatever the Google repo served, recorded in the build's own `template/results/template-build.json` and committed for this build at `out/osworld-v2-evidence/template/template-build-0eecdb03-552a-44f9-a366-8f4bda1b136d.json` | [Google Chrome Terms of Service](https://www.google.com/chrome/terms/) |
 | WPS Office for Linux | 11.1.0.11723 | [Kingsoft EULA](https://www.wps.com/eula/) (proprietary) |
 | REAPER | 7.79 | [Evaluation licence](https://www.reaper.fm/purchase.php); a paid licence is required for continued use |
+| Visual Studio Code | 1.91.1 | Microsoft Software License; Microsoft's `.deb` build is proprietary, not the MIT-licensed `vscode` source |
 
 Open-source components installed from vendor releases or Ubuntu 22.04: MuseScore Studio 4.6.5 (GPL-3.0),
 Blender 4.5.14 (GPL-2.0-or-later), KiCad 10.0 (GPL-3.0-or-later, via the KiCad PPA), FreeCAD 1.1.3
-(LGPL-2.1), Shotcut (GPL-3.0), OpenBoard (GPL-3.0), LibreOffice (MPL-2.0), VS Code 1.91.1
-(Microsoft Software License), x11vnc (GPL-2.0), noVNC (MPL-2.0), websockify (LGPL-3.0). The upstream
+(LGPL-2.1), Zotero 7.0.15 (AGPL-3.0), Shotcut (GPL-3.0), OpenBoard (GPL-3.0), LibreOffice (MPL-2.0),
+x11vnc (GPL-2.0), noVNC (MPL-2.0), websockify (LGPL-3.0), and task 082's Docker Compose v2 CLI plugin
+(Apache-2.0). Also from Ubuntu 22.04's archive: GIMP (GPL-3.0-or-later), VLC (GPL-2.0-or-later),
+Thunderbird (MPL-2.0) and Evince (GPL-2.0-or-later), alongside the GNOME desktop, fonts, PulseAudio
+and the X/screenshot tooling the evaluators call; every archive package's authoritative terms are its
+own `/usr/share/doc/<package>/copyright` file inside the guest. The upstream
 guest server (`xlang-ai/osworld-server`) publishes no licence and is fetched at build time, never
 redistributed (see `docs/runtime.md`).
 
