@@ -338,6 +338,197 @@ class GuestManagerTests(unittest.IsolatedAsyncioTestCase):
             [command for command, _kwargs in sandbox.commands.calls],
         )
 
+    async def test_guest_proxy_gets_tls_material_trust_install_and_alias_hosts(self):
+        runtime = {
+            "websites": {
+                "sandbox_id": "websites-sandbox",
+                "template": "fleet:build-id",
+                "traffic_token": "websites-traffic-token",
+                "host_suffix": "127.0.0.1.nip.io",
+                "public_host_suffix": "127.0.0.1.nip.io:8090",
+                "scheme": "https",
+                "caddy_ingress_host": "80-websites.e2b.app",
+                "mode": "per-port-fanout",
+                "asset_url_map": {
+                    "http://dead-upstream.example/logo.png": (
+                        "https://mailhub.127.0.0.1.nip.io:8090/logo.png"
+                    )
+                },
+                "sites": {
+                    "mailhub": {
+                        "ingress_host": "13001-websites.e2b.app",
+                        "port": 13001,
+                    }
+                },
+            },
+            "gitlab": {
+                "sandbox_id": "gitlab-sandbox",
+                "template": "fleet:build-id",
+                "traffic_token": "gitlab-traffic-token",
+                "host": "gitlab.127.0.0.1.nip.io",
+                "ingress_host": "8929-gitlab.e2b.app",
+                "port": 8929,
+                "url": "https://gitlab.127.0.0.1.nip.io:8090",
+                "external_url": "https://gitlab.127.0.0.1.nip.io",
+                "scheme": "https",
+                "aliases": ["54.174.16.65.sslip.io"],
+                "private_token": "gitlab-private-token",
+                "token_file": "/host/services/.gitlab-token",
+            },
+            "tls": {
+                "campaign_id": "test-campaign",
+                "hosts": [
+                    "mailhub.127.0.0.1.nip.io",
+                    "gitlab.127.0.0.1.nip.io",
+                    "54.174.16.65.sslip.io",
+                ],
+            },
+        }
+
+        class Files:
+            def __init__(self):
+                self.writes = {}
+
+            def write(self, path, content):
+                self.writes[path] = content
+
+        class Commands:
+            def __init__(self):
+                self.calls = []
+
+            def run(self, command, **kwargs):
+                self.calls.append((command, kwargs))
+                # "ok" means the nip.io DNS probe succeeds, so the probe's own
+                # /etc/hosts fallback branch never fires -- this proves the
+                # alias entry is written unconditionally, not from that branch.
+                return type("Result", (), {"stdout": "ok\n"})()
+
+        sandbox = type("Sandbox", (), {"files": Files(), "commands": Commands()})()
+        with tempfile.TemporaryDirectory() as directory:
+            script_file = Path(directory) / "hostmap_proxy.py"
+            runtime_file = Path(directory) / "runtime.json"
+            ca_cert_file = Path(directory) / "ca.crt"
+            leaf_cert_file = Path(directory) / "leaf.crt"
+            leaf_key_file = Path(directory) / "leaf.key"
+            bundle_file = Path(directory) / "bundle.crt"
+            ca_cert_file.write_text("CACERT")
+            leaf_cert_file.write_text("LEAFCERT")
+            leaf_key_file.write_text("LEAFKEY")
+            bundle_file.write_text("BUNDLE")
+            runtime["tls"].update(
+                {
+                    "ca_cert": str(ca_cert_file),
+                    "leaf_cert": str(leaf_cert_file),
+                    "leaf_key": str(leaf_key_file),
+                    "bundle": str(bundle_file),
+                }
+            )
+            script_file.write_text("# guest proxy")
+            runtime_file.write_text(json.dumps(runtime))
+            config = bridge.BridgeConfig(
+                template=IMMUTABLE_TEMPLATE,
+                campaign_id="test-campaign",
+                guest_proxy_script=str(script_file),
+                fleet_rules=str(runtime_file),
+            )
+            bridge._install_guest_proxy(sandbox, config)
+
+        writes = sandbox.files.writes
+        calls = [command for command, _kwargs in sandbox.commands.calls]
+
+        self.assertEqual(writes["/opt/hostmap-tls/leaf.key"], "LEAFKEY")
+        self.assertEqual(writes["/opt/hostmap-tls/leaf.crt"], "LEAFCERT")
+        self.assertEqual(writes["/opt/hostmap-tls/ca.crt"], "CACERT")
+        self.assertNotIn("/opt/hostmap-tls/ca.key", writes)
+        self.assertFalse(any("CAKEY" in str(value) for value in writes.values()))
+        self.assertTrue(any("chmod 0600 /opt/hostmap-tls/leaf.key" in c for c in calls))
+        self.assertTrue(any("update-ca-certificates" in c for c in calls))
+        self.assertTrue(
+            any(
+                'certutil -d sql:/home/user/.pki/nssdb -A -t "C,," -n osworld-campaign'
+                in c
+                for c in calls
+            )
+        )
+        self.assertTrue(
+            any("127.0.0.1 54.174.16.65.sslip.io" in c for c in calls)
+        )  # unconditional alias entry, even though the DNS probe said "ok"
+        start = [c for c in calls if "python3 /opt/hostmap_proxy.py" in c][0]
+        self.assertIn("HOSTMAP_PORT=80,443,8090", start)
+        self.assertIn("HOSTMAP_TLS_PORTS=443,8090", start)
+        self.assertIn(
+            "HOSTMAP_TLS_CERT=/opt/hostmap-tls/leaf.crt HOSTMAP_TLS_KEY=/opt/hostmap-tls/leaf.key",
+            start,
+        )
+        guest_runtime = json.loads(writes["/opt/fleet_runtime.json"])
+        self.assertEqual(guest_runtime["gitlab"]["aliases"], ["54.174.16.65.sslip.io"])
+        self.assertTrue(guest_runtime["websites"]["asset_url_map"])
+        serialized = json.dumps(guest_runtime)
+        self.assertNotIn("private_token", serialized)
+        self.assertNotIn("token_file", serialized)
+        self.assertNotIn("/host/", serialized)
+
+    async def test_guest_proxy_without_tls_section_behaves_as_before(self):
+        runtime = {
+            "websites": {
+                "traffic_token": "websites-traffic-token",
+                "host_suffix": "127.0.0.1.nip.io",
+                "sites": {
+                    "mailhub": {
+                        "ingress_host": "13001-websites.e2b.app",
+                        "port": 13001,
+                    }
+                },
+            },
+            "gitlab": {
+                "traffic_token": "gitlab-traffic-token",
+                "host": "gitlab.127.0.0.1.nip.io",
+                "ingress_host": "8929-gitlab.e2b.app",
+                "port": 8929,
+            },
+        }
+
+        class Files:
+            def __init__(self):
+                self.writes = {}
+
+            def write(self, path, content):
+                self.writes[path] = content
+
+        class Commands:
+            def __init__(self):
+                self.calls = []
+
+            def run(self, command, **kwargs):
+                self.calls.append((command, kwargs))
+                return type("Result", (), {"stdout": "no\n"})()
+
+        sandbox = type("Sandbox", (), {"files": Files(), "commands": Commands()})()
+        with tempfile.TemporaryDirectory() as directory:
+            script_file = Path(directory) / "hostmap_proxy.py"
+            runtime_file = Path(directory) / "runtime.json"
+            script_file.write_text("# guest proxy")
+            runtime_file.write_text(json.dumps(runtime))
+            config = bridge.BridgeConfig(
+                template=IMMUTABLE_TEMPLATE,
+                campaign_id="test-campaign",
+                guest_proxy_script=str(script_file),
+                fleet_rules=str(runtime_file),
+            )
+            bridge._install_guest_proxy(sandbox, config)
+
+        writes = sandbox.files.writes
+        calls = [command for command, _kwargs in sandbox.commands.calls]
+
+        self.assertFalse(any(path.startswith("/opt/hostmap-tls/") for path in writes))
+        self.assertFalse(any("certutil" in c for c in calls))
+        self.assertFalse(any("update-ca-certificates" in c for c in calls))
+        self.assertFalse(any("54.174.16.65.sslip.io" in c for c in calls))
+        start = [c for c in calls if "python3 /opt/hostmap_proxy.py" in c][0]
+        self.assertIn("HOSTMAP_PORT=80,8090", start)
+        self.assertNotIn("HOSTMAP_TLS_PORTS", start)
+        self.assertNotIn("HOSTMAP_TLS_CERT", start)
+
     async def test_replace_does_not_expand_fleet_routes_into_guest_network_rules(self):
         with (
             patch.object(bridge, "Sandbox", FakeSandbox),

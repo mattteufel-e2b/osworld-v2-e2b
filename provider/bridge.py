@@ -73,7 +73,12 @@ class BridgeConfig:
     guest_proxy_script: str | None = None
     fleet_rules: str | None = None
     website_host_suffix: str = "127.0.0.1.nip.io"
-    guest_proxy_ports: str = "80,8090"
+    guest_proxy_ports: str = "80,443,8090"
+    # Subset of guest_proxy_ports that terminates TLS once a campaign CA/leaf
+    # pair is present (see _install_guest_proxy). Not env-configurable: the
+    # port split is a property of the guest proxy's own listener setup, not a
+    # per-run knob.
+    guest_proxy_tls_ports: str = "443,8090"
     retain_snapshots: bool = False
 
     @classmethod
@@ -96,7 +101,7 @@ class BridgeConfig:
             guest_proxy_script=env.get("HOSTMAP_PROXY_SCRIPT") or None,
             fleet_rules=env.get("OSWORLD_FLEET_RULES") or None,
             website_host_suffix=env.get("WEBSITE_HOST_SUFFIX", "127.0.0.1.nip.io"),
-            guest_proxy_ports=env.get("GUEST_HOSTMAP_PORTS", "80,8090"),
+            guest_proxy_ports=env.get("GUEST_HOSTMAP_PORTS", "80,443,8090"),
             retain_snapshots=env.get("OSWORLD_RETAIN_SNAPSHOTS") == "1",
         )
 
@@ -141,13 +146,23 @@ class Guest:
 
 def _install_guest_proxy(sandbox: Sandbox, config: BridgeConfig) -> None:
     """Upload the stdlib Host-mapping proxy + fleet routing file into the guest
-    and start it as root on :80 and :8090. No-op unless both env vars are
-    configured, so the pure boundary-layer path is untouched. Runs in a worker
-    thread."""
+    and start it as root on :80 (and :443/:8090 once a campaign CA is present).
+    No-op unless both env vars are configured, so the pure boundary-layer path
+    is untouched. Runs in a worker thread.
+
+    When the runtime file carries a `tls` section (see campaign_tls.py), the
+    campaign's leaf cert/key and CA cert are uploaded and the CA is installed
+    into both the guest's system trust store and Chrome's NSS database *before*
+    the proxy starts, so Chrome finds it already trusted at launch. Only
+    ca.crt/leaf.crt/leaf.key ever leave the host -- the CA private key
+    (`ca_key`, deliberately absent from the `tls` runtime section) never
+    reaches the guest.
+    """
     if not (config.guest_proxy_script and config.fleet_rules):
         return
     script = Path(config.guest_proxy_script).read_text()
-    rules = _guest_proxy_runtime_json(Path(config.fleet_rules).read_text())
+    raw_runtime_json = Path(config.fleet_rules).read_text()
+    rules = _guest_proxy_runtime_json(raw_runtime_json)
     sandbox.files.write("/opt/hostmap_proxy.py", script)
     sandbox.files.write("/opt/fleet_runtime.json", rules)
     sandbox.commands.run(
@@ -155,6 +170,50 @@ def _install_guest_proxy(sandbox: Sandbox, config: BridgeConfig) -> None:
         user="root",
         timeout=15,
     )
+
+    runtime = json.loads(raw_runtime_json)
+    tls = runtime.get("tls") if isinstance(runtime.get("tls"), dict) else None
+    tls_env = ""
+    if tls and tls.get("leaf_cert"):
+        for guest_name, runtime_key in (
+            ("leaf.crt", "leaf_cert"),
+            ("leaf.key", "leaf_key"),
+            ("ca.crt", "ca_cert"),
+        ):
+            sandbox.files.write(
+                f"/opt/hostmap-tls/{guest_name}", Path(tls[runtime_key]).read_text()
+            )
+        # Trust install runs before the proxy starts below, so Chrome (started
+        # later, after the guest server responds ready) always sees the CA
+        # already installed. A missing certutil/nssdb or a failed
+        # update-ca-certificates must fail loudly here rather than silently
+        # leave Chrome untrusting: neither command backgrounds or swallows its
+        # exit code, so sandbox.commands.run's default foreground wait() raises
+        # CommandExitException on any non-zero exit and this function propagates it.
+        sandbox.commands.run(
+            "chmod 0700 /opt/hostmap-tls && chmod 0600 /opt/hostmap-tls/leaf.key && "
+            "install -m 0644 /opt/hostmap-tls/ca.crt "
+            "/usr/local/share/ca-certificates/osworld-campaign.crt && "
+            "update-ca-certificates >/dev/null",
+            user="root",
+            timeout=60,
+        )
+        sandbox.commands.run(
+            'certutil -d sql:/home/user/.pki/nssdb -A -t "C,," '
+            "-n osworld-campaign -i /opt/hostmap-tls/ca.crt",
+            user="user",
+            timeout=30,
+        )
+        tls_env = (
+            f"HOSTMAP_TLS_PORTS={config.guest_proxy_tls_ports} "
+            "HOSTMAP_TLS_CERT=/opt/hostmap-tls/leaf.crt "
+            "HOSTMAP_TLS_KEY=/opt/hostmap-tls/leaf.key "
+        )
+    # Without TLS material there is nothing listening on 443 to answer, so
+    # fall back to the pre-TLS port list rather than binding a port config
+    # advertises but the proxy can't yet serve securely.
+    ports = config.guest_proxy_ports if tls_env else "80,8090"
+
     # nip.io resolves site hosts to 127.0.0.1 from inside E2B sandboxes; if a
     # guest's DNS blocks it, fall back to enumerated /etc/hosts entries (the site
     # list is enumerable from the uploaded runtime file). Strip any :port from the
@@ -174,14 +233,28 @@ def _install_guest_proxy(sandbox: Sandbox, config: BridgeConfig) -> None:
                 user="root",
                 timeout=15,
             )
+    # Task 041 hardcodes a public GitLab host as a sslip.io address that
+    # resolves publicly (not to loopback), so the nip.io probe above can never
+    # detect it -- this alias must be routed to the guest proxy unconditionally,
+    # not gated on that probe's outcome. grep-gated on its own first alias so
+    # repeated installs of the same guest stay idempotent.
+    aliases = [str(a) for a in (runtime.get("gitlab") or {}).get("aliases") or []]
+    if aliases:
+        entry = "127.0.0.1 " + " ".join(aliases)
+        sandbox.commands.run(
+            f"grep -q '{aliases[0]}' /etc/hosts || echo '{entry}' >> /etc/hosts",
+            user="root",
+            timeout=15,
+        )
+
     sandbox.commands.run(
-        f"HOSTMAP_PORT={config.guest_proxy_ports} FLEET_RUNTIME_FILE=/opt/fleet_runtime.json "
+        f"HOSTMAP_PORT={ports} {tls_env}FLEET_RUNTIME_FILE=/opt/fleet_runtime.json "
         "python3 /opt/hostmap_proxy.py > /var/log/hostmap_proxy.log 2>&1",
         user="root",
         background=True,
         timeout=0,
     )
-    logger.info("guest Host-mapping proxy installed on :%s", config.guest_proxy_ports)
+    logger.info("guest Host-mapping proxy installed on :%s", ports)
 
 
 def _guest_proxy_runtime_json(rules_json: str) -> str:
@@ -196,7 +269,13 @@ def _guest_proxy_runtime_json(rules_json: str) -> str:
     safe = {
         "websites": {
             key: websites[key]
-            for key in ("traffic_token", "host_suffix", "public_host_suffix")
+            for key in (
+                "traffic_token",
+                "host_suffix",
+                "public_host_suffix",
+                "scheme",
+                "asset_url_map",
+            )
             if key in websites
         }
         | {
@@ -210,7 +289,15 @@ def _guest_proxy_runtime_json(rules_json: str) -> str:
         },
         "gitlab": {
             key: gitlab[key]
-            for key in ("traffic_token", "host", "url", "ingress_host", "port")
+            for key in (
+                "traffic_token",
+                "host",
+                "url",
+                "ingress_host",
+                "port",
+                "scheme",
+                "aliases",
+            )
             if key in gitlab
         },
     }
@@ -230,6 +317,7 @@ def _fleet_hostnames(rules_json: str, default_suffix: str) -> list[str]:
     gl = runtime.get("gitlab") or {}
     if gl.get("host"):
         hosts.append(gl["host"])
+    hosts.extend(str(alias) for alias in gl.get("aliases") or [])
     return hosts
 
 
