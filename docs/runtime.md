@@ -141,10 +141,16 @@ database with `certutil -d sql:/home/user/.pki/nssdb -A -t "C,," -n osworld-camp
 /opt/hostmap-tls/ca.crt` — Chrome on Linux consults NSS, not just the system store, so both
 installs are required for `isSecureContext` to be true. Neither install command backgrounds
 or swallows its exit code, so a missing `certutil`/nssdb or a failed `update-ca-certificates`
-raises rather than silently leaving Chrome untrusting. Guest TLS material (`leaf.crt`,
-`leaf.key`, `ca.crt`) lives at `/opt/hostmap-tls/`, root-owned, `leaf.key` additionally mode
-`0600`, so the agent-controlled `user` account driving Chrome can never read the private key
-even though its browser trusts the CA that issued it.
+raises rather than silently leaving Chrome untrusting; `_install_guest_proxy` wraps the
+`certutil` call so the resulting error spells out the requirement below rather than a bare
+non-zero exit. `certutil` requires the guest template to install `libnss3-tools` and to have
+already seeded `/home/user/.pki/nssdb` (e.g. via `certutil -N`) — **as of this writing,
+this repo's `template/template.ts` does neither**, so `GUEST_TEMPLATE` must point at a build
+that provides both, or the trust install (and every guest session once a `tls` section
+exists) fails loudly rather than falling back to plain HTTP or an untrusting Chrome. Guest TLS
+material (`leaf.crt`, `leaf.key`, `ca.crt`) lives at `/opt/hostmap-tls/`, root-owned,
+`leaf.key` additionally mode `0600`, so the agent-controlled `user` account driving Chrome can
+never read the private key even though its browser trusts the CA that issued it.
 
 `REQUESTS_CA_BUNDLE`/`SSL_CERT_FILE`, both pointed at `campaign_tls.py`'s `bundle.crt`
 (certifi's public root bundle with the campaign CA appended), keep Python's own HTTPS clients
@@ -188,6 +194,11 @@ sandbox is still running or the liveness check is inconclusive, `stop_campaign` 
 than guessing, naming the sandbox to kill manually. On a clean teardown, `remove_campaign_tls`
 deletes `services/.campaign-tls/` and the `tls` runtime section along with the rest of the
 campaign's state.
+
+Status: everything above is implemented and covered by unit tests against faked sandboxes; the
+guest-side half (trust install, guest proxy TLS termination, `isSecureContext`) has not yet been
+exercised against a live guest — that live verification, and priced inference on top of it, are
+separate, unrun roadmap tasks.
 
 ## Snapshots
 
