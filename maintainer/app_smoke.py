@@ -33,7 +33,12 @@ ASSETS = ROOT / "tasks" / "assets"
 # task 067 `musescore <score>`, task 079 `wpp <deck>`, task 092 `blender`,
 # task 107 `kicad <project>`, tasks 103/104 `freecad`.
 APPS = {
-    "musescore": (ASSETS / "task_067" / "music_init.mscz", "MuseScore"),
+    # MuseScore 4 titles its score window after the score itself, and once its
+    # startup dialogs are suppressed that is the only window it opens - there
+    # is no "MuseScore Studio" window left to match on. Matching the score name
+    # is the stronger check anyway: it says the pinned input opened, not just
+    # that the application is up.
+    "musescore": (ASSETS / "task_067" / "music_init.mscz", "music_init"),
     # WPS Presentation titles its window "<file> - Presentation"; "WPS" appears
     # only on the tab strip inside the window, never in the WM title.
     "wpp": (ASSETS / "task_079" / "nexachain_pitch_template.pptx", "Presentation"),
@@ -45,10 +50,12 @@ APPS = {
 DISPLAY_ENV = {"DISPLAY": ":0"}
 # Time for the application to finish painting its document after its window is
 # mapped; a screenshot taken the instant wmctrl sees the title catches a blank
-# frame and proves nothing. WPS Presentation maps its window in ~19s but is
-# still at "Opening: ... 40%" on task 079's 3.3 MB deck 20s later, and
-# FreeCAD maps an unpainted window well before it has drawn anything.
-SETTLE_S = 45
+# frame and proves nothing. Measured on task 079's 3.3 MB deck: WPS
+# Presentation maps its window ~19s after launch and is still showing
+# "Opening: ... 40%" at 64s, with all 26 slides painted by ~105s. FreeCAD
+# likewise maps an unpainted window well before it has drawn anything. 90s of
+# settle puts the recorded screenshot past both.
+SETTLE_S = 90
 # Window titles that mean a first-run/licence dialog is still on screen.
 FIRST_RUN_MARKERS = ("setup", "welcome", "wizard", "license", "licence", "agreement")
 DESKTOP = "/home/user/Desktop"

@@ -366,17 +366,48 @@ export const template = Template({ fileContextPath: filesDir })
     'libreoffice-registrymodifications.xcu',
     '/home/user/.config/libreoffice/4/user/registrymodifications.xcu',
   )
-  // ---- MuseScore 4 first-run suppression (baked config) -------------------
-  // Fresh MuseScore 4 opens a first-launch setup wizard (language, playback,
-  // cloud) and a tours prompt. `hasCompletedFirstLaunchSetup=true` skips the
-  // wizard. This MuseScore4.ini is an initial, hand-written starter config,
-  // NOT yet captured from a running MuseScore 4 (unlike the genuinely
-  // guest-captured LibreOffice/VLC/REAPER configs below). The
-  // application-launcher smoke on a fresh guest, later in this plan, is the
-  // gate that forces a real capture-and-replace if any first-run dialog still
-  // appears.
+  // ---- MuseScore 4 first-run suppression (captured config) ---------------
+  // MuseScore4.ini is the file MuseScore Studio 4.6.5 itself wrote on a
+  // scratch sandbox of build 472f8e35 after its startup dialogs were answered
+  // once and it was quit with Ctrl+Q, copied verbatim. A diff of the ini
+  // before and after that session isolates three decisive keys:
+  //   `hasCompletedFirstLaunchSetup=true` skips the first-launch setup wizard
+  //     (language / playback / cloud);
+  //   `welcomeDialogShowOnStartup=false` is what "Don't show welcome dialog on
+  //     startup" on the "Enjoy free cloud storage" carousel writes;
+  //   `checkForUpdate=false` is Preferences > Update > "Check to see if a new
+  //     version of MuseScore Studio is available", and it is what stops the
+  //     modal "A new version of MuseScore Studio is available!" that otherwise
+  //     lands on top of the score a minute or so after launch.
+  // The first key was already here and was doing its job - no setup wizard was
+  // ever seen. The other two were found by the application-launcher smoke,
+  // which caught the update modal sitting over task 067's rendered score.
+  // `[cloud] clientId` is the per-install identifier MuseScore generated in
+  // that session; it is baked like WPS's `common\infoGUID` above, so every
+  // sandbox of this build shares it.
   .makeDir('/home/user/.config/MuseScore')
   .copy('MuseScore4.ini', '/home/user/.config/MuseScore/MuseScore4.ini')
+  // ---- FreeCAD 1.1 first-run suppression (captured config) ---------------
+  // Observed on a scratch sandbox of build 472f8e35: a fresh `freecad` draws a
+  // "Welcome to FreeCAD" first-start block (Language / Unit System /
+  // Navigation Style / Theme / Done) over its Start page. It is painted inside
+  // the application window rather than in a window of its own, so `wmctrl`
+  // shows nothing unusual and only a screenshot catches it.
+  // freecad-user.cfg is the user.cfg FreeCAD itself wrote after Done was
+  // clicked once on that guest and FreeCAD was closed through the window
+  // manager (it flushes preferences on a clean quit only - a SIGTERM leaves no
+  // file at all), copied verbatim. Diffing user.cfg before and after that
+  // click, the one preference that changes is
+  //   BaseApp/Preferences/Mod/Start -> FirstStart2024 = 0
+  // and the rest of the diff is window geometry. The 2024 suffix matters:
+  // `FirstStart`, `FirstTime` and `ShowOnStartup` were each set through
+  // FreeCAD's own parameter API on that same guest and none of them suppressed
+  // the block. Verified there: with the config directory wiped and only this
+  // file restored, `freecad` opens straight onto the ordinary Start page.
+  // FreeCAD regenerates system.cfg and FreeCAD.conf itself, so only user.cfg
+  // is baked.
+  .makeDir('/home/user/.config/FreeCAD/v1-1')
+  .copy('freecad-user.cfg', '/home/user/.config/FreeCAD/v1-1/user.cfg')
   // ---- REAPER first-run suppression (baked config) ------------------------
   // Fresh (unregistered) REAPER opens three windows on launch: the main
   // window, an "About REAPER" evaluation/license nag, and an "Error opening

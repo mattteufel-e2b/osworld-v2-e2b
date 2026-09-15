@@ -136,7 +136,7 @@ The template installs the following components whose terms you are responsible f
 
 | Component | Version | Licence |
 |---|---|---|
-| Google Chrome | `153.0.8010.47-1` in build `472f8e35-9b07-4e27-b97f-50742153bb76`; each build freezes whatever the Google repo served, recorded in the build's own `template/results/template-build.json` and committed for this build at `out/osworld-v2-evidence/template/template-build-472f8e35-9b07-4e27-b97f-50742153bb76.json` | [Google Chrome Terms of Service](https://www.google.com/chrome/terms/) |
+| Google Chrome | `153.0.8010.47-1` in build `cf428cd4-bdae-4280-8afc-5f0c08a11385`; each build freezes whatever the Google repo served, recorded in the build's own `template/results/template-build.json` and committed for this build at `out/osworld-v2-evidence/template/template-build-cf428cd4-bdae-4280-8afc-5f0c08a11385.json` | [Google Chrome Terms of Service](https://www.google.com/chrome/terms/) |
 | WPS Office for Linux | 11.1.0.11723 | [Kingsoft EULA](https://www.wps.com/eula/) (proprietary) |
 | REAPER | 7.79 | [Evaluation licence](https://www.reaper.fm/purchase.php); a paid licence is required for continued use |
 | Visual Studio Code | 1.91.1 | [Microsoft Software License](https://code.visualstudio.com/license); Microsoft's `.deb` build is proprietary, not the MIT-licensed `vscode` source |
