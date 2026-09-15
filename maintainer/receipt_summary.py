@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Reduce a no-model ladder receipt to the committable summary.
+"""Reduce a no-model ladder or agent campaign receipt to a committable summary.
 
 The full aggregate receipt is thousands of lines of per-task detail; only its
-identity, its gate fields and each task's path status belong in the repository
-as evidence. The full receipt stays under the gitignored out/osworld-v2-raw/.
+identity, its gate fields and each task's path status (or score, for an agent
+campaign) belong in the repository as evidence. The full receipt stays under
+the gitignored out/osworld-v2-raw/.
 """
 
 from __future__ import annotations
@@ -33,7 +34,15 @@ GATE_FIELDS = (
     "external_model_calls",
     "eval_model_call_attempts",
     "host_proxy_owned_for_campaign",
+    "attested_records",
+    "scored_tasks",
+    "mean_score",
+    "binary_accuracy",
+    "retried_task_ids",
+    "implicit_retries",
+    "model_usage",
 )
+PER_TASK_FIELDS = ("path_status", "score", "error_cause", "steps_taken")
 
 
 def _lookup(receipt: dict, field: str):
@@ -48,17 +57,27 @@ def _lookup(receipt: dict, field: str):
 
 
 def summarize(receipt: dict, source_name: str) -> dict:
-    summary: dict = {"kind": "no-model-ladder-summary", "source_receipt": source_name}
+    # The no-model ladder writes evaluation_mode into its own summary block;
+    # an agent campaign receipt (runner/aggregate_agent.py) never does.
+    summary_block = receipt.get("summary")
+    no_model = isinstance(summary_block, dict) and "evaluation_mode" in summary_block
+    kind = "no-model-ladder-summary" if no_model else "agent-run-summary"
+    summary: dict = {"kind": kind, "source_receipt": source_name}
     for field in IDENTITY_FIELDS + GATE_FIELDS:
         found, value = _lookup(receipt, field)
         if found:
             summary[field] = value
     records = receipt.get("records")
-    tasks = {
-        record["id"]: record.get("path_status")
-        for record in (records if isinstance(records, list) else [])
-        if isinstance(record, dict) and isinstance(record.get("id"), str)
-    }
+    tasks: dict = {}
+    for record in records if isinstance(records, list) else []:
+        if not isinstance(record, dict) or not isinstance(record.get("id"), str):
+            continue
+        if "score" in record:
+            tasks[record["id"]] = {
+                key: record[key] for key in PER_TASK_FIELDS if key in record
+            }
+        else:
+            tasks[record["id"]] = record.get("path_status")
     summary["task_count"] = len(tasks)
     # Not "tasks": the source receipt uses that key for an integer count.
     summary["task_statuses"] = dict(sorted(tasks.items()))
