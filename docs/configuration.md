@@ -67,16 +67,17 @@ these judge settings. Fireworks M3 returned false positives on four of five blan
 controls even with reasoning disabled; its successful agent image calls do not validate it as
 a judge.
 
-The campaign receipt records `model_usage` per role (`agent`, `judge`, `simulator`): each role
-carries `calls`, `input_tokens`, `output_tokens`, and `unmeasured_calls`, and the campaign
-receipt sums them under `summary.model_usage`.
+Each per-task receipt records `model_usage` per role (`agent`, `judge`, `simulator`): each role
+carries `calls`, `input_tokens`, `output_tokens`, and `unmeasured_calls`. The campaign receipt
+sums those per-task roles under `summary.model_usage`.
 
 Before creating rollout guests, the coordinator checks a text answer, reads random digits from
 an image, and checks the selected tasks' LLM simulator configurations through upstream's own
-clients; the text-answer check accepts any verdict upstream's own parser accepts (the first
-alphabetic token decides YES, and digit answers are compared after stripping non-digit
-characters). You can run that
-check before starting the service fleets as well:
+clients. The text-answer check sends upstream's own binary system prompt and accepts any verdict
+upstream's own parser accepts, where the first alphabetic token of the reply decides YES. The
+image check compares the model's reply against the digits rendered, after stripping every
+non-digit character from that reply. You can run these checks before starting the service fleets
+as well:
 
 ```bash
 (cd OSWorld-V2 && uv run --locked --extra full python ../runner/check_models.py \
@@ -94,6 +95,10 @@ Preflight verifies the actual upstream commit and exact adapter patches; on drif
 a run only if both fleets outlast the worst-case budget of its waves (every wave charged its full
 `AGENT_TASK_TIMEOUT_SECONDS`), and re-checks before each retry wave against the tasks that
 actually failed, skipping that wave when it no longer fits. Fleets are not renewed mid-run.
+The coordinator writes one `{attempt, task_ids}` entry per retry wave, and the campaign receipt
+republishes that ledger verbatim as `execution.retry_waves`. Point `RAW_DIR` at a fresh directory
+for every campaign: a previous run's `result.txt` under the same directory counts as a scored
+attempt and suppresses the retry of a task this run never scored.
 
 `run_agent_parallel.sh` stops both service fleets when an admitted run exits. A run rejected
 before admission (preflight, lifetime) leaves them running so the rejection can be acted on with

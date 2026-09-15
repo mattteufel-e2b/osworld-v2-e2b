@@ -48,7 +48,8 @@ This selects all 108 tasks. Add `--task-id 003` (repeat for more IDs) to select 
 
 This example uses Fireworks M3 for the agent and Claude Haiku 4.5 on AWS Bedrock (Mantle)
 for judging and user simulation. Export your keys in the shell. Any provider upstream
-supports works here; see the configuration doc for OpenAI.
+supports works here; see the
+[configuration doc](docs/configuration.md#judge-and-user-simulator-configuration) for OpenAI.
 
 ```bash
 export MODEL_API_KEY="..."                 # your Fireworks API key
