@@ -388,9 +388,11 @@ class GuestManagerTests(unittest.IsolatedAsyncioTestCase):
         class Files:
             def __init__(self):
                 self.writes = {}
+                self.write_kwargs = {}
 
-            def write(self, path, content):
+            def write(self, path, content, **kwargs):
                 self.writes[path] = content
+                self.write_kwargs[path] = kwargs
 
         class Commands:
             def __init__(self):
@@ -441,6 +443,28 @@ class GuestManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(writes["/opt/hostmap-tls/ca.crt"], "CACERT")
         self.assertNotIn("/opt/hostmap-tls/ca.key", writes)
         self.assertFalse(any("CAKEY" in str(value) for value in writes.values()))
+        # The TLS material is uploaded as root, not the SDK's default user, so
+        # there is no window where the agent-controlled `user` account owns
+        # the leaf private key.
+        for tls_path in (
+            "/opt/hostmap-tls/leaf.key",
+            "/opt/hostmap-tls/leaf.crt",
+            "/opt/hostmap-tls/ca.crt",
+        ):
+            self.assertEqual(sandbox.files.write_kwargs[tls_path].get("user"), "root")
+        trust_install = [c for c in calls if "update-ca-certificates" in c][0]
+        self.assertIn(
+            "chown root:root /opt/hostmap-tls /opt/hostmap-tls/leaf.crt "
+            "/opt/hostmap-tls/leaf.key /opt/hostmap-tls/ca.crt",
+            trust_install,
+        )
+        # chown must land before the chmod that locks the key down to 0600 --
+        # ownership established after the mode narrows would leave a window
+        # where a non-root-owned file already carries a "secure" mode.
+        self.assertLess(
+            trust_install.index("chown root:root"),
+            trust_install.index("chmod 0600 /opt/hostmap-tls/leaf.key"),
+        )
         self.assertTrue(any("chmod 0600 /opt/hostmap-tls/leaf.key" in c for c in calls))
         self.assertTrue(any("update-ca-certificates" in c for c in calls))
         self.assertTrue(

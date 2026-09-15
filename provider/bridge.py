@@ -156,7 +156,10 @@ def _install_guest_proxy(sandbox: Sandbox, config: BridgeConfig) -> None:
     the proxy starts, so Chrome finds it already trusted at launch. Only
     ca.crt/leaf.crt/leaf.key ever leave the host -- the CA private key
     (`ca_key`, deliberately absent from the `tls` runtime section) never
-    reaches the guest.
+    reaches the guest. The whole /opt/hostmap-tls tree is root-owned (leaf.key
+    additionally mode 0600) so the agent-controlled `user` account -- the one
+    driving Chrome -- can never read the leaf private key; the root-owned
+    guest proxy is the only thing that ever touches it.
     """
     if not (config.guest_proxy_script and config.fleet_rules):
         return
@@ -180,8 +183,15 @@ def _install_guest_proxy(sandbox: Sandbox, config: BridgeConfig) -> None:
             ("leaf.key", "leaf_key"),
             ("ca.crt", "ca_cert"),
         ):
+            # user="root" here (not the SDK's own default) so the upload
+            # itself never creates so much as a transient window where
+            # /opt/hostmap-tls or its contents are owned by the
+            # agent-controlled `user` account. The chown below is still
+            # explicit, on top of this, rather than relying on that default.
             sandbox.files.write(
-                f"/opt/hostmap-tls/{guest_name}", Path(tls[runtime_key]).read_text()
+                f"/opt/hostmap-tls/{guest_name}",
+                Path(tls[runtime_key]).read_text(),
+                user="root",
             )
         # Trust install runs before the proxy starts below, so Chrome (started
         # later, after the guest server responds ready) always sees the CA
@@ -190,7 +200,14 @@ def _install_guest_proxy(sandbox: Sandbox, config: BridgeConfig) -> None:
         # leave Chrome untrusting: neither command backgrounds or swallows its
         # exit code, so sandbox.commands.run's default foreground wait() raises
         # CommandExitException on any non-zero exit and this function propagates it.
+        #
+        # chown is explicit -- not left to whatever the write above defaulted
+        # to -- so the whole tree, leaf.key included, is unambiguously
+        # root-owned: a mode of 0600 protects nothing if the agent-controlled
+        # `user` account still owns the file.
         sandbox.commands.run(
+            "chown root:root /opt/hostmap-tls /opt/hostmap-tls/leaf.crt "
+            "/opt/hostmap-tls/leaf.key /opt/hostmap-tls/ca.crt && "
             "chmod 0700 /opt/hostmap-tls && chmod 0600 /opt/hostmap-tls/leaf.key && "
             "install -m 0644 /opt/hostmap-tls/ca.crt "
             "/usr/local/share/ca-certificates/osworld-campaign.crt && "
