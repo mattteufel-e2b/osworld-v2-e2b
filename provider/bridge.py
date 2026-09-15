@@ -215,12 +215,31 @@ def _install_guest_proxy(sandbox: Sandbox, config: BridgeConfig) -> None:
             user="root",
             timeout=60,
         )
-        sandbox.commands.run(
-            'certutil -d sql:/home/user/.pki/nssdb -A -t "C,," '
-            "-n osworld-campaign -i /opt/hostmap-tls/ca.crt",
-            user="user",
-            timeout=30,
-        )
+        # certutil ships in libnss3-tools, and /home/user/.pki/nssdb must
+        # already exist and be seeded (`certutil -N`) for -A to succeed.
+        # Neither is guaranteed by every guest template, so a failure here
+        # is turned into an explicit, actionable error instead of a bare
+        # CommandExitException -- it must still raise (no swallowing, no
+        # falling back to plain HTTP, no continuing with an untrusting
+        # Chrome), just with a message that says what the template is
+        # missing.
+        try:
+            sandbox.commands.run(
+                'certutil -d sql:/home/user/.pki/nssdb -A -t "C,," '
+                "-n osworld-campaign -i /opt/hostmap-tls/ca.crt",
+                user="user",
+                timeout=30,
+            )
+        except Exception as err:
+            raise RuntimeError(
+                "guest CA trust install failed: could not import the "
+                "campaign CA into /home/user/.pki/nssdb with certutil. "
+                "This guest template must provide libnss3-tools (for "
+                "certutil) and a seeded /home/user/.pki/nssdb NSS "
+                "database -- GUEST_TEMPLATE must point at a template "
+                "build that has both. Refusing to continue with an "
+                "untrusting guest Chrome."
+            ) from err
         tls_env = (
             f"HOSTMAP_TLS_PORTS={config.guest_proxy_tls_ports} "
             "HOSTMAP_TLS_CERT=/opt/hostmap-tls/leaf.crt "
