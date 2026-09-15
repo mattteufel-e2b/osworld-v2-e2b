@@ -288,6 +288,7 @@ def test_tls_listener_terminates_tls_and_plain_listener_redirects(tmp_path):
             )
         assert err.value.code == 301
         assert err.value.headers["Location"] == "https://mailhub.127.0.0.1.nip.io/x?y=1"
+        err.value.close()
     finally:
         tls_server.shutdown()
         plain_server.shutdown()
