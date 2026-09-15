@@ -966,6 +966,13 @@ class FleetRuntimePolicyTests(unittest.TestCase):
                 return "200"
             self.assertIn("13030", cmd)
             self.assertNotIn("/api/state", cmd)
+            # -X HEAD only overrides the method string; curl still waits for
+            # a body sized by Content-Length against HTTP/1.1 keep-alive
+            # nginx and hangs until timeout. -I (--head) is the only flag
+            # that tells curl not to expect a body at all.
+            self.assertIn("-I", cmd.split())
+            self.assertNotIn("-X", cmd)
+            self.assertNotIn("HEAD", cmd)
             return "HTTP/1.1 200 OK\r\nContent-Length: 7\r\n\r\n"
 
         with tempfile.TemporaryDirectory() as directory:

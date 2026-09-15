@@ -286,8 +286,7 @@ def _files_site_ready(sbx, port: int) -> bool:
         head = (
             fl.poll_cmd(
                 sbx,
-                f"curl -s -o /dev/null -D - -X HEAD "
-                f"'http://localhost:{port}/{relative}'",
+                f"curl -s -I 'http://localhost:{port}/{relative}'",
             )
             or ""
         )
