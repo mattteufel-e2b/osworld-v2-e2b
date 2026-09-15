@@ -21,6 +21,21 @@ The same script runs in two places, both reading the same runtime file:
   * guest-side: uploaded and started as root by the relay at session start
     (port 80 binds fine as root inside the guest).
 
+When `HOSTMAP_TLS_CERT`/`HOSTMAP_TLS_KEY` are set, the ports listed in
+`HOSTMAP_TLS_PORTS` (a subset of `HOSTMAP_PORT`) terminate TLS with that
+cert/key pair, and every other listed port stops proxying and instead answers
+every request with a portless `301 Location: https://<host><path>` redirect,
+so a guest's plain :80 lands on its own :443 -- with no cert/key configured,
+behaviour is unchanged. Absolute URLs and `Location` headers rewritten in
+response bodies pick up whichever scheme (http/https) the client actually
+used to reach this listener. GitLab task fixtures that hardcode a public
+GitLab host are routed here as alias hosts (`gitlab.aliases` in the runtime
+file); an alias rule carries `canonical_host` so GitLab's own canonical
+absolute URLs get rewritten back to the alias authority the client used
+instead of our real GitLab host. `/api/state` request bodies also get any
+dead upstream task-asset URL (`websites.asset_url_map`) rewritten to the
+fleet-served replacement before they are forwarded.
+
 Stdlib only, so it runs unchanged inside a guest sandbox.
 """
 
@@ -190,23 +205,29 @@ print(json.dumps(payload, separators=(",", ":")))
             sandbox.files.remove(request_path)
 
 
-def _rewrite_absolute_site_urls(payload: bytes, host: str, authority: str) -> bytes:
-    """Keep absolute URLs on the same listener the client used.
+def _rewrite_absolute_site_urls(
+    payload: bytes, host: str, authority: str, scheme: str = "http"
+) -> bytes:
+    """Keep absolute URLs on the same listener (authority) and scheme the client used.
 
     The service fleet's canonical URL is portless because guest browsers use
-    the root-owned proxy on port 80. The macOS host proxy listens on 8090, so
-    setup APIs that return an absolute activation URL must retain that port.
+    the root-owned proxy on port 80/443. The macOS host proxy listens on 8090,
+    so setup APIs that return an absolute activation URL must retain that
+    port. Once TLS is enabled, rewritten URLs must also switch to `https://`
+    to match the scheme the client actually used to reach this listener.
     """
-    if not host or not authority or authority == host:
+    if not host or not authority or (authority == host and scheme == "http"):
         return payload
-    target = f"http://{authority}/".encode()
+    target = f"{scheme}://{authority}/".encode()
     return payload.replace(f"http://{host}/".encode(), target).replace(
         f"https://{host}/".encode(), target
     )
 
 
-def _rewrite_location(value: str, host: str, authority: str) -> str:
-    return _rewrite_absolute_site_urls(value.encode(), host, authority).decode()
+def _rewrite_location(
+    value: str, host: str, authority: str, scheme: str = "http"
+) -> str:
+    return _rewrite_absolute_site_urls(value.encode(), host, authority, scheme).decode()
 
 
 def _load_rules() -> dict:
@@ -234,13 +255,40 @@ def _load_rules() -> dict:
             }
     gl = runtime.get("gitlab") or {}
     if gl.get("host") and gl.get("ingress_host"):
-        rules[gl["host"].lower()] = {
+        gitlab_rule = {
             "ingress_host": gl["ingress_host"],
             "traffic_token": gl.get("traffic_token"),
             "sandbox_id": gl.get("sandbox_id"),
             "port": gl.get("port"),
         }
+        rules[gl["host"].lower()] = gitlab_rule
+        # Task 041 opens a hardcoded public GitLab host; route it to ours and
+        # rewrite GitLab's canonical absolute URLs to the alias the client used.
+        for alias in gl.get("aliases") or []:
+            rules[str(alias).lower()] = {
+                **gitlab_rule,
+                "canonical_host": gl["host"].lower(),
+            }
     return rules
+
+
+def _load_asset_url_map() -> dict[bytes, bytes]:
+    """Dead task asset URLs -> fleet-served replacements (websites.asset_url_map)."""
+    try:
+        runtime = json.loads(RUNTIME_FILE.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+    mapping = (runtime.get("websites") or {}).get("asset_url_map") or {}
+    return {str(k).encode(): str(v).encode() for k, v in mapping.items()}
+
+
+def _map_asset_urls(body: bytes, path: str, mapping: dict[bytes, bytes]) -> bytes:
+    """Only stateful-site seeding (/api/state) carries task asset links."""
+    if not body or not mapping or not path.startswith("/api/state"):
+        return body
+    for old, new in mapping.items():
+        body = body.replace(old, new)
+    return body
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -250,17 +298,30 @@ class Handler(BaseHTTPRequestHandler):
         host = (self.headers.get("Host") or "").split(":")[0].lower()
         return _load_rules().get(host), host
 
+    def _scheme(self) -> str:
+        return "https" if isinstance(self.connection, ssl.SSLSocket) else "http"
+
     def _proxy(self):
+        if self.server.redirect_to_https:
+            host = (self.headers.get("Host") or "").split(":")[0]
+            self.send_response(301)
+            self.send_header("Location", f"https://{host}{self.path}")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         target, host = self._resolve()
         if target is None:
             self.send_error(502, f"no fleet route for Host {host!r}")
             return
+        scheme = self._scheme()
+        rewrite_host = target.get("canonical_host", host)
         ingress_host = target["ingress_host"]
         token = target.get("traffic_token")
         url = f"https://{ingress_host}{self.path}"
         incoming_authority = self.headers.get("Host") or host
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length) if length else None
+        body = _map_asset_urls(body or b"", self.path, _load_asset_url_map()) or None
 
         req = urllib.request.Request(url, data=body, method=self.command)
         for key, value in self.headers.items():
@@ -285,26 +346,32 @@ class Handler(BaseHTTPRequestHandler):
             )
             with response as resp:
                 payload = _rewrite_absolute_site_urls(
-                    resp.read(), host, incoming_authority
+                    resp.read(), rewrite_host, incoming_authority, scheme
                 )
                 self.send_response(resp.status)
                 for key, value in resp.headers.items():
                     if key.lower() in _HOP or key.lower() == "content-length":
                         continue
                     if key.lower() == "location":
-                        value = _rewrite_location(value, host, incoming_authority)
+                        value = _rewrite_location(
+                            value, rewrite_host, incoming_authority, scheme
+                        )
                     self.send_header(key, value)
                 self.send_header("Content-Length", str(len(payload)))
                 self.end_headers()
                 self.wfile.write(payload)
         except urllib.error.HTTPError as exc:
-            payload = _rewrite_absolute_site_urls(exc.read(), host, incoming_authority)
+            payload = _rewrite_absolute_site_urls(
+                exc.read(), rewrite_host, incoming_authority, scheme
+            )
             self.send_response(exc.code)
             for key, value in exc.headers.items():
                 if key.lower() in _HOP or key.lower() == "content-length":
                     continue
                 if key.lower() == "location":
-                    value = _rewrite_location(value, host, incoming_authority)
+                    value = _rewrite_location(
+                        value, rewrite_host, incoming_authority, scheme
+                    )
                 self.send_header(key, value)
             self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
@@ -321,6 +388,28 @@ class Handler(BaseHTTPRequestHandler):
 class ReusableThreadingHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = True
     request_queue_size = 128
+    redirect_to_https = False  # per-instance override set by make_server
+
+
+def make_server(
+    port: int,
+    tls: tuple[str, str] | None,
+    redirect_to_https: bool = False,
+) -> ReusableThreadingHTTPServer:
+    """Build one listener: plain HTTP, a TLS terminator, or an HTTPS-redirector.
+
+    `tls` is a (certfile, keyfile) pair; when given, the server's socket is
+    wrapped in a TLS context so it terminates HTTPS. `redirect_to_https` marks
+    a plain listener that must answer every request with a 301 to the same
+    path on `https://` instead of proxying it.
+    """
+    server = ReusableThreadingHTTPServer(("127.0.0.1", port), Handler)
+    server.redirect_to_https = redirect_to_https
+    if tls is not None:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(certfile=tls[0], keyfile=tls[1])
+        server.socket = context.wrap_socket(server.socket, server_side=True)
+    return server
 
 
 def main() -> int:
@@ -332,13 +421,34 @@ def main() -> int:
     # working from one process. Guest port 8080 is deliberately never in this
     # list: it is reserved by VLC's own baked Lua HTTP interface (see
     # FIDELITY.md), so the hostmap proxy must not double-book it.
+    #
+    # HOSTMAP_TLS_CERT/HOSTMAP_TLS_KEY name a leaf cert/key pair (see
+    # campaign_tls.py); when both are set, every port listed in
+    # HOSTMAP_TLS_PORTS (a subset of HOSTMAP_PORT) terminates TLS with that
+    # pair, and every other listed port answers only a portless 301 redirect
+    # to `https://<host><path>` so a guest's plain :80 lands on its own :443.
+    # With no cert/key configured, every port serves plain HTTP exactly as
+    # before -- required for the no-model validation ladder that runs ahead
+    # of TLS support landing.
     ports = [
         int(p) for p in os.environ.get("HOSTMAP_PORT", "80").split(",") if p.strip()
     ]
+    tls_ports = {
+        int(p) for p in os.environ.get("HOSTMAP_TLS_PORTS", "").split(",") if p.strip()
+    }
+    cert = os.environ.get("HOSTMAP_TLS_CERT")
+    key = os.environ.get("HOSTMAP_TLS_KEY")
+    tls_enabled = bool(cert and key)
     servers = []
     for port in ports:
         try:
-            servers.append(ReusableThreadingHTTPServer(("127.0.0.1", port), Handler))
+            servers.append(
+                make_server(
+                    port,
+                    tls=(cert, key) if tls_enabled and port in tls_ports else None,
+                    redirect_to_https=tls_enabled and port not in tls_ports,
+                )
+            )
         except OSError as exc:
             # Covers both PermissionError (needs elevation, e.g. :80 on macOS)
             # and EADDRINUSE (another process already owns the port): either way
