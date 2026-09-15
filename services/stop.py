@@ -9,9 +9,11 @@ import sys
 from pathlib import Path
 
 from e2b import Sandbox, SandboxQuery
+from e2b.exceptions import NotFoundException, SandboxNotFoundException
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import fleetlib as fl  # noqa: E402
+from campaign_tls import remove_campaign_tls as campaign_tls_remove  # noqa: E402
 from e2b_policy import require_campaign_id  # noqa: E402
 
 # Guests (agent_runner / provider/bridge.py's GuestManager._create) carry this
@@ -51,6 +53,17 @@ def list_campaign_targets(campaign: str) -> dict[str, str]:
     return targets
 
 
+def _sandbox_is_live(sandbox_id: str) -> bool | None:
+    """True/False when the API answered; None when the check was inconclusive."""
+    try:
+        Sandbox.connect(sandbox_id).get_info()
+        return True
+    except (NotFoundException, SandboxNotFoundException):
+        return False
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def stop_campaign(campaign: str, dry_run: bool = False) -> list[str]:
     runtime = fl.read_runtime()
     sections = {
@@ -58,16 +71,34 @@ def stop_campaign(campaign: str, dry_run: bool = False) -> list[str]:
         for section, value in runtime.items()
         if section in {"websites", "gitlab"} and isinstance(value, dict)
     }
-    mismatched = [
-        section
-        for section, value in sections.items()
-        if value.get("campaign_id") != campaign
-    ]
-    if mismatched:
+    foreign, legacy = [], []
+    for section, value in sections.items():
+        if "campaign_id" not in value:
+            legacy.append(section)
+        elif value.get("campaign_id") != campaign:
+            foreign.append(section)
+    if foreign:
         raise RuntimeError(
             "refusing to stop service runtime owned by another campaign: "
-            + ", ".join(sorted(mismatched))
+            + ", ".join(sorted(foreign))
         )
+    for section in legacy:
+        sandbox_id = sections[section].get("sandbox_id")
+        live = _sandbox_is_live(sandbox_id) if sandbox_id else False
+        if live is False:
+            fl.log(
+                f"legacy runtime {section} names absent sandbox {sandbox_id}; "
+                "removing the stale entry"
+            )
+            fl.delete_runtime_section(section, sandbox_id)
+            sections.pop(section)
+        else:
+            state = "is still running" if live else "could not be checked"
+            raise RuntimeError(
+                f"legacy runtime {section} names sandbox {sandbox_id}, which {state}; "
+                f"preserving it. Recover with: e2b sandbox kill {sandbox_id}  "
+                "(then rerun this command)"
+            )
 
     runtime_ids = {
         value["sandbox_id"]
@@ -131,6 +162,7 @@ def stop_campaign(campaign: str, dry_run: bool = False) -> list[str]:
         sandbox_id = value.get("sandbox_id")
         if sandbox_id:
             fl.delete_runtime_section(section, sandbox_id)
+    campaign_tls_remove()
     (fl.SERVICES_DIR / ".gitlab-token").unlink(missing_ok=True)
     print(
         f"stopped_service_sandboxes={service_count} "
