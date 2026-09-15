@@ -138,22 +138,23 @@ Trust is installed into the guest before Chrome ever starts: the CA cert is copi
 `/usr/local/share/ca-certificates/osworld-campaign.crt` and picked up by
 `update-ca-certificates` (system trust store), and separately imported into Chrome's own NSS
 database with `certutil -d sql:/home/user/.pki/nssdb -A -t "C,," -n osworld-campaign -i
-ca.crt` — Chrome on Linux consults NSS, not just the system store, so both installs are
-required for `isSecureContext` to be true. Neither install command backgrounds or swallows its
-exit code, so a missing `certutil`/nssdb or a failed `update-ca-certificates` raises rather than
-silently leaving Chrome untrusting. Guest TLS material (`leaf.crt`, `leaf.key`,
-`ca.crt`) lives at `/opt/hostmap-tls/`, root-owned, `leaf.key` additionally mode `0600`, so the
-agent-controlled `user` account driving Chrome can never read the private key even though its
-browser trusts the CA that issued it.
+/opt/hostmap-tls/ca.crt` — Chrome on Linux consults NSS, not just the system store, so both
+installs are required for `isSecureContext` to be true. Neither install command backgrounds
+or swallows its exit code, so a missing `certutil`/nssdb or a failed `update-ca-certificates`
+raises rather than silently leaving Chrome untrusting. Guest TLS material (`leaf.crt`,
+`leaf.key`, `ca.crt`) lives at `/opt/hostmap-tls/`, root-owned, `leaf.key` additionally mode
+`0600`, so the agent-controlled `user` account driving Chrome can never read the private key
+even though its browser trusts the CA that issued it.
 
 `REQUESTS_CA_BUNDLE`/`SSL_CERT_FILE`, both pointed at `campaign_tls.py`'s `bundle.crt`
 (certifi's public root bundle with the campaign CA appended), keep Python's own HTTPS clients
 working against both public endpoints and the campaign-signed fleet — `requests` (upstream's
 website-scheme probe, python-gitlab) and any stdlib `ssl` consumer trust both without separate
-configuration. `runner/common.sh`'s `export_fleet_wiring` reads `tls.bundle` out of
-`.runtime.json` to set both. The only three environment variables this plan introduces are
-`HOSTMAP_TLS_PORTS`, `HOSTMAP_TLS_CERT`, and `HOSTMAP_TLS_KEY`, consumed by `hostmap_proxy.py`
-itself.
+configuration. `runner/common.sh`'s `export_fleet_wiring` reads `tls.ca_cert`/`tls.bundle` out
+of `.runtime.json` into `OSWORLD_CA_CERT`/`OSWORLD_CA_BUNDLE` for the coordinator's own trust
+plumbing, then derives `REQUESTS_CA_BUNDLE`/`SSL_CERT_FILE` from the latter. The only
+environment variables `hostmap_proxy.py` itself reads for TLS are `HOSTMAP_TLS_PORTS`,
+`HOSTMAP_TLS_CERT`, and `HOSTMAP_TLS_KEY`.
 
 Task 026 depends on a Hugging Face-hosted zip whose upstream URL is dead. The websites
 launcher verifies the pinned local copy against a recorded sha256, uploads it into a
