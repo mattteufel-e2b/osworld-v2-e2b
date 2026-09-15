@@ -31,6 +31,9 @@ def _probe(text_answer, image_answer):
         def respond(self, question):
             return "blue"
 
+        def reset(self):
+            pass
+
     return generate, Sim
 
 
@@ -60,7 +63,11 @@ def test_probe_uses_small_judge_budget_and_task_simulator_config():
             assert config["knowledge"] != "private task knowledge"
 
         def respond(self, question):
+            assert self.was_reset
             return "blue"
+
+        def reset(self):
+            self.was_reset = True
 
     check_models(
         generate,
@@ -90,6 +97,9 @@ def test_probe_does_not_swallow_simulator_failure():
 
         def respond(self, question):
             raise RuntimeError("model not found")
+
+        def reset(self):
+            pass
 
     with pytest.raises(RuntimeError, match="model not found"):
         check_models(
@@ -148,6 +158,9 @@ def test_text_probe_carries_upstreams_binary_system_prompt():
 
         def respond(self, question):
             return "blue"
+
+        def reset(self):
+            pass
 
     check_models(
         generate, Sim, [], "probe.png", parse_verdict=_verdict, binary_system="SYS"

@@ -15,6 +15,7 @@ RUNNER_FILES = {
     "__init__.py",
     "agent_runner.py",  # one task: DesktopEnv(e2b) + upstream run_single_example
     "agents.py",  # the file customers edit
+    "bedrock_bearer.py",  # Runtime API-key transport for native evaluators
     "check_models.py",  # live upstream judge/simulator preflight
     "aggregate_agent.py",  # campaign receipt + gate
     "common.sh",  # paths, uv command, fail-closed env gates (no lifecycle code)

@@ -35,11 +35,14 @@ GATE_FIELDS = (
     "eval_model_call_attempts",
     "host_proxy_owned_for_campaign",
     "attested_records",
+    "expected_tasks",
+    "invalid_task_ids",
     "scored_tasks",
     "mean_score",
     "binary_accuracy",
     "retried_task_ids",
     "implicit_retries",
+    "retry_history_valid",
     "model_usage",
 )
 PER_TASK_FIELDS = ("path_status", "score", "error_cause", "steps_taken")

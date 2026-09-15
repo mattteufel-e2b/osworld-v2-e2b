@@ -22,6 +22,13 @@ def prepare(manifest_path: Path, worker_dir: Path) -> str:
     if len(task_ids) != len(set(task_ids)):
         raise ValueError("agent manifest contains duplicate task ids")
 
+    # Validate every task before removing any evidence from the directory.
+    for task_id in task_ids:
+        if (worker_dir / f"task_{task_id}").exists() or any(
+            path.is_dir() for path in worker_dir.glob(f"task_{task_id}_retry_*")
+        ):
+            raise ValueError("task results already exist; use a fresh RAW_DIR")
+
     worker_dir.mkdir(parents=True, exist_ok=True)
     for task_id in task_ids:
         for pattern in (

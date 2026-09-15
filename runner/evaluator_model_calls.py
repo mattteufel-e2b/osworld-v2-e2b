@@ -12,12 +12,26 @@ records only the integers in ``response.usage``, attributed to whichever role
 from __future__ import annotations
 
 import importlib
+import json
+import logging
+import os
+from datetime import datetime, timezone
+from pathlib import Path
 from contextvars import ContextVar
 from functools import wraps
 from typing import Callable
 
 ROLES = ("agent", "judge", "simulator")
 _WRAPPED_MARKER = "_osworld_usage_wrapped"
+TOKEN_FIELDS = (
+    "input_tokens",
+    "output_tokens",
+    "cached_input_tokens",
+    "cache_creation_input_tokens",
+    "cache_creation_5m_input_tokens",
+    "cache_creation_1h_input_tokens",
+    "reasoning_output_tokens",
+)
 
 
 def require_response(result: str) -> str:
@@ -46,20 +60,27 @@ class EvaluatorModelCallTracker:
         self.user_sim_successes = 0
         self._role = ContextVar("osworld_model_role", default="agent")
         self._usage = {
-            role: {"calls": 0, "input": 0, "output": 0, "unmeasured": 0}
+            role: {"calls": 0, "unmeasured": 0, **dict.fromkeys(TOKEN_FIELDS, 0)}
             for role in ROLES
         }
+        self._audit_dir = os.environ.get("OSWORLD_MODEL_USAGE_LOG_DIR")
 
     @property
     def usage(self) -> dict:
-        """Per-role token counts. Tokens are None when nothing was measured."""
+        """Per-role totals; token fields are None when nothing was measured.
+
+        Input includes cache reads and writes. Cache fields are subsets of
+        input; the TTL fields are subsets of cache creation. Reasoning is a
+        subset of output, never additional output. Absent SDK breakdowns are
+        counted as zero. Calls count SDK returns, including unmeasured streams;
+        raised requests are only recorded in the optional audit log.
+        """
         report = {}
         for role, bucket in self._usage.items():
             measured = bucket["calls"] - bucket["unmeasured"]
             report[role] = {
                 "calls": bucket["calls"],
-                "input_tokens": bucket["input"] if measured > 0 else None,
-                "output_tokens": bucket["output"] if measured > 0 else None,
+                **{key: bucket[key] if measured > 0 else None for key in TOKEN_FIELDS},
                 "unmeasured_calls": bucket["unmeasured"],
             }
         return report
@@ -83,29 +104,115 @@ class EvaluatorModelCallTracker:
 
         return invoke
 
-    def _capture(self, create: Callable) -> Callable:
+    def _audit(self, *, role, api, model, status, tokens):
+        """Append metadata only; never let audit I/O change model behavior.
+
+        Set OSWORLD_MODEL_USAGE_LOG_DIR before tracker construction to enable
+        model-usage-<pid>.jsonl. Each return or raised request gets one line;
+        errors and streams have no measured tokens and unknown billing.
+        """
+        if not self._audit_dir:
+            return
+        record = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "pid": os.getpid(),
+            "role": role,
+            "api": api,
+            "model": model if isinstance(model, str) else None,
+            "status": status,
+            "measured": tokens is not None,
+            **(tokens if tokens is not None else dict.fromkeys(TOKEN_FIELDS)),
+        }
+        try:
+            directory = Path(self._audit_dir)
+            directory.mkdir(parents=True, exist_ok=True)
+            path = directory / f"model-usage-{os.getpid()}.jsonl"
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+            with os.fdopen(fd, "a", encoding="utf-8") as log:
+                log.write(json.dumps(record, sort_keys=True) + "\n")
+        except OSError:
+            logging.getLogger(__name__).warning("Could not append model usage audit")
+
+    def _capture(self, create: Callable, api: str) -> Callable:
         """Wrap an SDK ``create`` so its usage block lands in the role bucket."""
 
         @wraps(create)
         def invoke(sdk_client, *args, **kwargs):
-            response = create(sdk_client, *args, **kwargs)
-            bucket = self._usage[self._role.get()]
+            role = self._role.get()
+            try:
+                response = create(sdk_client, *args, **kwargs)
+            except Exception:
+                self._audit(
+                    role=role,
+                    api=api,
+                    model=kwargs.get("model"),
+                    status="error",
+                    tokens=None,
+                )
+                raise
+            bucket = self._usage[role]
             bucket["calls"] += 1
             usage = getattr(response, "usage", None)
-            # anthropic names them input/output; openai prompt/completion.
             inp = getattr(usage, "input_tokens", None)
             if inp is None:
                 inp = getattr(usage, "prompt_tokens", None)
             out = getattr(usage, "output_tokens", None)
             if out is None:
                 out = getattr(usage, "completion_tokens", None)
-            # A stream reports usage only as it is consumed, which is not ours
-            # to consume, so it is counted but never measured.
+            tokens = None
+            # Streams report usage as consumed. Do not consume or alter them.
             if kwargs.get("stream") or inp is None or out is None:
                 bucket["unmeasured"] += 1
             else:
-                bucket["input"] += int(inp)
-                bucket["output"] += int(out)
+                tokens = dict.fromkeys(TOKEN_FIELDS, 0)
+                tokens["input_tokens"] = int(inp)
+                tokens["output_tokens"] = int(out)
+                if api == "anthropic.messages":
+                    tokens["cached_input_tokens"] = int(
+                        getattr(usage, "cache_read_input_tokens", None) or 0
+                    )
+                    tokens["cache_creation_input_tokens"] = int(
+                        getattr(usage, "cache_creation_input_tokens", None) or 0
+                    )
+                    creation = getattr(usage, "cache_creation", None)
+                    for ttl in ("5m", "1h"):
+                        tokens[f"cache_creation_{ttl}_input_tokens"] = int(
+                            getattr(creation, f"ephemeral_{ttl}_input_tokens", None)
+                            or 0
+                        )
+                    # Anthropic's input_tokens excludes both cache categories.
+                    tokens["input_tokens"] += (
+                        tokens["cached_input_tokens"]
+                        + tokens["cache_creation_input_tokens"]
+                    )
+                else:
+                    input_details = getattr(usage, "input_tokens_details", None)
+                    if input_details is None:
+                        input_details = getattr(usage, "prompt_tokens_details", None)
+                    output_details = getattr(usage, "output_tokens_details", None)
+                    if output_details is None:
+                        output_details = getattr(
+                            usage, "completion_tokens_details", None
+                        )
+                    tokens["cached_input_tokens"] = int(
+                        getattr(input_details, "cached_tokens", None) or 0
+                    )
+                    # Mantle Responses exposes cache writes as an input subset.
+                    tokens["cache_creation_input_tokens"] = int(
+                        getattr(input_details, "cache_write_tokens", None) or 0
+                    )
+                    tokens["reasoning_output_tokens"] = int(
+                        getattr(output_details, "reasoning_tokens", None) or 0
+                    )
+                for key, value in tokens.items():
+                    bucket[key] += value
+            self._audit(
+                role=role,
+                api=api,
+                model=getattr(response, "model", None) or kwargs.get("model"),
+                status="completed",
+                tokens=tokens,
+            )
             return response
 
         setattr(invoke, _WRAPPED_MARKER, True)
@@ -119,6 +226,7 @@ class EvaluatorModelCallTracker:
         user_simulator=None,
         anthropic_messages=None,
         openai_completions=None,
+        openai_responses=None,
     ) -> None:
         """Wrap the evaluator/simulator entry points so this tracker sees usage.
 
@@ -136,18 +244,27 @@ class EvaluatorModelCallTracker:
             model_client = real_model_client
             llm_metrics = real_llm_metrics
             user_simulator = LLMUserSimulator
-        if anthropic_messages is None and openai_completions is None:
+        if all(
+            sdk is None
+            for sdk in (anthropic_messages, openai_completions, openai_responses)
+        ):
             anthropic_messages = _sdk_class("anthropic.resources.messages", "Messages")
             openai_completions = _sdk_class(
                 "openai.resources.chat.completions", "Completions"
             )
-        for sdk_class in (anthropic_messages, openai_completions):
+            openai_responses = _sdk_class("openai.resources.responses", "Responses")
+        # AnthropicBedrock uses the same Messages resource class.
+        for sdk_class, api in (
+            (anthropic_messages, "anthropic.messages"),
+            (openai_completions, "openai.chat.completions"),
+            (openai_responses, "openai.responses"),
+        ):
             # Wrapping happens on the class, which is process-global: a second
             # install must not stack a second wrapper on the same create.
             if sdk_class is not None and not getattr(
                 sdk_class.create, _WRAPPED_MARKER, False
             ):
-                sdk_class.create = self._capture(sdk_class.create)
+                sdk_class.create = self._capture(sdk_class.create, api)
         if user_simulator is not None:
             respond = user_simulator.respond
 

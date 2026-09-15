@@ -80,3 +80,20 @@ def test_agent_receipt_yields_agent_kind_with_model_usage_and_per_task_dicts():
         "steps_taken": 500,
     }
     assert "wall_clock_s" not in summary["task_statuses"]["001"]
+
+
+def test_summary_preserves_missing_tasks_and_retry_history_failure():
+    receipt = {
+        "execution": {"retry_history_valid": False, "implicit_retries": None},
+        "summary": {
+            "expected_tasks": 2,
+            "attested_records": 1,
+            "invalid_task_ids": {"002": ["missing-or-invalid-receipt"]},
+        },
+        "records": [{"id": "001", "path_status": "OK", "score": 1.0}],
+    }
+    summary = summarize(receipt, "agent.json")
+    assert summary["expected_tasks"] == 2
+    assert summary["invalid_task_ids"] == {"002": ["missing-or-invalid-receipt"]}
+    assert summary["retry_history_valid"] is False
+    assert summary["implicit_retries"] is None

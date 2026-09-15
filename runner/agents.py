@@ -22,19 +22,26 @@ The shipped kinds are upstream's own agents from the pinned checkout:
   m3      ``mm_agents.m3.M3Agent`` (MiniMax-M3; Anthropic Messages transport).
           ``M3_THINKING_MODE`` / ``M3_THINKING_BUDGET`` / ``M3_MAX_LLM_RETRIES``
           are read by the upstream agent itself.
+  gpt_response  ``mm_agents.gpt_response_api.GPTResponseAPIAgent`` using
+          native computer tools over Responses, routed to MODEL_BASE_URL.
 
 Generation defaults mirror upstream's ``run.py`` (prompt) and
 ``scripts/python/run_multienv_m3.py`` (m3); the runner's ``--max-tokens``,
 ``--temperature``, ``--top-p`` and ``--max-trajectory-length`` flags override
 them. Observation stays ``screenshot`` and actions ``pyautogui``: that is what
-the E2B guest exposes today. No secrets are logged.
+the E2B guest exposes today. Responses defaults to 16384 output tokens and
+medium reasoning; its upstream implementation does not apply temperature,
+top_p or max_trajectory_length, so those overrides are rejected. No secrets
+are logged.
 """
 
 from __future__ import annotations
 
+import importlib
 import os
 import sys
 import time
+from urllib.parse import urlsplit
 
 import requests
 from mm_agents.agent import PromptAgent
@@ -54,6 +61,7 @@ _GENERATION_DEFAULTS = {
         "temperature": 0.6,
         "max_trajectory_length": 10,
     },
+    "gpt_response": {"max_tokens": 16384, "reasoning_effort": "medium"},
 }
 _INTERACTION = {"action_space": "pyautogui", "observation_type": "screenshot"}
 
@@ -145,10 +153,56 @@ def build_m3_agent(model: str, settings: dict, client_password: str):
     )
 
 
+def build_gpt_response_agent(model: str, settings: dict, client_password: str, *, env):
+    # The native agent creates a new SDK client on every request. Bind only
+    # its module's client factory, preserving evaluator/simulator credentials
+    # and the native prompt, request, retry and action implementations.
+    from openai import OpenAI
+
+    native = importlib.import_module("mm_agents.gpt_response_api")
+    base_url = os.environ["MODEL_BASE_URL"]
+    api_key = os.environ["MODEL_API_KEY"]
+    host = urlsplit(base_url).hostname or ""
+    is_mantle = host.startswith("bedrock-mantle.") and host.endswith(".api.aws")
+
+    def model_client(**kwargs):
+        kwargs.update(base_url=base_url, api_key=api_key)
+        client = OpenAI(**kwargs)
+        if is_mantle:
+            create = client.responses.create
+
+            def mantle_create(**request):
+                # Mantle rejects the native agent's reasoning.summary field.
+                # Retain reasoning effort and every other request field. The
+                # captured SDK method retains the runner's usage tracking.
+                if isinstance(request.get("reasoning"), dict):
+                    request["reasoning"] = {
+                        key: value
+                        for key, value in request["reasoning"].items()
+                        if key != "summary"
+                    }
+                return create(**request)
+
+            client.responses.create = mantle_create
+        return client
+
+    native.OpenAI = model_client
+    return native.GPTResponseAPIAgent(
+        env=env,
+        model=model,
+        platform="ubuntu",
+        provider_name="e2b",
+        client_password=client_password,
+        **settings,
+    )
+
+
 # AGENT_KIND -> builder(model, settings, client_password). Add yours here.
+# gpt_response additionally needs the live DesktopEnv.
 AGENT_KINDS = {
     "prompt": build_prompt_agent,
     "m3": build_m3_agent,
+    "gpt_response": build_gpt_response_agent,
 }
 
 
@@ -159,6 +213,7 @@ def agent_settings(
     temperature: float | None = None,
     top_p: float | None = None,
     max_trajectory_length: int | None = None,
+    reasoning_effort: str | None = None,
 ) -> dict:
     """Resolve the generation settings for ``kind``: upstream defaults, with any
     explicitly given value overriding. The result is what the agent is built
@@ -168,18 +223,34 @@ def agent_settings(
             f"unknown AGENT_KIND {kind!r}; known kinds: {sorted(AGENT_KINDS)}"
         )
     settings = dict(_GENERATION_DEFAULTS.get(kind, {}))
+    if kind == "gpt_response":
+        if any(
+            value is not None for value in (temperature, top_p, max_trajectory_length)
+        ):
+            raise ValueError(
+                "gpt_response does not apply temperature, top_p or max_trajectory_length"
+            )
+    elif reasoning_effort is not None:
+        raise ValueError("reasoning_effort is only supported by gpt_response")
     overrides = {
         "max_tokens": max_tokens,
         "temperature": temperature,
         "top_p": top_p,
         "max_trajectory_length": max_trajectory_length,
+        "reasoning_effort": reasoning_effort,
     }
     settings.update({k: v for k, v in overrides.items() if v is not None})
     settings.update(_INTERACTION)
     return settings
 
 
-def build_agent(kind: str, *, model: str, settings: dict, client_password: str):
+def build_agent(
+    kind: str, *, model: str, settings: dict, client_password: str, env=None
+):
+    if kind == "gpt_response":
+        if env is None:
+            raise ValueError("gpt_response requires a live DesktopEnv")
+        return AGENT_KINDS[kind](model, settings, client_password, env=env)
     return AGENT_KINDS[kind](model, settings, client_password)
 
 

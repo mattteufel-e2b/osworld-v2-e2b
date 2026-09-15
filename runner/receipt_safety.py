@@ -128,10 +128,28 @@ def atomic_write_text(path: Path, text: str) -> None:
             staged_path.unlink(missing_ok=True)
 
 
-def atomic_write_json(path: Path, payload: dict) -> None:
+def atomic_write_json(path: Path, payload: dict | list) -> None:
     atomic_write_text(
         path, json.dumps(payload, indent=2, sort_keys=True, allow_nan=False) + "\n"
     )
+
+
+def read_retry_waves(path: Path) -> list[dict]:
+    """Absent ledger means no retries; unreadable or malformed history raises."""
+    try:
+        waves = json.loads(path.read_text())
+    except FileNotFoundError:
+        return []
+    if not isinstance(waves, list) or any(
+        not isinstance(wave, dict)
+        or type(wave.get("attempt")) is not int
+        or wave["attempt"] < 1
+        or not isinstance(wave.get("task_ids"), list)
+        or not all(isinstance(tid, str) and tid for tid in wave["task_ids"])
+        for wave in waves
+    ):
+        raise ValueError("invalid retry history")
+    return waves
 
 
 def positive_int_env(name: str) -> int | None:

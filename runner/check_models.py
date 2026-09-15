@@ -82,9 +82,9 @@ def check_models(
             "persona": None,
             "instruction": None,
         }
-        require_response(
-            simulator_class(probe_config).respond("What is your favorite color?")
-        )
+        simulator = simulator_class(probe_config)
+        simulator.reset()
+        require_response(simulator.respond("What is your favorite color?"))
 
 
 def main() -> int:
@@ -94,6 +94,9 @@ def main() -> int:
     args = parser.parse_args()
     # Run from the pinned checkout in its full evaluator environment.
     sys.path.insert(0, str(Path.cwd()))
+    from bedrock_bearer import install as install_bedrock_bearer
+
+    install_bedrock_bearer()
     from desktop_env.evaluators.metrics import llm_metrics
     from desktop_env.evaluators.model_client import generate_text
     from desktop_env.user_simulator import LLMUserSimulator

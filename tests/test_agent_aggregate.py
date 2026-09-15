@@ -511,7 +511,7 @@ def test_retries_come_from_the_wave_list_not_stale_files(tmp_path):
 def test_malformed_retries_json_leaves_the_receipt_writable(tmp_path, monkeypatch):
     # A coordinator killed mid-write leaves a truncated retries.json behind.
     # The campaign receipt is the only durable record of the run, so a garbage
-    # retry ledger must degrade to "no retries", never crash the aggregate.
+    # retry ledger must be reported as unknown, never crash the aggregate.
     manifest, workers = _inputs(tmp_path)
     (workers / "retries.json").write_text("{not json")
     output = tmp_path / "campaign-receipt.json"
@@ -560,23 +560,32 @@ def test_malformed_retries_json_leaves_the_receipt_writable(tmp_path, monkeypatc
         ],
     )
 
-    aggregate_agent.main()
+    assert aggregate_agent.main() == 1
 
     receipt = json.loads(output.read_text())
-    assert receipt["execution"]["retried_task_ids"] == []
-    assert receipt["execution"]["retry_waves"] == []
+    assert receipt["execution"]["retry_history_valid"] is False
+    assert receipt["execution"]["implicit_retries"] is None
+    assert receipt["execution"]["retried_task_ids"] is None
+    assert receipt["execution"]["retry_waves"] is None
 
 
-def test_retry_waves_that_are_not_wave_objects_are_ignored(tmp_path):
-    # A well-formed JSON document that is not a list of wave objects is just as
-    # unusable as truncated bytes; both mean "nothing attested as retried".
+@pytest.mark.parametrize(
+    "ledger",
+    [
+        ["001", {"attempt": 1}],
+        [{"attempt": 1, "task_ids": [{}]}],
+        [{"attempt": True, "task_ids": ["001"]}],
+        {},
+    ],
+)
+def test_invalid_retry_waves_fail_the_gate_without_losing_receipt(tmp_path, ledger):
     manifest, workers = _inputs(tmp_path)
-    (workers / "retries.json").write_text(json.dumps(["001", {"attempt": 1}]))
-
-    run, _ok = _aggregate_defaults(manifest, workers)
-
-    assert run["execution"]["retry_waves"] == [{"attempt": 1}]
-    assert run["execution"]["retried_task_ids"] == []
+    (workers / "retries.json").write_text(json.dumps(ledger))
+    run, ok = _aggregate_defaults(manifest, workers)
+    assert not ok
+    assert run["execution"]["retry_history_valid"] is False
+    assert run["execution"]["retry_waves"] is None
+    assert run["execution"]["implicit_retries"] is None
 
 
 def test_execution_block_without_retries(tmp_path):
@@ -724,6 +733,17 @@ def _usage(calls: int, inp: int | None, out: int | None, unmeasured: int = 0) ->
     }
 
 
+def _legacy_usage_total(calls, inp, out, unmeasured=0):
+    return {
+        **_usage(calls, inp, out, unmeasured),
+        "cached_input_tokens": None,
+        "cache_creation_input_tokens": None,
+        "cache_creation_5m_input_tokens": None,
+        "cache_creation_1h_input_tokens": None,
+        "reasoning_output_tokens": None,
+    }
+
+
 def _aggregate_defaults(manifest: Path, workers: Path):
     return aggregate(
         manifest,
@@ -776,9 +796,9 @@ def test_model_usage_sums_per_role_across_attested_records(tmp_path):
 
     assert ok
     assert run["summary"]["model_usage"] == {
-        "agent": _usage(5, 1400, 260, unmeasured=1),
-        "judge": _usage(1, 50, 5),
-        "simulator": _usage(1, 7, 2),
+        "agent": _legacy_usage_total(5, 1400, 260, unmeasured=1),
+        "judge": _legacy_usage_total(1, 50, 5),
+        "simulator": _legacy_usage_total(1, 7, 2),
     }
 
 
@@ -795,7 +815,9 @@ def test_model_usage_tokens_stay_null_when_nothing_was_measured(tmp_path):
     run, ok = _aggregate_defaults(manifest, workers)
 
     assert ok
-    assert run["summary"]["model_usage"]["agent"] == _usage(2, None, None, unmeasured=2)
+    assert run["summary"]["model_usage"]["agent"] == _legacy_usage_total(
+        2, None, None, unmeasured=2
+    )
 
 
 def test_model_usage_is_null_when_no_record_carries_it(tmp_path):
@@ -805,3 +827,126 @@ def test_model_usage_is_null_when_no_record_carries_it(tmp_path):
 
     assert ok
     assert run["summary"]["model_usage"] is None
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_usage_includes_current_run_failed_and_replaced_attempts(tmp_path, failed):
+    manifest, workers = _inputs(tmp_path)
+    receipt = workers / "task_001.json"
+    record = json.loads(receipt.read_text())
+    record["model_usage"] = {"agent": _usage(2, 100, 20)}
+    if failed:
+        record["path_status"] = "ERROR"
+    receipt.write_text(json.dumps(record))
+    previous = {
+        **record,
+        "path_status": "ERROR",
+        "model_usage": {"agent": _usage(3, 200, 30)},
+    }
+    (workers / "task_001_before_retry_1.json").write_text(json.dumps(previous))
+    stale = {**previous, "run_nonce": "old-run"}
+    (workers / "task_001_before_retry_2.json").write_text(json.dumps(stale))
+    (workers / "task_001_before_retry_3.json").write_text("{truncated")
+    run, ok = _aggregate_defaults(manifest, workers)
+    assert ok is (not failed)
+    assert run["summary"]["model_usage"]["agent"] == _legacy_usage_total(5, 300, 50)
+
+
+def test_usage_rejects_current_receipt_from_another_run(tmp_path):
+    manifest, workers = _inputs(tmp_path)
+    receipt = workers / "task_001.json"
+    record = json.loads(receipt.read_text())
+    record.update(run_nonce="old-run", model_usage={"agent": _usage(2, 100, 20)})
+    receipt.write_text(json.dumps(record))
+    run, ok = _aggregate_defaults(manifest, workers)
+    assert not ok
+    assert run["summary"]["model_usage"] is None
+
+
+def test_cache_breakdowns_include_failed_and_replaced_attempts(tmp_path):
+    manifest, workers = _inputs(tmp_path)
+    receipt = workers / "task_001.json"
+    record = json.loads(receipt.read_text())
+    current = {
+        **_usage(2, 100, 20),
+        "cached_input_tokens": 40,
+        "cache_creation_input_tokens": 20,
+        "cache_creation_5m_input_tokens": 15,
+        "cache_creation_1h_input_tokens": 5,
+        "reasoning_output_tokens": 10,
+    }
+    record.update(path_status="ERROR", model_usage={"agent": current})
+    receipt.write_text(json.dumps(record))
+    previous = {
+        **record,
+        "model_usage": {
+            "agent": {
+                **_usage(1, 80, 10),
+                "cached_input_tokens": 30,
+                "cache_creation_input_tokens": 10,
+                "cache_creation_5m_input_tokens": 0,
+                "cache_creation_1h_input_tokens": 10,
+                "reasoning_output_tokens": 2,
+            }
+        },
+    }
+    (workers / "task_001_before_retry_1.json").write_text(json.dumps(previous))
+    stale = {**previous, "run_nonce": "old-run"}
+    (workers / "task_001_before_retry_2.json").write_text(json.dumps(stale))
+    run, ok = _aggregate_defaults(manifest, workers)
+    assert not ok
+    assert run["summary"]["model_usage"]["agent"] == {
+        **_usage(3, 180, 30),
+        "cached_input_tokens": 70,
+        "cache_creation_input_tokens": 30,
+        "cache_creation_5m_input_tokens": 15,
+        "cache_creation_1h_input_tokens": 15,
+        "reasoning_output_tokens": 12,
+    }
+
+
+@pytest.mark.parametrize("legacy_first", [False, True])
+def test_missing_legacy_breakdown_makes_only_that_total_unknown(legacy_first):
+    recent = {
+        "model_usage": {
+            "agent": {
+                **_usage(1, 100, 20),
+                "cached_input_tokens": 50,
+                "reasoning_output_tokens": 10,
+            }
+        }
+    }
+    legacy = {
+        "model_usage": {
+            "agent": {
+                **_usage(1, 100, 20),
+                "reasoning_output_tokens": 4,
+            }
+        }
+    }
+    records = [legacy, recent] if legacy_first else [recent, legacy]
+    totals = aggregate_agent._sum_model_usage(records)
+    assert totals["agent"]["input_tokens"] == 200
+    assert totals["agent"]["cached_input_tokens"] is None
+    assert totals["agent"]["reasoning_output_tokens"] == 14
+    assert totals["agent"]["cache_creation_input_tokens"] is None
+
+
+def test_unmeasured_and_zero_call_receipts_do_not_erase_measured_breakdowns():
+    records = [
+        {"model_usage": {"agent": _usage(0, None, None)}},
+        {"model_usage": {"agent": _usage(1, None, None, unmeasured=1)}},
+        {
+            "model_usage": {
+                "agent": {
+                    **_usage(1, 100, 20),
+                    "cached_input_tokens": 0,
+                }
+            }
+        },
+    ]
+    totals = aggregate_agent._sum_model_usage(records)
+    assert totals["agent"]["calls"] == 2
+    assert totals["agent"]["unmeasured_calls"] == 1
+    assert totals["agent"]["cached_input_tokens"] == 0
+    assert totals["judge"]["cached_input_tokens"] is None

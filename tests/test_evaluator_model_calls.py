@@ -224,18 +224,33 @@ def test_sdk_usage_is_attributed_by_role():
         "calls": 1,
         "input_tokens": 10,
         "output_tokens": 3,
+        "cached_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation_5m_input_tokens": 0,
+        "cache_creation_1h_input_tokens": 0,
+        "reasoning_output_tokens": 0,
         "unmeasured_calls": 0,
     }
     assert usage["judge"] == {
         "calls": 1,
         "input_tokens": 10,
         "output_tokens": 3,
+        "cached_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation_5m_input_tokens": 0,
+        "cache_creation_1h_input_tokens": 0,
+        "reasoning_output_tokens": 0,
         "unmeasured_calls": 0,
     }
     assert usage["simulator"] == {
         "calls": 1,
         "input_tokens": 7,
         "output_tokens": 2,
+        "cached_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation_5m_input_tokens": 0,
+        "cache_creation_1h_input_tokens": 0,
+        "reasoning_output_tokens": 0,
         "unmeasured_calls": 0,
     }
 
@@ -257,6 +272,11 @@ def test_usage_reports_zero_calls_with_null_tokens_for_every_role(monkeypatch):
             "calls": 0,
             "input_tokens": None,
             "output_tokens": None,
+            "cached_input_tokens": None,
+            "cache_creation_input_tokens": None,
+            "cache_creation_5m_input_tokens": None,
+            "cache_creation_1h_input_tokens": None,
+            "reasoning_output_tokens": None,
             "unmeasured_calls": 0,
         }
         for role in ("agent", "judge", "simulator")
@@ -284,6 +304,11 @@ def test_response_without_usage_counts_as_unmeasured():
         "calls": 1,
         "input_tokens": None,
         "output_tokens": None,
+        "cached_input_tokens": None,
+        "cache_creation_input_tokens": None,
+        "cache_creation_5m_input_tokens": None,
+        "cache_creation_1h_input_tokens": None,
+        "reasoning_output_tokens": None,
         "unmeasured_calls": 1,
     }
 
@@ -303,6 +328,11 @@ def test_streaming_call_is_counted_but_not_measured():
         "calls": 1,
         "input_tokens": None,
         "output_tokens": None,
+        "cached_input_tokens": None,
+        "cache_creation_input_tokens": None,
+        "cache_creation_5m_input_tokens": None,
+        "cache_creation_1h_input_tokens": None,
+        "reasoning_output_tokens": None,
         "unmeasured_calls": 1,
     }
 
@@ -368,3 +398,203 @@ def test_install_without_sdks_still_reports_every_role(monkeypatch):
         llm_metrics=types.SimpleNamespace(generate_text=lambda *a, **k: "x"),
     )
     assert sorted(tracker.usage) == ["agent", "judge", "simulator"]
+
+
+def _install_sdk(tracker, **sdks):
+    model_client = SimpleNamespace(
+        generate_text=lambda *a, **k: "YES", generate_chat=lambda *a, **k: "YES"
+    )
+    tracker.install(
+        model_client=model_client,
+        llm_metrics=SimpleNamespace(generate_text=lambda *a, **k: "YES"),
+        **sdks,
+    )
+    return model_client
+
+
+def test_responses_usage_keeps_cached_and_reasoning_tokens_as_subsets():
+    tracker = _tracker_class()()
+
+    class Responses:
+        def create(self, **kwargs):
+            return _Resp(
+                _Usage(
+                    input_tokens=100,
+                    output_tokens=40,
+                    input_tokens_details=_Usage(cached_tokens=60),
+                    output_tokens_details=_Usage(reasoning_tokens=30),
+                )
+            )
+
+    _install_sdk(tracker, openai_responses=Responses)
+    response = Responses().create(model="sol", input="private prompt")
+    assert response.usage.input_tokens == 100
+    usage = tracker.usage["agent"]
+    assert usage["calls"] == 1
+    assert usage["input_tokens"] == 100
+    assert usage["output_tokens"] == 40
+    assert usage["cached_input_tokens"] == 60
+    assert usage["reasoning_output_tokens"] == 30
+    assert usage["cache_creation_input_tokens"] == 0
+
+
+def test_anthropic_cache_reads_and_writes_are_included_in_total_input():
+    tracker = _tracker_class()()
+
+    class Messages:
+        def create(self, **kwargs):
+            return _Resp(
+                _Usage(
+                    input_tokens=10,
+                    output_tokens=3,
+                    cache_read_input_tokens=60,
+                    cache_creation_input_tokens=30,
+                    cache_creation=_Usage(
+                        ephemeral_5m_input_tokens=20,
+                        ephemeral_1h_input_tokens=10,
+                    ),
+                )
+            )
+
+    class BedrockMessages(Messages):
+        pass
+
+    _install_sdk(tracker, anthropic_messages=Messages)
+    BedrockMessages().create()
+    usage = tracker.usage["agent"]
+    assert usage["input_tokens"] == 100
+    assert usage["output_tokens"] == 3
+    assert usage["cached_input_tokens"] == 60
+    assert usage["cache_creation_input_tokens"] == 30
+    assert usage["cache_creation_5m_input_tokens"] == 20
+    assert usage["cache_creation_1h_input_tokens"] == 10
+    assert usage["reasoning_output_tokens"] == 0
+
+
+def test_chat_usage_keeps_cache_and_reasoning_as_subsets():
+    tracker = _tracker_class()()
+
+    class Completions:
+        def create(self, **kwargs):
+            return _Resp(
+                _Usage(
+                    prompt_tokens=100,
+                    completion_tokens=40,
+                    prompt_tokens_details=_Usage(cached_tokens=60),
+                    completion_tokens_details=_Usage(reasoning_tokens=30),
+                )
+            )
+
+    _install_sdk(tracker, openai_completions=Completions)
+    Completions().create()
+    usage = tracker.usage["agent"]
+    assert usage["input_tokens"] == 100
+    assert usage["output_tokens"] == 40
+    assert usage["cached_input_tokens"] == 60
+    assert usage["reasoning_output_tokens"] == 30
+
+
+def test_default_sdk_discovery_includes_responses(monkeypatch):
+    module = _tracker_module()
+
+    class Responses:
+        def create(self, **kwargs):
+            return _Resp(_Usage(input_tokens=4, output_tokens=2))
+
+    def resolve(module, name):
+        return (
+            Responses
+            if (module, name) == ("openai.resources.responses", "Responses")
+            else None
+        )
+
+    monkeypatch.setattr(module, "_sdk_class", resolve)
+    tracker = module.EvaluatorModelCallTracker()
+    _install_sdk(tracker)
+    Responses().create()
+    assert tracker.usage["agent"]["input_tokens"] == 4
+
+
+def test_usage_audit_records_private_per_call_metadata_and_errors(
+    tmp_path, monkeypatch
+):
+    import json
+    import os
+    import stat
+
+    monkeypatch.setenv("OSWORLD_MODEL_USAGE_LOG_DIR", str(tmp_path / "audit"))
+    tracker = _tracker_class()()
+
+    class Responses:
+        def create(self, **kwargs):
+            if kwargs.get("fail"):
+                raise RuntimeError("SECRET provider detail")
+            return _Resp(_Usage(input_tokens=4, output_tokens=2))
+
+    model_client = _install_sdk(tracker, openai_responses=Responses)
+    model_client.generate_chat = tracker._tracked(
+        lambda: Responses().create(model="sol", input="SECRET prompt") and "answer"
+    )
+    model_client.generate_chat()
+    with pytest.raises(RuntimeError, match="SECRET"):
+        Responses().create(model="sol", fail=True)
+    Responses().create(model="sol", stream=True)
+    files = list((tmp_path / "audit").glob("model-usage-*.jsonl"))
+    assert len(files) == 1
+    assert stat.S_IMODE(files[0].stat().st_mode) == 0o600
+    raw = files[0].read_text()
+    assert "SECRET" not in raw
+    events = [json.loads(line) for line in raw.splitlines()]
+    assert len(events) == 3
+    assert [e["status"] for e in events] == ["completed", "error", "completed"]
+    assert [e["measured"] for e in events] == [True, False, False]
+    assert [e["role"] for e in events] == ["judge", "agent", "agent"]
+    assert events[0]["model"] == "sol"
+    assert events[0]["api"] == "openai.responses"
+    assert events[0]["pid"] == os.getpid()
+    assert events[0]["timestamp"]
+    assert events[0]["input_tokens"] == 4
+    assert events[1]["input_tokens"] is None
+    assert events[2]["input_tokens"] is None
+    assert tracker.usage["agent"]["calls"] == 1
+    assert tracker.usage["agent"]["unmeasured_calls"] == 1
+
+
+def test_usage_audit_failure_does_not_change_provider_result(
+    tmp_path, monkeypatch, caplog
+):
+    invalid_dir = tmp_path / "file"
+    invalid_dir.write_text("not a directory")
+    monkeypatch.setenv("OSWORLD_MODEL_USAGE_LOG_DIR", str(invalid_dir))
+    tracker = _tracker_class()()
+    Messages = _anthropic_messages()
+    _install_sdk(tracker, anthropic_messages=Messages)
+    assert Messages().create().usage.input_tokens == 10
+    assert tracker.usage["agent"]["input_tokens"] == 10
+    assert "usage audit" in caplog.text.lower()
+
+
+def test_responses_cache_writes_are_counted_without_adding_to_input_total():
+    tracker = _tracker_class()()
+
+    class Responses:
+        def create(self, **kwargs):
+            return _Resp(
+                _Usage(
+                    input_tokens=3000,
+                    output_tokens=40,
+                    input_tokens_details=_Usage(
+                        cached_tokens=600, cache_write_tokens=1971
+                    ),
+                    output_tokens_details=_Usage(reasoning_tokens=30),
+                )
+            )
+
+    _install_sdk(tracker, openai_responses=Responses)
+    Responses().create(model="sol")
+    usage = tracker.usage["agent"]
+    assert usage["input_tokens"] == 3000
+    assert usage["cached_input_tokens"] == 600
+    assert usage["cache_creation_input_tokens"] == 1971
+    assert usage["output_tokens"] == 40
+    assert usage["reasoning_output_tokens"] == 30

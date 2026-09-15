@@ -87,6 +87,7 @@ if [ "$AGENT_KIND" = "m3" ] && [[ ! "${M3_MAX_LLM_RETRIES:-}" =~ ^[0-9]+$ ]]; th
 fi
 export MODEL_API_KEY MODEL_BASE_URL MODEL AGENT_KIND MAX_STEPS
 export MAX_TOKENS TEMPERATURE TOP_P MAX_TRAJECTORY_LENGTH  # unset = upstream default
+export REASONING_EFFORT  # gpt_response only; unset = medium
 export ENABLE_RECORDING  # 1 = upstream --enable_recording (mp4 per task); unset = off
 export M3_THINKING_MODE M3_THINKING_BUDGET M3_MAX_LLM_RETRIES
 
@@ -204,7 +205,7 @@ PY
 # upstream default otherwise. (`${arr[@]+...}` keeps bash 3.2 happy under set -u.)
 generation_args=()
 for pair in MAX_TOKENS:--max-tokens TEMPERATURE:--temperature TOP_P:--top-p \
-    MAX_TRAJECTORY_LENGTH:--max-trajectory-length; do
+    MAX_TRAJECTORY_LENGTH:--max-trajectory-length REASONING_EFFORT:--reasoning-effort; do
     name="${pair%%:*}"
     if [ -n "${!name:-}" ]; then generation_args+=("${pair#*:}" "${!name}"); fi
 done
@@ -229,6 +230,15 @@ run_batch() {
         receipt="$RAW_DIR/workers/task_${task_id}.json"
         result_dir="$RAW_DIR/workers/task_${task_id}${ATTEMPT_SUFFIX:-}"
         log="$RAW_DIR/workers/task_${task_id}${ATTEMPT_SUFFIX:-}.log"
+        # Archive only the attempt being replaced, without leaving a duplicate
+        # in the current receipt slot if this wave is interrupted.
+        if [ -n "${ATTEMPT_SUFFIX:-}" ] && [ -f "$receipt" ]; then
+            if ! mv "$receipt" "$RAW_DIR/workers/task_${task_id}_before_retry_${attempt}.json"; then
+                echo "could not preserve task $task_id receipt; refusing its retry" >&2
+                batch_failed=1
+                continue
+            fi
+        fi
         rm -f "$receipt"
         # `exec` makes $! the worker itself rather than an intermediate shell,
         # so cancellation's `kill -TERM "$pid"` reaches uv (and the python it
@@ -311,16 +321,21 @@ for ((attempt=1; attempt <= AGENT_RETRY_ATTEMPTS; attempt++)); do
         echo "skipping retry attempt $attempt: fleets cannot outlast a ${#failed_rows[@]}-task retry wave" >&2
         break
     fi
-    python3 - "$RAW_DIR/workers/retries.json" "$attempt" "${failed_rows[@]}" <<'PY'
-import json, sys
-path, attempt, rows = sys.argv[1], int(sys.argv[2]), sys.argv[3:]
-try:
-    waves = json.load(open(path))
-except (FileNotFoundError, json.JSONDecodeError):
-    waves = []
+    if ! python3 - "$HERE" "$RAW_DIR/workers/retries.json" "$attempt" "${failed_rows[@]}" <<'PYLEDGER'
+import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from receipt_safety import atomic_write_json, read_retry_waves
+path, attempt, rows = Path(sys.argv[2]), int(sys.argv[3]), sys.argv[4:]
+waves = read_retry_waves(path)
 waves.append({"attempt": attempt, "task_ids": [row.split()[0] for row in rows]})
-json.dump(waves, open(path, "w"), indent=2)
-PY
+atomic_write_json(path, waves)
+PYLEDGER
+    then
+        echo "retry history could not be recorded; refusing to launch retry wave" >&2
+        overall=1
+        break
+    fi
 
     echo "retrying ${#failed_rows[@]} infrastructure/path failures (attempt $attempt)"
     overall=0
@@ -330,10 +345,6 @@ PY
     export ATTEMPT_SUFFIX
     for row in "${failed_rows[@]}"; do
         read -r task_id _ <<<"$row"
-        # Audit copy for humans reading the raw dir; the aggregate reads
-        # retries.json, never these _before_retry_ files.
-        cp "$RAW_DIR/workers/task_${task_id}.json" \
-            "$RAW_DIR/workers/task_${task_id}_before_retry_${attempt}.json" 2>/dev/null || true
         if [ "$task_id" = "082" ]; then
             retry_082_row="$row"
             continue

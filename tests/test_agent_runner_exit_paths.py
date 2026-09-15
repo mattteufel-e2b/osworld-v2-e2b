@@ -12,6 +12,8 @@ import signal
 import subprocess
 import sys
 import textwrap
+
+import pytest
 import time
 from pathlib import Path
 
@@ -33,6 +35,8 @@ def _fake_checkout(tmp_path: Path, run_single_body: str) -> Path:
             class DesktopEnv:
                 def __init__(self, **kwargs):
                     self.provider = _Provider()
+                def _get_obs(self):
+                    return {"screenshot": getattr(self, "screenshot", b"frame")}
                 def close(self):
                     pass
             """
@@ -256,3 +260,72 @@ def test_a_second_sigterm_during_teardown_cannot_cost_the_receipt(tmp_path):
     data = json.loads(receipt.read_text())
     assert data["error_cause"] == "interrupted"
     assert data["sandbox_id"] == "sbx-fake"
+
+
+@pytest.mark.parametrize("scored", [False, True])
+def test_missing_screenshot_is_retryable_only_before_scoring(tmp_path, scored):
+    checkout = _fake_checkout(
+        tmp_path,
+        f"""
+        from pathlib import Path
+        result = Path(result_dir)
+        (result / 'frame.png').write_bytes(b'frame')
+        if {scored!r}:
+            (result / 'result.txt').write_text('0.5')
+        env.screenshot = None
+        obs = env._get_obs()
+        (result / 'next.png').write_bytes(obs['screenshot'])
+    """,
+    )
+    process, receipt = _run(tmp_path, checkout, [])
+    _wait_for_exit(process)
+    data = json.loads(receipt.read_text())
+    assert data["error_type"] == "ConnectionError"
+    assert data["error_cause"] == ("evaluator-or-agent" if scored else "transport")
+    assert data["evaluator_ran"] is scored
+
+
+def test_valid_screenshot_reaches_the_upstream_loop_unchanged(tmp_path):
+    checkout = _fake_checkout(
+        tmp_path,
+        """
+        from pathlib import Path
+        obs = env._get_obs()
+        Path(result_dir, 'frame.png').write_bytes(obs['screenshot'])
+        Path(result_dir, 'result.txt').write_text('0.5')
+    """,
+    )
+    process, receipt = _run(tmp_path, checkout, [])
+    _wait_for_exit(process)
+    assert json.loads(receipt.read_text())["path_status"] == "OK"
+    assert (tmp_path / "raw/frame.png").read_bytes() == b"frame"
+
+
+def test_responses_constructor_gets_live_environment_and_failure_closes_it(tmp_path):
+    checkout = _fake_checkout(tmp_path, "raise AssertionError('loop must not run')")
+    (checkout / "agents.py").write_text(
+        "AGENT_KINDS = {'prompt': None, 'gpt_response': None}\n"
+        "def agent_settings(kind, **kw):\n    return {'reasoning_effort': kw['reasoning_effort']}\n"
+        "def build_agent(kind, **kw):\n"
+        "    assert kw['env'].provider.bridge.state()['sandbox_id'] == 'sbx-fake'\n"
+        "    raise RuntimeError('agent construction failed')\n"
+    )
+    env_path = checkout / "desktop_env/desktop_env.py"
+    env_path.write_text(
+        env_path.read_text().replace(
+            "def close(self):\n        pass",
+            "def close(self):\n        open('closed', 'w').close()",
+        )
+    )
+    process, receipt = _run(
+        tmp_path,
+        checkout,
+        ["--agent-kind", "gpt_response", "--reasoning-effort", "medium"],
+    )
+    _wait_for_exit(process)
+    assert receipt.exists(), process.communicate()
+    data = json.loads(receipt.read_text())
+    assert data["error_type"] == "RuntimeError"
+    assert data["sandbox_id"] == "sbx-fake"
+    assert data["agent_settings"]["reasoning_effort"] == "medium"
+    assert (checkout / "closed").exists()

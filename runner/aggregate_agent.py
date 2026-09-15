@@ -9,7 +9,7 @@ import math
 from datetime import datetime, timezone
 from pathlib import Path
 
-from receipt_safety import atomic_write_json, public_transport
+from receipt_safety import atomic_write_json, public_transport, read_retry_waves
 
 
 def _valid_score(value: object) -> bool:
@@ -26,10 +26,21 @@ def _sum_model_usage(records: list[dict]) -> dict | None:
 
     Old receipts predate token accounting; reporting zeros for them would read
     as "this campaign spent nothing" rather than "this was never measured".
+    Breakdowns are subsets of the input/output totals. A breakdown stays
+    unknown if any participating measured bucket lacks it; zero-call and
+    wholly unmeasured buckets do not erase known measured subtotals.
     """
     fields = ("calls", "input_tokens", "output_tokens", "unmeasured_calls")
+    breakdowns = (
+        "cached_input_tokens",
+        "cache_creation_input_tokens",
+        "cache_creation_5m_input_tokens",
+        "cache_creation_1h_input_tokens",
+        "reasoning_output_tokens",
+    )
     totals = {
-        role: dict.fromkeys(fields, 0) for role in ("agent", "judge", "simulator")
+        role: dict.fromkeys(fields + breakdowns, 0)
+        for role in ("agent", "judge", "simulator")
     }
     measured_any = False
     for record in records:
@@ -45,12 +56,29 @@ def _sum_model_usage(records: list[dict]) -> dict | None:
                 value = bucket.get(field)
                 if isinstance(value, int) and not isinstance(value, bool):
                     role_totals[field] += value
+            calls = bucket.get("calls", 0)
+            unmeasured = bucket.get("unmeasured_calls", 0)
+            if (
+                isinstance(calls, int)
+                and not isinstance(calls, bool)
+                and isinstance(unmeasured, int)
+                and not isinstance(unmeasured, bool)
+                and calls > unmeasured
+            ):
+                for field in breakdowns:
+                    value = bucket.get(field)
+                    if not isinstance(value, int) or isinstance(value, bool):
+                        role_totals[field] = None
+                    elif role_totals[field] is not None:
+                        role_totals[field] += value
     if not measured_any:
         return None
     for role_totals in totals.values():
         if role_totals["calls"] - role_totals["unmeasured_calls"] <= 0:
             role_totals["input_tokens"] = None
             role_totals["output_tokens"] = None
+            for field in breakdowns:
+                role_totals[field] = None
     return totals
 
 
@@ -193,6 +221,24 @@ def aggregate(
     sandbox_ids = [
         record["sandbox_id"] for record in records if record.get("sandbox_id")
     ]
+    # Spend includes failed rollouts and the attempts replaced by retries.
+    # The nonce and campaign checks exclude unrelated/stale receipts.
+    usage_records = list(records)
+    for task_id in expected_ids:
+        for path in worker_dir.glob(f"task_{task_id}_before_retry_*.json"):
+            try:
+                prior = json.loads(path.read_text())
+            except (OSError, ValueError):
+                continue
+            if isinstance(prior, dict) and prior.get("id") == task_id:
+                usage_records.append(prior)
+    usage_records = [
+        record
+        for record in usage_records
+        if record.get("run_nonce") == run_nonce
+        and record.get("campaign_id") == campaign_id
+        and record.get("id") in expected_ids
+    ]
     summary = {
         "tasks": len(records),
         "expected_tasks": len(expected_ids),
@@ -221,34 +267,20 @@ def aggregate(
         "binary_accuracy": (
             sum(score == 1.0 for score in scores) / len(scores) if scores else None
         ),
-        # Attested records only -- the spend of receipts that passed the gate --
-        # unlike the eval_model_* totals above, which sum every record.
-        "model_usage": _sum_model_usage(accepted_records),
+        "model_usage": _sum_model_usage(usage_records),
         "unique_sandboxes": len(set(sandbox_ids)),
         "all_recorded_sandboxes_unique": len(set(sandbox_ids)) == len(sandbox_ids),
     }
-    # run_agent_parallel.sh writes the wave's own task list to retries.json
-    # after each retry wave; that is the ground truth for what was retried,
-    # not a glob over receipt files that stale attempt files (or a retry that
-    # produced no receipt) would otherwise mislead.
-    # A missing or truncated retries.json (a coordinator killed mid-write, or
-    # no retry wave at all) must not cost the whole campaign its receipt.
-    retry_waves: list = []
-    retries_path = worker_dir / "retries.json"
+    # Corrupt history must not prevent publication or attest that no retries ran.
     try:
-        parsed = json.loads(retries_path.read_text())
-    except (OSError, json.JSONDecodeError):
-        parsed = None
-    if isinstance(parsed, list):
-        retry_waves = [wave for wave in parsed if isinstance(wave, dict)]
-    retried_task_ids = sorted(
-        {
-            tid
-            for wave in retry_waves
-            for tid in (
-                wave.get("task_ids") if isinstance(wave.get("task_ids"), list) else []
-            )
-        }
+        retry_waves = read_retry_waves(worker_dir / "retries.json")
+    except (OSError, ValueError):
+        retry_waves = None
+    retry_history_valid = retry_waves is not None
+    retried_task_ids = (
+        sorted({tid for wave in retry_waves for tid in wave["task_ids"]})
+        if retry_history_valid
+        else None
     )
     run = {
         "schema_version": 2,
@@ -286,14 +318,16 @@ def aggregate(
             "host_proxy_owned_for_campaign": True,
             "retried_task_ids": retried_task_ids,
             "retry_waves": retry_waves,
-            "implicit_retries": bool(retried_task_ids),
+            "implicit_retries": bool(retried_task_ids) if retry_history_valid else None,
+            "retry_history_valid": retry_history_valid,
             "no_model_coverage_enforced": no_model_coverage_enforced,
         },
         "records": records,
         "summary": summary,
     }
     ok = (
-        not invalid
+        retry_history_valid
+        and not invalid
         and len(records) == len(expected_ids)
         and attested == len(expected_ids)
         and len(sandbox_ids) == len(set(sandbox_ids)) == len(expected_ids)

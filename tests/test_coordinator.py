@@ -618,3 +618,125 @@ def test_task_082_worker_gets_the_literal_service_port(tmp_path):
     )
     _run_coordinator_recording(env)
     assert args_file.read_text().strip() == "OSWORLD_TASK_SERVICE_PORTS=3000:3000"
+
+
+@needs_free_hostmap_port
+def test_retry_ledger_write_failure_prevents_retry_launch(tmp_path):
+    env = _coordinator_env(tmp_path, fleetlib_case="  *fleetlib.py*) exit 0 ;;")
+    uv = tmp_path / "bin/uv"
+    uv.write_text(
+        uv.read_text().replace(
+            "*agent_runner.py*) exit 1 ;;",
+            '*agent_runner.py*) mkdir -p "$RAW_DIR/workers/retries.json"; exit 1 ;;',
+        )
+    )
+    result = subprocess.run(
+        ["bash", str(ROOT / "runner/run_agent_parallel.sh")],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=60,
+    )
+    workers = Path(env["RAW_DIR"], "workers")
+    assert result.returncode != 0
+    assert not (workers / "task_001_retry_1.log").exists()
+    assert Path(env["OUTPUT"]).exists()
+
+
+@needs_free_hostmap_port
+def test_pending_solo_retry_does_not_duplicate_its_receipt(tmp_path):
+    env = _coordinator_env(tmp_path, fleetlib_case="  *fleetlib.py*) exit 0 ;;")
+    env["AGENT_RETRY_CONCURRENCY"] = "1"
+    env["RUN_TASK_082_CONCURRENT"] = "1"
+    manifest = Path(env["AGENT_MANIFEST"])
+    data = json.loads(manifest.read_text())
+    data["tasks"] = [{"id": "082"}, {"id": "001"}]
+    manifest.write_text(json.dumps(data))
+    uv = tmp_path / "bin/uv"
+    uv.write_text(
+        uv.read_text().replace(
+            "*agent_runner.py*) exit 1 ;;",
+            """*agent_runner.py*)
+    while [ "$#" -gt 0 ]; do
+      if [ "$1" = "--output" ]; then shift; receipt="$1"; fi
+      shift
+    done
+    if [ -n "${ATTEMPT_SUFFIX:-}" ]; then
+      echo $$ > "$RAW_DIR/retry-started"
+      exec sleep 60
+    fi
+    echo '{"path_status":"ERROR","error_cause":"transport"}' > "$receipt"
+    exit 1 ;;""",
+        )
+    )
+    process = subprocess.Popen(
+        ["bash", str(ROOT / "runner/run_agent_parallel.sh")],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        _wait_for_file(Path(env["RAW_DIR"], "retry-started"))
+        workers = Path(env["RAW_DIR"], "workers")
+        assert (workers / "task_082.json").exists()
+        assert not (workers / "task_082_before_retry_1.json").exists()
+        assert not (workers / "task_001.json").exists()
+        assert json.loads((workers / "task_001_before_retry_1.json").read_text()) == {
+            "path_status": "ERROR",
+            "error_cause": "transport",
+        }
+    finally:
+        process.terminate()
+        process.communicate(timeout=20)
+
+
+@needs_free_hostmap_port
+def test_failed_receipt_archive_still_waits_for_running_workers(tmp_path):
+    env = _coordinator_env(tmp_path, fleetlib_case="  *fleetlib.py*) exit 0 ;;")
+    env["AGENT_RETRY_CONCURRENCY"] = "2"
+    manifest = Path(env["AGENT_MANIFEST"])
+    data = json.loads(manifest.read_text())
+    data["tasks"] = [{"id": "001"}, {"id": "002"}]
+    manifest.write_text(json.dumps(data))
+    _write_executable(
+        tmp_path / "bin/mv",
+        """#!/bin/sh
+case "$1" in
+  *task_002.json) exit 1 ;;
+  *) exec /bin/mv "$@" ;;
+esac
+""",
+    )
+    uv = tmp_path / "bin/uv"
+    uv.write_text(
+        uv.read_text().replace(
+            "*agent_runner.py*) exit 1 ;;",
+            """*agent_runner.py*)
+    while [ "$#" -gt 0 ]; do
+      if [ "$1" = "--output" ]; then shift; receipt="$1"; fi
+      shift
+    done
+    if [ -n "${ATTEMPT_SUFFIX:-}" ]; then
+      sleep 1
+      touch "$RAW_DIR/retry-completed"
+    fi
+    echo '{"path_status":"ERROR","error_cause":"transport"}' > "$receipt"
+    exit 1 ;;""",
+        )
+    )
+    result = subprocess.run(
+        ["bash", str(ROOT / "runner/run_agent_parallel.sh")],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=30,
+    )
+    assert result.returncode != 0
+    assert Path(env["RAW_DIR"], "retry-completed").exists()
+    workers = Path(env["RAW_DIR"], "workers")
+    assert (workers / "task_002.json").exists()
+    assert not (workers / "task_002_retry_1.log").exists()

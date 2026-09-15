@@ -37,6 +37,19 @@ export OSWORLD_EVAL_MODEL_API_KEY_ENV=AWS_MANTLE
 export OSWORLD_USER_SIM_MODEL=anthropic.claude-haiku-4-5
 ```
 
+For a Bedrock Runtime bearer key, select `bedrock_bearer` and use the exact Runtime
+model or inference-profile ID. The runner registers this backend through upstream's
+extension registry and preserves its Messages payloads, image handling, and token limits.
+For example, configure both roles with
+`OSWORLD_EVAL_MODEL_PROVIDER=bedrock_bearer`,
+`OSWORLD_USER_SIM_PROVIDER=bedrock_bearer`,
+`OSWORLD_EVAL_MODEL_NAME=global.anthropic.claude-haiku-4-5-20251001-v1:0`,
+`OSWORLD_USER_SIM_MODEL=global.anthropic.claude-haiku-4-5-20251001-v1:0`, and both
+`*_API_KEY_ENV` selectors set to `AWS_MANTLE`. Region selection uses
+`AWS_DEFAULT_REGION`, then `AWS_REGION`, then `us-east-1`. The endpoint is Bedrock
+Runtime for that region; the Mantle model IDs and endpoint do not apply to this backend.
+Model access must be enabled for the account independently of a valid bearer key.
+
 OpenAI remains available:
 
 ```bash
@@ -69,7 +82,18 @@ a judge.
 
 Each per-task receipt records `model_usage` per role (`agent`, `judge`, `simulator`): each role
 carries `calls`, `input_tokens`, `output_tokens`, and `unmeasured_calls`. The campaign receipt
-sums those per-task roles under `summary.model_usage`.
+sums measured usage from all current-run receipts, including failed and replaced retry
+attempts, under `summary.model_usage`; score validation does not filter spending totals.
+Input totals include cached reads and writes; `cached_input_tokens` and
+`cache_creation_input_tokens` are subsets, as are the five-minute/one-hour write
+breakdowns. `reasoning_output_tokens` is a subset of output. Missing breakdowns in
+older receipts remain unknown in aggregate totals. Responses API usage is measured
+alongside Anthropic Messages and OpenAI Chat Completions.
+
+Set `OSWORLD_MODEL_USAGE_LOG_DIR` to enable private per-process JSONL usage logs for
+live spending estimates. These record model, role, usage, and request outcome without
+prompts or responses. SDK-internal retries may have unknown billing; these logs and
+the final receipts do not enforce a provider dollar cap.
 
 Before creating rollout guests, the coordinator checks a text answer, reads random digits from
 an image, and checks the selected tasks' LLM simulator configurations through upstream's own
@@ -95,10 +119,13 @@ Preflight verifies the actual upstream commit and exact adapter patches; on drif
 a run only if both fleets outlast the worst-case budget of its waves (every wave charged its full
 `AGENT_TASK_TIMEOUT_SECONDS`), and re-checks before each retry wave against the tasks that
 actually failed, skipping that wave when it no longer fits. Fleets are not renewed mid-run.
-The coordinator writes one `{attempt, task_ids}` entry per retry wave, and the campaign receipt
-republishes that ledger verbatim as `execution.retry_waves`. Point `RAW_DIR` at a fresh directory
-for every campaign: a previous run's `result.txt` under the same directory counts as a scored
-attempt and suppresses the retry of a task this run never scored.
+The coordinator atomically records each planned `{attempt, task_ids}` retry wave before
+launching it and refuses the wave if recording fails. The campaign receipt includes the ledger
+as `execution.retry_waves`. Corrupt history sets `execution.retry_history_valid=false`, leaves
+retry fields null, and fails the receipt gate. Point `RAW_DIR` at a fresh directory for every
+campaign: preparation rejects existing task-result directories before deleting any evidence.
+Missing screenshots raise a transport failure after upstream exhausts its request retries;
+scored tasks remain ineligible for retry.
 
 `run_agent_parallel.sh` stops both service fleets when an admitted run exits. A run rejected
 before admission (preflight, lifetime) leaves them running so the rejection can be acted on with
@@ -118,6 +145,13 @@ receipts never look inside the agent.
 - `AGENT_KIND=prompt` is upstream's `PromptAgent` routed at any OpenAI-compatible
   chat-completions endpoint (`MODEL_BASE_URL`, `MODEL_API_KEY`, `MODEL` passed verbatim).
   `AGENT_KIND=m3` is upstream's MiniMax-M3 agent over its Anthropic Messages transport.
+- `AGENT_KIND=gpt_response` uses upstream's native GPT computer-use agent over Responses.
+  Set `MODEL_BASE_URL=https://bedrock-mantle.us-east-1.api.aws/openai/v1` and
+  `MODEL=openai.gpt-5.6-sol` for Bedrock. The adapter supplies `MODEL_API_KEY` to the
+  agent's client without changing evaluator credentials. Defaults are
+  `MAX_TOKENS=16384` and `REASONING_EFFORT=medium`; inactive temperature, top-p, and
+  trajectory-length overrides are rejected. Mantle requests omit the unsupported
+  `reasoning.summary` field while retaining reasoning effort and native action history.
 - To run your own, implement upstream's `reset()` / `predict(instruction, observation)`
   interface (see `OSWorld-V2/mm_agents/` for reference), put the class under `runner/` next to
   `agents.py` rather than inside the checkout (`setup.sh --restore` resets tracked files there),

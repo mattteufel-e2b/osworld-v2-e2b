@@ -39,6 +39,7 @@ lazy_module("easyocr")
 import lib_run_single  # noqa: E402
 import task_loader  # noqa: E402  (checkout-local; cwd is the pinned checkout)
 from agents import AGENT_KINDS, agent_settings, build_agent  # noqa: E402
+from bedrock_bearer import install as install_bedrock_bearer  # noqa: E402
 from desktop_env.desktop_env import DesktopEnv  # noqa: E402
 from evaluator_model_calls import EvaluatorModelCallTracker  # noqa: E402
 from receipt_safety import (  # noqa: E402
@@ -51,6 +52,16 @@ from receipt_safety import (  # noqa: E402
 
 def utc_now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+class AgentDesktopEnv(DesktopEnv):
+    def _get_obs(self):
+        observation = super()._get_obs()
+        # Upstream returns None after exhausting screenshot request retries.
+        # Raise at this boundary before its loop hides the loss as a TypeError.
+        if not observation["screenshot"]:
+            raise ConnectionError("guest screenshot unavailable after retries")
+        return observation
 
 
 class AgentTaskTimeout(BaseException):
@@ -176,6 +187,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--temperature", type=float, default=None)
     parser.add_argument("--top-p", type=float, default=None)
     parser.add_argument("--max-trajectory-length", type=int, default=None)
+    parser.add_argument("--reasoning-effort", default=None)
     parser.add_argument("--sleep-after-execution", type=float, default=3.0)
     # Upstream's --enable_recording: the guest records the screen with ffmpeg
     # for the whole rollout and the mp4 lands in the raw result dir. Off by
@@ -196,6 +208,7 @@ def main() -> int:
     run_nonce = os.environ.get("OSWORLD_RUN_NONCE")
     if not run_nonce:
         raise RuntimeError("OSWORLD_RUN_NONCE is required")
+    install_bedrock_bearer()
     evaluator_model_calls = EvaluatorModelCallTracker()
     evaluator_model_calls.install()
     exit_code = 0
@@ -247,15 +260,17 @@ def main() -> int:
             temperature=args.temperature,
             top_p=args.top_p,
             max_trajectory_length=args.max_trajectory_length,
+            reasoning_effort=args.reasoning_effort,
         )
         receipt["agent_settings"] = settings
-        agent = build_agent(
-            args.agent_kind,
-            model=args.model,
-            settings=settings,
-            client_password=args.client_password,
-        )
-        env = DesktopEnv(
+        if args.agent_kind != "gpt_response":
+            agent = build_agent(
+                args.agent_kind,
+                model=args.model,
+                settings=settings,
+                client_password=args.client_password,
+            )
+        env = AgentDesktopEnv(
             provider_name="e2b",
             os_type="Ubuntu",
             action_space="pyautogui",
@@ -267,6 +282,14 @@ def main() -> int:
             enable_proxy=False,
             force_disable_recording=not args.enable_recording,
         )
+        if args.agent_kind == "gpt_response":
+            agent = build_agent(
+                args.agent_kind,
+                model=args.model,
+                settings=settings,
+                client_password=args.client_password,
+                env=env,
+            )
         lib_run_single.run_single_example(
             agent,
             env,
