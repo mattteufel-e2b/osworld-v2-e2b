@@ -86,19 +86,29 @@ def stop_campaign(campaign: str, dry_run: bool = False) -> list[str]:
         sandbox_id = sections[section].get("sandbox_id")
         live = _sandbox_is_live(sandbox_id) if sandbox_id else False
         if live is False:
-            fl.log(
-                f"legacy runtime {section} names absent sandbox {sandbox_id}; "
-                "removing the stale entry"
-            )
-            fl.delete_runtime_section(section, sandbox_id)
+            if dry_run:
+                fl.log(
+                    f"legacy runtime {section} names absent sandbox {sandbox_id}; "
+                    "would remove the stale entry"
+                )
+            else:
+                fl.log(
+                    f"legacy runtime {section} names absent sandbox {sandbox_id}; "
+                    "removing the stale entry"
+                )
+                fl.delete_runtime_section(section, sandbox_id)
             sections.pop(section)
         else:
             state = "is still running" if live else "could not be checked"
-            raise RuntimeError(
+            message = (
                 f"legacy runtime {section} names sandbox {sandbox_id}, which {state}; "
                 f"preserving it. Recover with: e2b sandbox kill {sandbox_id}  "
                 "(then rerun this command)"
             )
+            if dry_run:
+                fl.log(f"[dry-run] {message}")
+            else:
+                raise RuntimeError(message)
 
     runtime_ids = {
         value["sandbox_id"]
