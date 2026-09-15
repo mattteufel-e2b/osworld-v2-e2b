@@ -53,6 +53,7 @@ PATCHED_TRACKED=(
     desktop_env/desktop_env.py
     desktop_env/providers/__init__.py
     scripts/python/run_multienv_m3.py
+    mm_agents/m3/parser.py
 )
 VENDORED=(
     "desktop_env/providers/e2b/provider.py:$PROVIDER_DIR/provider.py"
@@ -179,6 +180,23 @@ if m3.exists():
         assert count == 1, f"run_multienv_m3.py provider choices found {count}x, need exactly 1 (OSWorld-V2 moved?)"
         m3.write_text(src.replace(m3_anchor, m3_patched, 1))
         print("(d) run_multienv_m3.py: patched (accepts --provider_name e2b)")
+
+# (e) M3 parser: `super` is the X11 Super key ("win"), not macOS "command" ----
+# The active `key` branch shadows the module's own _NORMALIZE_KEY table; on
+# Linux PyAutoGUI has no "command" key and silently drops the press (sample
+# 2026-09-15, task 103). Narrow: one entry, neighbours unchanged.
+parser = dest / "mm_agents/m3/parser.py"
+if parser.exists():
+    src = parser.read_text()
+    key_anchor = '                "super_l": "win",\n                "super": "command",\n'
+    key_patched = '                "super_l": "win",\n                "super": "win",\n'
+    if key_patched in src:
+        print("(e) m3/parser.py super key: already applied")
+    else:
+        count = src.count(key_anchor)
+        assert count == 1, f"m3/parser.py key_conversion super entry found {count}x, need exactly 1 (OSWorld-V2 moved?)"
+        parser.write_text(src.replace(key_anchor, key_patched, 1))
+        print("(e) m3/parser.py: patched (super -> win on Linux)")
 
 EOF
 }

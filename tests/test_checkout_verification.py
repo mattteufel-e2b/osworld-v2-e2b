@@ -68,21 +68,7 @@ def test_verify_checkout_rejects_drift_without_modifying_it(tmp_path):
     assert subprocess.run(verify, capture_output=True).returncode != 0
 
 
-def test_setup_patches_the_m3_runner_provider_choices(tmp_path):
-    dest = tmp_path / "OSWorld-V2"
-    (dest / "scripts" / "python").mkdir(parents=True)
-    (dest / "desktop_env" / "providers").mkdir(parents=True)
-    (dest / "desktop_env" / "providers" / "__init__.py").write_text(
-        '    else:\n        raise NotImplementedError(f"{provider_name} not implemented!")'
-    )
-    (dest / "desktop_env" / "desktop_env.py").write_text(
-        'if self.provider_name in {"docker", "aws", "gcp", "azure", "aliyun", "volcengine"}:\n'
-        "if self.is_environment_used:\n"
-    )
-    (dest / "scripts" / "python" / "run_multienv_m3.py").write_text(
-        '        "--provider_name", type=str, default="aws", '
-        'choices=["aws", "virtualbox", "vmware", "docker", "azure"], help="Provider name"\n'
-    )
+def _apply_patches(dest: Path) -> None:
     script = (ROOT / "runner" / "setup.sh").read_text()
     body = script[
         script.index("apply_adapter_patches() {") : script.index(
@@ -96,15 +82,70 @@ def test_setup_patches_the_m3_runner_provider_choices(tmp_path):
         capture_output=True,
         text=True,
     )
+
+
+PINNED_PARSER_HEAD = "import re\n"
+PINNED_KEY_TABLE = (
+    "            key_conversion = {\n"
+    '                "page_down": "pagedown",\n'
+    '                "page_up": "pageup",\n'
+    '                "super_l": "win",\n'
+    '                "super": "command",\n'
+    '                "escape": "esc",\n'
+    "            }\n"
+)
+PINNED_INFEASIBLE = (
+    '    if "[INFEASIBLE]" in response:\n        return "[INFEASIBLE]", ["FAIL"]\n'
+)
+
+
+def _seed_minimal_checkout(dest: Path, parser_text: str, controller_text: str) -> None:
+    (dest / "scripts" / "python").mkdir(parents=True)
+    (dest / "desktop_env" / "providers").mkdir(parents=True)
+    (dest / "desktop_env" / "controllers").mkdir(parents=True)
+    (dest / "mm_agents" / "m3").mkdir(parents=True)
+    (dest / "desktop_env" / "providers" / "__init__.py").write_text(
+        '    else:\n        raise NotImplementedError(f"{provider_name} not implemented!")'
+    )
+    (dest / "desktop_env" / "desktop_env.py").write_text(
+        'if self.provider_name in {"docker", "aws", "gcp", "azure", "aliyun", "volcengine"}:\n'
+        "if self.is_environment_used:\n"
+    )
+    (dest / "scripts" / "python" / "run_multienv_m3.py").write_text(
+        'choices=["aws", "virtualbox", "vmware", "docker", "azure"]\n'
+    )
+    (dest / "mm_agents" / "m3" / "parser.py").write_text(parser_text)
+    (dest / "desktop_env" / "controllers" / "python.py").write_text(controller_text)
+
+
+def test_setup_patches_the_m3_runner_provider_choices(tmp_path):
+    dest = tmp_path / "OSWorld-V2"
+    _seed_minimal_checkout(
+        dest,
+        PINNED_PARSER_HEAD + PINNED_KEY_TABLE + PINNED_INFEASIBLE,
+        "data=payload, timeout=90)\n",
+    )
+    _apply_patches(dest)
     patched = (dest / "scripts" / "python" / "run_multienv_m3.py").read_text()
     assert (
         'choices=["aws", "virtualbox", "vmware", "docker", "azure", "e2b"]' in patched
     )
     # idempotent
-    subprocess.run(
-        ["bash", "-c", body + f'\napply_adapter_patches "{dest}"'],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+    _apply_patches(dest)
     assert patched == (dest / "scripts" / "python" / "run_multienv_m3.py").read_text()
+
+
+def test_setup_maps_m3_super_key_to_x11_win(tmp_path):
+    dest = tmp_path / "OSWorld-V2"
+    _seed_minimal_checkout(
+        dest,
+        PINNED_PARSER_HEAD + PINNED_KEY_TABLE + PINNED_INFEASIBLE,
+        "data=payload, timeout=90)\n",
+    )
+    _apply_patches(dest)
+    patched = (dest / "mm_agents" / "m3" / "parser.py").read_text()
+    assert '"super": "win",' in patched
+    assert '"super": "command"' not in patched
+    assert '"super_l": "win",' in patched  # neighbours untouched
+    _apply_patches(dest)  # idempotent
+    assert patched == (dest / "mm_agents" / "m3" / "parser.py").read_text()
