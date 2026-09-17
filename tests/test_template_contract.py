@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "runner"))
 from receipt_safety import RETRYABLE_ERROR_CAUSES  # noqa: E402
@@ -506,66 +508,158 @@ def test_openboard_snap_contract_maps_to_ubuntu_package_without_snapd():
     assert "unsupported snap command" in snap_compat
 
 
-def test_template_installs_musescore_4_with_the_task_launcher_name():
+# Every application installed from a vendor artifact rather than from Ubuntu's
+# archive, in the shape they all share: the file the build downloads and the
+# sha256 it is pinned at, the command name a task or evaluator invokes, and the
+# first-run config baked to the path that application reads plus the keys in it
+# that a before/after diff on a live guest proved decisive. The configs are
+# slimmed to those keys rather than committed as verbatim captures, so this
+# table is the only record of why each one is there.
+# (name, artifact, sha256, launcher, config, destination, decisive keys)
+VENDOR_APPLICATIONS = [
+    (
+        "musescore",  # task 067's score was written in MuseScore Studio 4
+        "MuseScore-Studio-4.6.5.253511702-x86_64.AppImage",
+        "193daa0ea18bcfa90a47145a842275b8069b7b2b8d153e562b15fab5fe50fcaf",
+        ".copy('musescore-launcher.sh', '/usr/local/bin/musescore'",
+        "MuseScore4.ini",
+        "/home/user/.config/MuseScore/MuseScore4.ini",
+        # setup wizard; "Enjoy free cloud storage"; the update-available modal
+        [
+            "hasCompletedFirstLaunchSetup=true",
+            "welcomeDialogShowOnStartup=false",
+            "checkForUpdate=false",
+        ],
+    ),
+    (
+        "wps-office",  # tasks 049/076/079/080/091 invoke wpp / wps / et
+        "wps-office_11.1.0.11723.XA_amd64.deb",
+        "fe6326210f69d94efdbf2728914d293036be391b93a614f58cd0e1ff1d4923b3",
+        "test -x /usr/bin/wpp && test -x /usr/bin/wps && test -x /usr/bin/et",
+        "wps-office.conf",
+        "/home/user/.config/Kingsoft/Office.conf",
+        # the EULA modal, then the "System Check" missing-font warning
+        [
+            "common\\AcceptedEULA=true",
+            "common\\system_check\\no_necessary_symbol_fonts=false",
+        ],
+    ),
+    (
+        "blender",  # task 092; userpref.blend is written at build time, not baked
+        "blender-4.5.14-linux-x64.tar.xz",
+        "9ba871ff2ecd36526b77432745980b7e6664ecd0c7ca11c48849073dcfe06da3",
+        "ln -sf /opt/blender/blender /usr/local/bin/blender",
+        None,
+        None,
+        [],
+    ),
+    (
+        "freecad",  # tasks 103/104, which grade through freecadcmd
+        "FreeCAD_1.1.3-Linux-x86_64-py311.AppImage",
+        "3a853eb69ee595f779f2255dbf80a765926981d8ff68903cefee4dfb03a8f5ef",
+        ".copy('freecad-launcher.sh', '/usr/local/bin/freecad'",
+        "freecad-user.cfg",
+        "/home/user/.config/FreeCAD/v1-1/user.cfg",
+        # `FirstStart`, `FirstTime` and `ShowOnStartup` were each tried on a
+        # live guest and none suppressed the in-window "Welcome to FreeCAD"
+        # block. Only the 2024-suffixed key does, so the suffix is the contract.
+        ['<FCBool Name="FirstStart2024" Value="0"/>'],
+    ),
+    (
+        "kicad",  # tasks 107/108; from task 107's own PPA, so no artifact to pin
+        None,
+        None,
+        "test -x /usr/bin/kicad",
+        "kicad-config",
+        "/home/user/.config/kicad/10.0",
+        # working_dir is whatever cwd KiCad was launched in and is where its
+        # file dialogs open; captured through the guest server it was
+        # /opt/osworld-server, which `user` cannot write and which tasks 107/108
+        # save files from. Both update nags are off because the ladder runs far
+        # longer than the launcher smoke. The library tables stop KiCad raising
+        # its own configure dialogs behind the Setup wizard.
+        [
+            '"working_dir": "/home/user"',
+            '"check_for_updates": false',
+            '"check_for_kicad_updates": false',
+            "/usr/share/kicad/template/sym-lib-table",
+            "/usr/share/kicad/template/fp-lib-table",
+            "/usr/share/kicad/template/design-block-lib-table",
+        ],
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "name, artifact, sha256, launcher, config, destination, decisive_keys",
+    VENDOR_APPLICATIONS,
+    ids=[row[0] for row in VENDOR_APPLICATIONS],
+)
+def test_template_pins_each_application_launcher_and_first_run_config(
+    name, artifact, sha256, launcher, config, destination, decisive_keys
+):
     template = (ROOT / "template" / "template.ts").read_text()
-    launcher = (ROOT / "template" / "files" / "musescore-launcher.sh").read_text()
-
-    assert "musescore3" not in template
-    assert not (ROOT / "template" / "files" / "MuseScore3.ini").exists()
-    assert "MuseScore-Studio-4.6.5.253511702-x86_64.AppImage" in template, (
-        "MuseScore 4.6.5 wrote task 067's score; pin that exact version"
-    )
-    assert (
-        "193daa0ea18bcfa90a47145a842275b8069b7b2b8d153e562b15fab5fe50fcaf" in template
-    )
-    assert "--appimage-extract" in template
-    assert ".copy('musescore-launcher.sh', '/usr/local/bin/musescore'" in template
-    assert "exec /opt/musescore/squashfs-root/AppRun" in launcher
-    # The captured first-run config has to land where MuseScore 4 reads it; the
-    # bare filename alone would still pass if the destination drifted.
-    assert (
-        ".copy('MuseScore4.ini', '/home/user/.config/MuseScore/MuseScore4.ini')"
-        in template
-    )
-
-
-def test_template_installs_wps_office_for_the_wpp_tasks():
-    template = (ROOT / "template" / "template.ts").read_text()
-    conf = (ROOT / "template" / "files" / "wps-office.conf").read_text()
 
     assert "<PASTE_SHA256_HERE>" not in template
-    assert "wps-office_11.1.0.11723.XA_amd64.deb" in template
-    assert (
-        "fe6326210f69d94efdbf2728914d293036be391b93a614f58cd0e1ff1d4923b3" in template
+    if artifact is not None:
+        assert re.fullmatch(r"[0-9a-f]{64}", sha256), name
+        assert artifact in template, name
+        assert sha256 in template, name
+    assert launcher in template, name
+    if config is None:
+        return
+    source = ROOT / "template" / "files" / config
+    assert source.exists(), name
+    # The bare filename alone would still pass if the destination drifted,
+    # which is the failure mode that matters: the file ships, nothing errors,
+    # and the dialog is back in front of the agent.
+    assert f".copy('{config}', '{destination}')" in template, name
+    paths = (
+        sorted(path for path in source.rglob("*") if path.is_file())
+        if source.is_dir()
+        else [source]
     )
+    baked = "\n".join(path.read_text() for path in paths)
+    for key in decisive_keys:
+        assert key in baked, f"{name}: {key}"
+
+
+def test_template_build_gates_the_applications_apt_cannot_be_trusted_for():
+    template = (ROOT / "template" / "template.ts").read_text()
+    musescore = (ROOT / "template" / "files" / "musescore-launcher.sh").read_text()
+    freecad = (ROOT / "template" / "files" / "freecad-launcher.sh").read_text()
+
+    # jammy's musescore3 is a different application from the MuseScore Studio 4
+    # that wrote task 067's score.
+    assert "musescore3" not in template
+    assert not (ROOT / "template" / "files" / "MuseScore3.ini").exists()
+    assert "'apt-get install -y musescore3 shotcut freecad openboard'" not in template
+    # No apt path may (re-)introduce FreeCAD: jammy's apt freecad 0.19 is the
+    # package the KiCad PPA's libocct 7.6 breaks, so FreeCAD must come from the
+    # AppImage only.
+    assert not _apt_lines_naming_freecad(template)
+    assert "--appimage-extract" in template
+    assert "exec /opt/musescore/squashfs-root/AppRun" in musescore
+    assert "exec /opt/freecad/squashfs-root/AppRun" in freecad
+    # Mutable sources: hold what apt could upgrade out from under a task.
     assert "apt-mark hold wps-office" in template
-    assert "libtiff5" in template
-    assert (
-        ".copy('wps-office.conf', '/home/user/.config/Kingsoft/Office.conf'" in template
-    )
-    assert conf.strip()
-    # The two keys WPS itself wrote when the EULA modal and the "System Check"
-    # missing-font warning were each dismissed once on a real guest.
-    assert "common\\AcceptedEULA=true" in conf
-    assert "common\\system_check\\no_necessary_symbol_fonts=false" in conf
-    # The .deb ships all three binaries the tasks invoke by name; the build must
-    # fail rather than ship a suite missing one of them.
-    assert "test -x /usr/bin/wpp && test -x /usr/bin/wps && test -x /usr/bin/et" in (
-        template
-    )
+    assert "apt-mark hold kicad" in template
+    assert "libtiff5" in template  # the bundled PDF engine links libtiff.so.5
+    assert "ppa:kicad/kicad-10.0-releases" in template  # task 107's own source
+    # tasks 103/104 grade by running `freecadcmd`, which apt FreeCAD supplied.
+    assert "ln -sfn /usr/local/bin/freecad /usr/local/bin/freecadcmd" in template
+    # Their extractor degrades silently to {"error": "numpy_unavailable"}, so
+    # the build must assert numpy under the AppImage's own bundled py311.
+    assert "freecadcmd -c 'import numpy;" in template
+    assert "grep -q NUMPY_OK" in template
 
 
-def test_template_installs_blender_lts_with_the_task_launcher_name():
+def test_blender_writes_its_own_userpref_and_leaves_no_cache_behind():
     template = (ROOT / "template" / "template.ts").read_text()
 
-    assert "blender-4.5.14-linux-x64.tar.xz" in template
-    assert (
-        "9ba871ff2ecd36526b77432745980b7e6664ecd0c7ca11c48849073dcfe06da3" in template
-    )
-    assert "ln -sf /opt/blender/blender /usr/local/bin/blender" in template
-    # Blender writes its own userpref.blend in background mode rather than the
-    # repo committing a 173 KB binary blob; `show_splash = False` is the one
-    # setting that differs from factory defaults, so it must stay on that line.
+    # Blender writes userpref.blend in background mode rather than the repo
+    # committing a 173 KB binary blob; `show_splash = False` is the one setting
+    # that differs from factory defaults, so it must stay on that line.
     assert "bpy.context.preferences.view.show_splash = False" in template
     assert "bpy.ops.wm.save_userpref()" in template
     assert "test -s /home/user/.config/blender/4.5/config/userpref.blend" in template
@@ -573,10 +667,9 @@ def test_template_installs_blender_lts_with_the_task_launcher_name():
     # behind, and build c324b7e4 shipped that directory and came up with a
     # colord polkit modal over the whole desktop on every sandbox. The first
     # version of this cleanup was `rmdir ... || true` - a no-op that removed
-    # nothing and failed nothing - so pin the asserting form: `rm -rf` takes the
-    # directory whatever wrote into it and `test ! -d` fails the build rather
-    # than shipping it again. Comment lines are dropped first because the
-    # comment above these commands has to quote the discarded `rmdir` form.
+    # nothing and failed nothing - so pin the asserting form. Comment lines are
+    # dropped first because the comment above these commands has to quote the
+    # discarded `rmdir` form.
     code = "\n".join(
         line for line in template.splitlines() if not line.lstrip().startswith("//")
     )
@@ -586,45 +679,6 @@ def test_template_installs_blender_lts_with_the_task_launcher_name():
         "'test ! -d /home/user/.cache',",
     ], cache_lines
     assert "rmdir" not in code
-
-
-def test_template_preinstalls_kicad_10_and_freecad_appimage_without_the_occt_conflict():
-    template = (ROOT / "template" / "template.ts").read_text()
-    launcher = (ROOT / "template" / "files" / "freecad-launcher.sh").read_text()
-
-    assert "ppa:kicad/kicad-10.0-releases" in template  # task 107's own source
-    assert "apt-mark hold kicad" in template
-    # Tasks 107/108 invoke `kicad` by name: the build asserts the binary rather
-    # than trusting the PPA install's exit status.
-    assert "test -x /usr/bin/kicad" in template
-    # The captured KiCad first-run config directory (the wizard is modal and the
-    # project passed on the command line never opens behind it).
-    assert ".makeDir('/home/user/.config/kicad/10.0')" in template
-    assert ".copy('kicad-config', '/home/user/.config/kicad/10.0')" in template
-    assert "'apt-get install -y musescore3 shotcut freecad openboard'" not in template
-    # No apt path may (re-)introduce FreeCAD: jammy's apt freecad 0.19 is the
-    # package the KiCad PPA's libocct 7.6 breaks, so FreeCAD must come from the
-    # AppImage only. (States the intent of the brief's positional substring
-    # assertion, which the mandated KiCad comment text cannot satisfy.)
-    assert not _apt_lines_naming_freecad(template)
-    assert "FreeCAD_1.1.3-Linux-x86_64-py311.AppImage" in template
-    assert (
-        "3a853eb69ee595f779f2255dbf80a765926981d8ff68903cefee4dfb03a8f5ef" in template
-    )
-    assert ".copy('freecad-launcher.sh', '/usr/local/bin/freecad'" in template
-    # The captured user.cfg that suppresses FreeCAD's in-window first-start
-    # block; only user.cfg is baked, and only at the v1-1 config path.
-    assert (
-        ".copy('freecad-user.cfg', '/home/user/.config/FreeCAD/v1-1/user.cfg')"
-        in template
-    )
-    assert "exec /opt/freecad/squashfs-root/AppRun" in launcher
-    # tasks 103/104 grade by running `freecadcmd`, which apt FreeCAD supplied.
-    assert "ln -sfn /usr/local/bin/freecad /usr/local/bin/freecadcmd" in template
-    # Their extractor degrades silently to {"error": "numpy_unavailable"}, so
-    # the build must assert numpy under the AppImage's own bundled py311.
-    assert "freecadcmd -c 'import numpy;" in template
-    assert "grep -q NUMPY_OK" in template
 
 
 def test_full_agent_coordinator_bounds_sandboxes_and_namespaces_task_service_ports():
