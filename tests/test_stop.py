@@ -171,7 +171,17 @@ def test_legacy_section_without_a_sandbox_id_is_treated_as_stale_and_removed(
     assert ("websites", None) in [c.args for c in delete.call_args_list]
 
 
-def test_dry_run_over_a_confirmed_absent_legacy_section_writes_nothing(tmp_path):
+@pytest.mark.parametrize(
+    ("is_live", "reported"),
+    [(False, ["g"]), (True, ["g", "old-w"]), (None, ["g", "old-w"])],
+    ids=["gone", "live", "unknown"],
+)
+def test_dry_run_over_a_legacy_section_never_raises_or_writes(
+    tmp_path, is_live, reported
+):
+    """Whatever the liveness check says -- gone, live, or inconclusive -- a dry
+    run only reports: it never persists the prune and never kills anything. A
+    legacy sandbox that is not confirmed gone is still listed as a target."""
     runtime = {
         "websites": {"sandbox_id": "old-w"},
         "gitlab": {"sandbox_id": "g", "campaign_id": "c"},
@@ -179,7 +189,7 @@ def test_dry_run_over_a_confirmed_absent_legacy_section_writes_nothing(tmp_path)
     with (
         patch.object(stop.fl, "SERVICES_DIR", tmp_path),
         patch.object(stop.fl, "read_runtime", return_value=runtime),
-        patch.object(stop, "_sandbox_is_live", return_value=False) as live,
+        patch.object(stop, "_sandbox_is_live", return_value=is_live) as live,
         patch.object(stop.fl, "delete_runtime_section") as delete,
         patch.object(
             stop, "list_campaign_targets", return_value={"g": stop.fl.WORKLOAD}
@@ -189,53 +199,9 @@ def test_dry_run_over_a_confirmed_absent_legacy_section_writes_nothing(tmp_path)
         stopped = stop.stop_campaign("c", dry_run=True)
 
     live.assert_called_once_with("old-w")
-    delete.assert_not_called()  # dry-run must never persist the prune
-    kill.assert_not_called()
-    assert stopped == ["g"]
-
-
-def test_dry_run_over_a_live_legacy_section_does_not_raise_or_write(tmp_path):
-    runtime = {
-        "websites": {"sandbox_id": "old-w"},
-        "gitlab": {"sandbox_id": "g", "campaign_id": "c"},
-    }
-    with (
-        patch.object(stop.fl, "SERVICES_DIR", tmp_path),
-        patch.object(stop.fl, "read_runtime", return_value=runtime),
-        patch.object(stop, "_sandbox_is_live", return_value=True) as live,
-        patch.object(stop.fl, "delete_runtime_section") as delete,
-        patch.object(
-            stop, "list_campaign_targets", return_value={"g": stop.fl.WORKLOAD}
-        ),
-        patch.object(stop.Sandbox, "kill") as kill,
-    ):
-        stop.stop_campaign("c", dry_run=True)  # must not raise
-
-    live.assert_called_once_with("old-w")
     delete.assert_not_called()
     kill.assert_not_called()
-
-
-def test_dry_run_over_an_inconclusive_legacy_section_does_not_raise_or_write(tmp_path):
-    runtime = {
-        "websites": {"sandbox_id": "old-w"},
-        "gitlab": {"sandbox_id": "g", "campaign_id": "c"},
-    }
-    with (
-        patch.object(stop.fl, "SERVICES_DIR", tmp_path),
-        patch.object(stop.fl, "read_runtime", return_value=runtime),
-        patch.object(stop, "_sandbox_is_live", return_value=None) as live,
-        patch.object(stop.fl, "delete_runtime_section") as delete,
-        patch.object(
-            stop, "list_campaign_targets", return_value={"g": stop.fl.WORKLOAD}
-        ),
-        patch.object(stop.Sandbox, "kill") as kill,
-    ):
-        stop.stop_campaign("c", dry_run=True)  # must not raise
-
-    live.assert_called_once_with("old-w")
-    delete.assert_not_called()
-    kill.assert_not_called()
+    assert stopped == reported
 
 
 def test_foreign_campaign_section_is_still_refused_alongside_a_legacy_section():

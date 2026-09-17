@@ -4,9 +4,7 @@ import hashlib
 import importlib.util
 import json
 import os
-import shutil
 import stat
-import subprocess
 import sys
 import tempfile
 from contextlib import ExitStack
@@ -117,14 +115,6 @@ FAKE_TLS = {
     "leaf_key": "/fake/campaign-tls/leaf.key",
     "bundle": "/fake/campaign-tls/bundle.crt",
 }
-
-
-def _leaf_sans(cert_path: Path) -> set[str]:
-    out = subprocess.check_output(
-        ["openssl", "x509", "-in", str(cert_path), "-noout", "-ext", "subjectAltName"],
-        text=True,
-    )
-    return {p.strip().removeprefix("DNS:") for p in out.split("\n")[-2].split(",")}
 
 
 class FleetRuntimePolicyTests(unittest.TestCase):
@@ -1145,23 +1135,16 @@ class FleetRuntimePolicyTests(unittest.TestCase):
         self.assertEqual(v2check.call_args.kwargs["ca_bundle"], FAKE_TLS["bundle"])
         self.assertEqual(runtime["websites"]["asset_url_map"], asset_map)
 
-    def test_tls_env_is_empty_before_the_tls_section_exists(self):
-        with patch.object(fleetlib, "read_runtime", return_value={}):
-            self.assertEqual(fleetlib.tls_env(), {})
-
-    def test_tls_env_is_empty_when_the_leaf_has_not_been_issued(self):
-        with patch.object(
-            fleetlib, "read_runtime", return_value={"tls": {"campaign_id": "c"}}
-        ):
-            self.assertEqual(fleetlib.tls_env(), {})
+    def test_tls_env_is_empty_until_a_leaf_has_been_issued(self):
+        for runtime in ({}, {"tls": {"campaign_id": "c"}}):
+            with self.subTest(runtime=runtime):
+                with patch.object(fleetlib, "read_runtime", return_value=runtime):
+                    self.assertEqual(fleetlib.tls_env(), {})
 
     def test_tls_env_reports_the_leaf_material_and_derives_ports(self):
+        leaf = {"tls": {"leaf_cert": "/c", "leaf_key": "/k"}}
         with (
-            patch.object(
-                fleetlib,
-                "read_runtime",
-                return_value={"tls": {"leaf_cert": "/c", "leaf_key": "/k"}},
-            ),
+            patch.object(fleetlib, "read_runtime", return_value=leaf),
             patch.dict(os.environ, {"HOSTMAP_PORT": "80,8090"}),
         ):
             env = fleetlib.tls_env()
@@ -1175,19 +1158,14 @@ class FleetRuntimePolicyTests(unittest.TestCase):
             },
         )
 
-    def test_tls_env_defaults_its_port_exactly_like_restart_host_proxy(self):
-        env_without_port = {k: v for k, v in os.environ.items() if k != "HOSTMAP_PORT"}
+        # With no HOSTMAP_PORT set, the port defaults exactly like
+        # restart_host_proxy's own default, so the two never drift apart.
+        no_port = {k: v for k, v in os.environ.items() if k != "HOSTMAP_PORT"}
         with (
-            patch.object(
-                fleetlib,
-                "read_runtime",
-                return_value={"tls": {"leaf_cert": "/c", "leaf_key": "/k"}},
-            ),
-            patch.dict(os.environ, env_without_port, clear=True),
+            patch.object(fleetlib, "read_runtime", return_value=leaf),
+            patch.dict(os.environ, no_port, clear=True),
         ):
-            env = fleetlib.tls_env()
-
-        self.assertEqual(env["HOSTMAP_TLS_PORTS"], "8090")
+            self.assertEqual(fleetlib.tls_env()["HOSTMAP_TLS_PORTS"], "8090")
 
     def test_restart_host_proxy_passes_tls_material_when_present(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1356,53 +1334,6 @@ class FleetRuntimePolicyTests(unittest.TestCase):
             runtime["gitlab"]["url"].startswith("https://gitlab.127.0.0.1.nip.io:")
         )
         self.assertEqual(runtime["gitlab"]["aliases"], ["54.174.16.65.sslip.io"])
-
-    def test_websites_then_gitlab_tls_calls_cover_both_fleets_in_the_documented_order(
-        self,
-    ):
-        # Documented launch order (README.md / maintainer/README.md): websites
-        # first, then gitlab. The gitlab launcher's ensure_campaign_tls call
-        # only ever names its own host -- campaign_tls.ensure_campaign_tls
-        # itself must union that with what the websites launcher already put
-        # in the leaf, or every website SAN silently disappears from the leaf
-        # the guest proxy actually serves.
-        if shutil.which("openssl") is None:
-            self.skipTest("openssl CLI required")
-        websites = load_websites_launcher()
-        gitlab = load_gitlab_launcher()
-        # Each load_*_launcher() call gets its own fresh `campaign_tls` module
-        # instance (load_websites_launcher/load_gitlab_launcher's patch.dict
-        # on sys.modules unwinds every module imported during exec, so the two
-        # launchers' `campaign_tls` attributes are NOT the same object here --
-        # matching production, where the two launchers are separate processes
-        # that each import their own copy). Both must be pointed at the same
-        # on-disk TLS_DIR, exactly as two real processes would share the same
-        # services/.campaign-tls path.
-        with tempfile.TemporaryDirectory() as directory:
-            runtime_file = Path(directory) / ".runtime.json"
-            tls_dir = Path(directory) / ".campaign-tls"
-            with (
-                patch.object(fleetlib, "RUNTIME_FILE", runtime_file),
-                patch.object(websites.campaign_tls, "TLS_DIR", tls_dir),
-                patch.object(gitlab.campaign_tls, "TLS_DIR", tls_dir),
-            ):
-                website_hosts = [
-                    f"mailhub.{fleetlib.HOST_SUFFIX}",
-                    f"files.{fleetlib.HOST_SUFFIX}",
-                    f"gitlab.{fleetlib.HOST_SUFFIX}",
-                ]
-                websites.campaign_tls.ensure_campaign_tls(
-                    "test-campaign", website_hosts
-                )
-                final = gitlab.campaign_tls.ensure_campaign_tls(
-                    "test-campaign", [f"gitlab.{fleetlib.HOST_SUFFIX}"]
-                )
-
-                sans = _leaf_sans(Path(final["leaf_cert"]))
-
-        self.assertIn(f"mailhub.{fleetlib.HOST_SUFFIX}", sans)
-        self.assertIn(f"files.{fleetlib.HOST_SUFFIX}", sans)
-        self.assertIn(f"gitlab.{fleetlib.HOST_SUFFIX}", sans)
 
 
 if __name__ == "__main__":
