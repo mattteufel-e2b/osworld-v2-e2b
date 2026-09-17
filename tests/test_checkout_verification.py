@@ -97,10 +97,18 @@ PINNED_KEY_TABLE = (
 PINNED_INFEASIBLE = (
     '    if "[INFEASIBLE]" in response:\n        return "[INFEASIBLE]", ["FAIL"]\n'
 )
+PINNED_NON_200_BRANCH = (
+    "                else:\n"
+    '                    logger.error("Failed to execute command. Status code: %d", response.status_code)\n'
+    '                    logger.info("Retrying to execute command.")\n'
+)
 PINNED_CONTROLLER = (
     "                response = requests.post(self.http_server + \"/execute\", headers={'Content-Type': 'application/json'},\n"
     "                                         data=payload, timeout=90)\n"
-    "    def run_python_script(self, script: str, timeout=90) -> Optional[Dict[str, Any]]:\n"
+    "                if response.status_code == 200:\n"
+    "                    return response.json()\n"
+    + PINNED_NON_200_BRANCH
+    + "    def run_python_script(self, script: str, timeout=90) -> Optional[Dict[str, Any]]:\n"
 )
 
 
@@ -199,4 +207,29 @@ def test_setup_extends_the_action_deadline_past_the_guest_kill(tmp_path):
         "def run_python_script(self, script: str, timeout=90)" in patched
     )  # untouched
     _apply_patches(dest)
+    assert patched == (dest / "desktop_env" / "controllers" / "python.py").read_text()
+
+
+def test_setup_stops_retrying_after_the_guest_reports_its_own_timeout(tmp_path):
+    dest = tmp_path / "OSWorld-V2"
+    _seed_minimal_checkout(
+        dest,
+        PINNED_PARSER_HEAD + PINNED_KEY_TABLE + PINNED_INFEASIBLE,
+        PINNED_CONTROLLER,
+    )
+    _apply_patches(dest)
+    patched = (dest / "desktop_env" / "controllers" / "python.py").read_text()
+    guard = 'if response.status_code == 500 and "timed out after" in response.text:'
+    assert guard in patched
+    # The guard gives up (break) instead of falling through to the retry.
+    after_guard = patched.index(guard)
+    assert patched.index("break", after_guard) < patched.index(
+        'logger.info("Retrying to execute command.")', after_guard
+    )
+    # A non-timeout non-200 still retries: the retry log line survives.
+    assert 'logger.info("Retrying to execute command.")' in patched
+    assert (
+        "def run_python_script(self, script: str, timeout=90)" in patched
+    )  # untouched
+    _apply_patches(dest)  # idempotent
     assert patched == (dest / "desktop_env" / "controllers" / "python.py").read_text()
