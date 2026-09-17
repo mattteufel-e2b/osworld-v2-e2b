@@ -226,8 +226,11 @@ export const template = Template({ fileContextPath: filesDir })
   // 076/080/091 invoke `wps`) -------------------------------------------------
   // Kingsoft ships only the current build (older build numbers return 403), so
   // the .deb is sha256-pinned at the recorded build and apt-mark held. The
-  // sha256 was computed from the download itself, twice: once inside a scratch
-  // sandbox and once from the build host, both 318,892,996 bytes. libtiff5 is
+  // sha256 was computed from the download itself twice - once inside a scratch
+  // sandbox, once from the build host - and the two hashes agree; that
+  // agreement is the proof the pin is right. 318,892,996 bytes is the size of
+  // the file written in the sandbox; the build host reported the same figure as
+  // the Content-Length of a `curl -sSIL`, not from a file on disk. libtiff5 is
   // required by the bundled PDF engine (libpdfmain.so links libtiff.so.5).
   // --no-install-recommends keeps ttf-mscorefonts-installer out (it fetches
   // from SourceForge at install time behind an interactive EULA); Carlito and

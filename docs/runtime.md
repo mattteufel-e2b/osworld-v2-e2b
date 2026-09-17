@@ -48,6 +48,13 @@ receipt's `applicationInventory` — Google Chrome 153.0.8010.47-1 and KiCad 10.
 Studio 4.6.5 and FreeCAD 1.1.3 AppImages under `/opt`, whose versions are pinned in
 `template/template.ts` and whose extracted AppImage payloads the same smoke listed.
 
+This recipe has a shelf life. Kingsoft serves only its current WPS build (older build numbers
+return 403) and the KiCad PPA serves whatever is current, so when either rotates, the pinned
+`curl -f` download or the held apt version stops being available and the template build hard-fails
+instead of silently installing something else. That fail-closed behaviour is intended — an already
+built image is immutable and unaffected — but a rebuild after a rotation needs the artifact
+re-pinned in `template/template.ts` and its sha256 recomputed from the new download.
+
 Don't trim below these even though measured peaks look low:
 
 - **8 GB guest RAM is the validated floor** — at 4 GB, `chrome_open_tabs` tasks (3 heavy

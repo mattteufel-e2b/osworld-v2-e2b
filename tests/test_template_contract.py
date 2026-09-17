@@ -539,7 +539,12 @@ def test_template_installs_musescore_4_with_the_task_launcher_name():
     assert "--appimage-extract" in template
     assert ".copy('musescore-launcher.sh', '/usr/local/bin/musescore'" in template
     assert "exec /opt/musescore/squashfs-root/AppRun" in launcher
-    assert "MuseScore4.ini" in template
+    # The captured first-run config has to land where MuseScore 4 reads it; the
+    # bare filename alone would still pass if the destination drifted.
+    assert (
+        ".copy('MuseScore4.ini', '/home/user/.config/MuseScore/MuseScore4.ini')"
+        in template
+    )
 
 
 def test_template_installs_wps_office_for_the_wpp_tasks():
@@ -561,6 +566,11 @@ def test_template_installs_wps_office_for_the_wpp_tasks():
     # missing-font warning were each dismissed once on a real guest.
     assert "common\\AcceptedEULA=true" in conf
     assert "common\\system_check\\no_necessary_symbol_fonts=false" in conf
+    # The .deb ships all three binaries the tasks invoke by name; the build must
+    # fail rather than ship a suite missing one of them.
+    assert "test -x /usr/bin/wpp && test -x /usr/bin/wps && test -x /usr/bin/et" in (
+        template
+    )
 
 
 def test_template_installs_blender_lts_with_the_task_launcher_name():
@@ -571,6 +581,29 @@ def test_template_installs_blender_lts_with_the_task_launcher_name():
         "9ba871ff2ecd36526b77432745980b7e6664ecd0c7ca11c48849073dcfe06da3" in template
     )
     assert "ln -sf /opt/blender/blender /usr/local/bin/blender" in template
+    # Blender writes its own userpref.blend in background mode rather than the
+    # repo committing a 173 KB binary blob; `show_splash = False` is the one
+    # setting that differs from factory defaults, so it must stay on that line.
+    assert "bpy.context.preferences.view.show_splash = False" in template
+    assert "bpy.ops.wm.save_userpref()" in template
+    assert "test -s /home/user/.config/blender/4.5/config/userpref.blend" in template
+    # The cache guard. Running Blender under HOME=/home/user leaves a ~/.cache
+    # behind, and build c324b7e4 shipped that directory and came up with a
+    # colord polkit modal over the whole desktop on every sandbox. The first
+    # version of this cleanup was `rmdir ... || true` - a no-op that removed
+    # nothing and failed nothing - so pin the asserting form: `rm -rf` takes the
+    # directory whatever wrote into it and `test ! -d` fails the build rather
+    # than shipping it again. Comment lines are dropped first because the
+    # comment above these commands has to quote the discarded `rmdir` form.
+    code = "\n".join(
+        line for line in template.splitlines() if not line.lstrip().startswith("//")
+    )
+    cache_lines = [line.strip() for line in code.splitlines() if "/.cache" in line]
+    assert cache_lines == [
+        "'rm -rf /home/user/.cache',",
+        "'test ! -d /home/user/.cache',",
+    ], cache_lines
+    assert "rmdir" not in code
 
 
 def test_template_preinstalls_kicad_10_and_freecad_appimage_without_the_occt_conflict():
@@ -579,6 +612,13 @@ def test_template_preinstalls_kicad_10_and_freecad_appimage_without_the_occt_con
 
     assert "ppa:kicad/kicad-10.0-releases" in template  # task 107's own source
     assert "apt-mark hold kicad" in template
+    # Tasks 107/108 invoke `kicad` by name: the build asserts the binary rather
+    # than trusting the PPA install's exit status.
+    assert "test -x /usr/bin/kicad" in template
+    # The captured KiCad first-run config directory (the wizard is modal and the
+    # project passed on the command line never opens behind it).
+    assert ".makeDir('/home/user/.config/kicad/10.0')" in template
+    assert ".copy('kicad-config', '/home/user/.config/kicad/10.0')" in template
     assert "'apt-get install -y musescore3 shotcut freecad openboard'" not in template
     # No apt path may (re-)introduce FreeCAD: jammy's apt freecad 0.19 is the
     # package the KiCad PPA's libocct 7.6 breaks, so FreeCAD must come from the
@@ -590,6 +630,12 @@ def test_template_preinstalls_kicad_10_and_freecad_appimage_without_the_occt_con
         "3a853eb69ee595f779f2255dbf80a765926981d8ff68903cefee4dfb03a8f5ef" in template
     )
     assert ".copy('freecad-launcher.sh', '/usr/local/bin/freecad'" in template
+    # The captured user.cfg that suppresses FreeCAD's in-window first-start
+    # block; only user.cfg is baked, and only at the v1-1 config path.
+    assert (
+        ".copy('freecad-user.cfg', '/home/user/.config/FreeCAD/v1-1/user.cfg')"
+        in template
+    )
     assert "exec /opt/freecad/squashfs-root/AppRun" in launcher
     # tasks 103/104 grade by running `freecadcmd`, which apt FreeCAD supplied.
     assert "ln -sfn /usr/local/bin/freecad /usr/local/bin/freecadcmd" in template
@@ -767,3 +813,13 @@ def test_template_bakes_vnc_units_disabled_and_nss_trust_tooling():
     assert "-localhost" in x11vnc and "-rfbport 5900" in x11vnc
     assert "--web /usr/share/novnc 6080 localhost:5900" in novnc
     assert "certutil -N -d sql:/home/user/.pki/nssdb --empty-password" in template
+    # The db must be created before the final recursive chown, or it stays
+    # root-owned and Chrome cannot read the trust store the bridge writes the
+    # campaign CA into. Ordering, not mere presence.
+    nssdb_dir = template.index("'mkdir -p /home/user/.pki/nssdb'")
+    nssdb_init = template.index(
+        "'certutil -N -d sql:/home/user/.pki/nssdb --empty-password'"
+    )
+    final_chown = template.index("'chown -R user:user /opt/osworld-server /home/user'")
+    assert nssdb_dir < final_chown
+    assert nssdb_init < final_chown
