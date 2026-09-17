@@ -112,6 +112,35 @@ PINNED_CONTROLLER = (
 )
 
 
+# The anchor strings blocks (e)-(h) replace, mirrored from runner/setup.sh. Each
+# must occur exactly once in the pinned upstream file -- see
+# test_setup_anchors_are_unique_in_the_pinned_upstream_files.
+PIN_ANCHORS = {
+    "mm_agents/m3/parser.py": (
+        '                "super_l": "win",\n                "super": "command",\n',
+        PINNED_INFEASIBLE,
+        "import re\n",
+    ),
+    "desktop_env/controllers/python.py": (
+        "data=payload, timeout=90)",
+        PINNED_NON_200_BRANCH,
+    ),
+}
+
+
+def test_setup_anchors_are_unique_in_the_pinned_upstream_files():
+    """A pin bump that moves an anchor must fail here, not at run time."""
+    source = ROOT / "OSWorld-V2"
+    if not (source / ".git").exists():
+        pytest.skip("pinned upstream checkout not installed")
+    for relative, anchors in PIN_ANCHORS.items():
+        pristine = subprocess.check_output(
+            ["git", "-C", str(source), "show", f"{PIN}:{relative}"], text=True
+        )
+        for anchor in anchors:
+            assert pristine.count(anchor) == 1, (relative, anchor)
+
+
 def _seed_minimal_checkout(dest: Path, parser_text: str, controller_text: str) -> None:
     (dest / "scripts" / "python").mkdir(parents=True)
     (dest / "desktop_env" / "providers").mkdir(parents=True)
