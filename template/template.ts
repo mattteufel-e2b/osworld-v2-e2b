@@ -396,19 +396,17 @@ export const template = Template({ fileContextPath: filesDir })
   // Navigation Style / Theme / Done) over its Start page. It is painted inside
   // the application window rather than in a window of its own, so `wmctrl`
   // shows nothing unusual and only a screenshot catches it.
-  // freecad-user.cfg is the user.cfg FreeCAD itself wrote after Done was
-  // clicked once on that guest and FreeCAD was closed through the window
-  // manager (it flushes preferences on a clean quit only - a SIGTERM leaves no
-  // file at all), copied verbatim. Diffing user.cfg before and after that
-  // click, the one preference that changes is
+  // freecad-user.cfg carries one decisive preference, isolated by diffing the
+  // user.cfg FreeCAD itself wrote before and after Done was clicked once on
+  // that guest (it flushes preferences on a clean window-manager quit only - a
+  // SIGTERM leaves no file at all):
   //   BaseApp/Preferences/Mod/Start -> FirstStart2024 = 0
-  // and the rest of the diff is window geometry. The 2024 suffix matters:
-  // `FirstStart`, `FirstTime` and `ShowOnStartup` were each set through
-  // FreeCAD's own parameter API on that same guest and none of them suppressed
-  // the block. Verified there: with the config directory wiped and only this
-  // file restored, `freecad` opens straight onto the ordinary Start page.
-  // FreeCAD regenerates system.cfg and FreeCAD.conf itself, so only user.cfg
-  // is baked.
+  // Everything else in that capture was window geometry, dock state and
+  // per-workbench colours, so none of it is baked; FreeCAD writes its own
+  // defaults for all of it on first launch, as it does for system.cfg and
+  // FreeCAD.conf. The 2024 suffix matters: `FirstStart`, `FirstTime` and
+  // `ShowOnStartup` were each set through FreeCAD's own parameter API on that
+  // same guest and none of them suppressed the block.
   .makeDir('/home/user/.config/FreeCAD/v1-1')
   .copy('freecad-user.cfg', '/home/user/.config/FreeCAD/v1-1/user.cfg')
   // ---- REAPER first-run suppression (baked config) ------------------------
@@ -432,14 +430,16 @@ export const template = Template({ fileContextPath: filesDir })
   // Dismissing it once reveals a second window titled "System Check":
   // "Some formula symbols might not be displayed correctly due to missing
   // fonts Symbol, Wingdings...", with a "Do not report again" checkbox.
-  // wps-office.conf is the Office.conf WPS itself wrote after both were
-  // dismissed once and WPS was quit cleanly, copied verbatim. The decisive
-  // keys are `common\AcceptedEULA=true` (EULA modal) and
-  // `common\system_check\no_necessary_symbol_fonts=false` (System Check);
-  // `[kdcsdk] NotFirstOpen=true` marks the suite as already started once.
-  // Verified on that same guest: with only this file present, `wpp`, `wps` and
-  // `et` each open a single application window and no dialog, and `wpp` on
-  // task 049's own googlenet_intro.pptx opens straight into the editor.
+  // wps-office.conf carries the keys that survive from the Office.conf WPS
+  // itself wrote after both dialogs were dismissed once and WPS was quit
+  // cleanly. Two were decisive, established by diffing that file before and
+  // after: `common\AcceptedEULA=true` (EULA modal) and
+  // `common\system_check\no_necessary_symbol_fonts=false` (System Check).
+  // `[kdcsdk] NotFirstOpen=true` marks the suite as already started once and is
+  // kept with them. The rest of the capture - the 39-entry symbol palette, the
+  // wpp window/task-pane geometry, the session timestamps (`lastwppact`,
+  // `LastClearBKTime`, the kfpccomb probe dates) and the per-install
+  // `common\infoGUID`, all of which WPS regenerates - is not baked.
   // Honest caveat: this suppresses the missing-font *warning*, it does not
   // supply Symbol/Wingdings - those fonts are still absent, so documents that
   // use them fall back to a substitute face.
@@ -486,31 +486,32 @@ export const template = Template({ fileContextPath: filesDir })
   // modal "KiCad Setup" wizard - "KiCad is starting for the first time, or
   // some of its configuration files are missing" - and the project passed on
   // the command line never opens behind it. Escape and Cancel both leave the
-  // wizard on screen. kicad-config/ is what KiCad itself wrote after that
-  // wizard was stepped through to Finish on that guest, with `kicad` launched
-  // with no project so the history lists stay empty, copied verbatim; the
-  // per-editor files it writes at exit (eeschema/pcbnew/cvpcb/3d_viewer/...)
-  // are session state, not first-run state, and are left out.
-  // The decisive thing is the set, not one key. Both narrower guesses were
-  // tested on that guest and the wizard came back: `first_run_shown` in
-  // kicad.json is still false after the wizard finishes, so flipping it does
-  // nothing, and the three library tables on their own are not enough either.
-  // With these six files present, `kicad <project>` opened straight into
-  // "heart_rate_power - KiCad 10.0" with the project tree loaded.
-  // Re-captured on build cf428cd4 with KiCad launched from /home/user, because
-  // `system.working_dir` in kicad_common.json is whatever cwd KiCad was
-  // started in and it is the directory its file dialogs open on. The first
-  // capture was made through the guest server's /setup/launch, so it had
-  // recorded that server's own cwd, /opt/osworld-server - a directory `user`
-  // cannot write, which tasks 107 and 108 save files from. The re-capture also
-  // turned off both update checks through KiCad's own Preferences > Packages
-  // and Updates page (`system.check_for_kicad_updates` and
-  // `pcm.check_for_updates`, both now false), so KiCad cannot raise the same
-  // class of nag over a long run that MuseScore's update modal raised here.
-  // Opening that page is also why kicad_common.json now carries a
-  // `dialog.controls.Preferences` blob: wxWidgets remembers the Preferences
-  // dialog's geometry and per-widget state, it matches the settings above, and
-  // it is committed as written rather than edited out.
+  // wizard on screen. kicad-config/ carries the keys that survive from what
+  // KiCad itself wrote after that wizard was stepped through to Finish on that
+  // guest; the per-editor files it writes at exit (eeschema/pcbnew/cvpcb/
+  // 3d_viewer/...) are session state, not first-run state, and are left out.
+  // The decisive thing is the set, not one key:
+  //   kicad_common.json's presence (with its `meta.version`) is what tells
+  //     KiCad its 10.0 settings path already exists, which is the condition
+  //     the Setup wizard is raised on, plus `do_not_show_again` for the
+  //     prompts the wizard answers;
+  //   the three library tables (sym/fp/design-block) stop the "Configure
+  //     Global ... Library Table" dialogs behind it;
+  //   `system.working_dir = /home/user` in kicad_common.json is the directory
+  //     KiCad's file dialogs open on. It records whatever cwd KiCad was
+  //     started in, and the first capture - made through the guest server's
+  //     /setup/launch - had recorded that server's own cwd,
+  //     /opt/osworld-server, a directory `user` cannot write and which tasks
+  //     107 and 108 save files from;
+  //   `system.check_for_kicad_updates` and `pcm.check_for_updates` in
+  //     kicad.json, both false, keep KiCad from raising the same class of nag
+  //     over a long run that MuseScore's update modal raised here.
+  // Narrower guesses were tested on that guest and the wizard came back:
+  // `first_run_shown` in kicad.json is still false after the wizard finishes,
+  // so flipping it does nothing, and the three library tables on their own are
+  // not enough either. Window geometry, AUI perspectives, grid/zoom tables,
+  // the file history and the wxWidgets `dialog.controls.Preferences` blob are
+  // all in the capture and none of them are baked - KiCad rewrites them.
   .makeDir('/home/user/.config/kicad/10.0')
   .copy('kicad-config', '/home/user/.config/kicad/10.0')
   // ---- system-wide dconf defaults: a11y + interface + DPI/scaling ---------
