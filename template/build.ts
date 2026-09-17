@@ -111,10 +111,15 @@ async function main() {
     if (!Number.isSafeInteger(rootUsedBytes)) {
       throw new Error(`invalid root-used output: ${JSON.stringify(used.stdout)}`)
     }
-    // Every command name an OSWorld 2.0 task or its evaluator invokes directly,
-    // plus the VNC/NSS tools the bridge shells out to. The loop collects all
-    // missing names and exits 0 so the names reach this process as stdout
-    // rather than as a bare non-zero exit from the SDK.
+    // HARD GATE. Every name here must resolve or the build fails: the
+    // application launchers an OSWorld 2.0 task or its evaluator invokes
+    // directly, plus `certutil`, which the bridge shells out to when it writes
+    // the campaign CA into the guest's NSS trust store. x11vnc/websockify/novnc
+    // are deliberately NOT here - no task invokes them, they exist only for a
+    // human watching a sandbox, and their units ship disabled. They are
+    // recorded in applicationInventory below instead, which is a record, not a
+    // gate. The loop collects all missing names and exits 0 so the names reach
+    // this process as stdout rather than as a bare non-zero exit from the SDK.
     const launchers = [
       'musescore',
       'wpp',
@@ -124,8 +129,6 @@ async function main() {
       'freecad',
       'freecadcmd',
       'certutil',
-      'x11vnc',
-      'websockify',
       'google-chrome',
     ]
     const which = await sandbox.commands.run(
@@ -143,17 +146,23 @@ async function main() {
     // Versions of the applications this build installs. `dpkg-query -W` fails
     // for the whole invocation if any one name is absent, so query one package
     // per iteration: an absent package then names itself instead of aborting
-    // the list. Every name here MUST be installed, so a MISSING_ marker below
-    // fails the build.
+    // the list. Two classes here. The first loop's packages MUST be installed,
+    // so their MISSING_ marker fails the build. The VNC packages and their unit
+    // files are INVENTORY ONLY - their absence is recorded (VNC_ABSENT /
+    // VNC_UNITS_ABSENT, neither a MISSING_ marker) and does not fail the build,
+    // matching the launcher gate above.
     const versions = await sandbox.commands.run(
-      'for p in google-chrome-stable kicad wps-office x11vnc novnc websockify libnss3-tools; do ' +
+      'for p in google-chrome-stable kicad wps-office libnss3-tools; do ' +
         "dpkg-query -W -f='${Package} ${Version}\\n' \"$p\" 2>/dev/null || echo \"MISSING_PACKAGE $p\"; " +
+        'done; ' +
+        'for p in x11vnc novnc websockify; do ' +
+        "dpkg-query -W -f='${Package} ${Version}\\n' \"$p\" 2>/dev/null || echo \"VNC_ABSENT $p\"; " +
         'done; ' +
         '/opt/blender/blender --version 2>/dev/null | head -1 || true; ' +
         'ls /opt/musescore/squashfs-root/bin/ 2>/dev/null | head -3; ' +
         'ls /opt/freecad/squashfs-root/usr/bin/ 2>/dev/null | grep -i freecad | head -3; ' +
         'if [ -f /etc/systemd/user/x11vnc.service ] && [ -f /etc/systemd/user/novnc.service ]; ' +
-        'then echo VNC_UNITS_PRESENT; else echo MISSING_VNC_UNITS; fi; ' +
+        'then echo VNC_UNITS_PRESENT; else echo VNC_UNITS_ABSENT; fi; ' +
         'echo INVENTORY_DONE',
       { user: 'root', timeoutMs: 60_000 },
     )
@@ -197,8 +206,10 @@ async function main() {
     applicationInventoryNote:
       'Package versions and launcher payloads observed in the smoke sandbox of this exact ' +
       'build: dpkg versions, the Blender banner, the MuseScore 4 and FreeCAD AppImage ' +
-      'binaries, and the presence of both VNC user units. Recorded only; a launcher ' +
-      'resolving is not evidence that the application opens a document.',
+      'binaries, and whether both VNC user units are present. Recorded only, not gated: ' +
+      'the VNC stack is for a human watching a sandbox, no task invokes it, and its units ' +
+      'ship disabled. A launcher resolving is also not evidence that the application opens ' +
+      'a document.',
     unpinnableVersionsNote:
       'google-chrome-stable and kicad have no source sha256 pin: they come from mutable apt ' +
       "sources (Google's Chrome repo and ppa:kicad/kicad-10.0-releases), which serve whatever " +
