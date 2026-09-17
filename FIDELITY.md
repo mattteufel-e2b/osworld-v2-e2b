@@ -324,29 +324,6 @@ full native-result parity or a passing 24-task sample.
 - **Guest apt front-end**: the template installs a `/usr/local/sbin/apt-get`
   wrapper forcing `DEBIAN_FRONTEND=noninteractive` and conffile-keep defaults so
   task-driven package operations cannot hang a rollout; a stock VM would prompt.
-- **The `/execute` timeout patch reaches the evaluator read path, not only the agent loop**:
-  `patches/osworld-server-timeout-response.patch` makes the guest answer a
-  `subprocess.TimeoutExpired` on `/execute` with HTTP 200 and
-  `{"status": "error", "error": "TimeoutExpired", "output": "", "returncode": null}` instead of
-  a 500, so upstream's controller cannot retry and replay a partially typed action
-  (`/setup/execute` keeps its 500). The branch is gated on `request.path == "/execute"`, and
-  that path carries more than agent actions: `PythonController.execute_python_command()`
-  (`OSWorld-V2/desktop_env/controllers/python.py:669`) is called from 83 sites across five
-  evaluator getters and eight task classes — `desktop_env/evaluators/getters/vlc.py:45,48,51`,
-  `getters/file.py:210`, `getters/gimp.py:18`, plus `getters/chrome.py` and `getters/replay.py`,
-  and `tasks/task_086.py:109,218`, `task_088.py:187,257,405`, `task_041.py:491`,
-  `task_094.py:218` among them. Before the patch a timed-out evaluator probe returned 500, was
-  retried, yielded `None`, and the getter raised — an infrastructure error, recorded as one.
-  After it, the same probe returns 200 with `output: ""`, which a getter reading
-  `[...]['output'].strip()` takes as an empty string: a plausible-looking value rather than an
-  exception. **On this branch that path is unreachable**: the client's own
-  `requests.post(..., timeout=90)` raises `ReadTimeout` and breaks out of the retry loop
-  without retrying (`python.py:677-678`), so it never sees the guest's 120-second response. It
-  becomes reachable only once the companion controller patch (client waits ≥130 s) lands in the
-  native-execution-patches plan. Narrowing the 200 branch — gating it on the agent-action
-  payload shape rather than on the request path — belongs to that plan, which rebuilds the
-  image anyway; re-patching here would diverge this tree from the image that was built,
-  smoke-tested and laddered.
 - **Audio kernel path**: no `snd-dummy`/`snd-aloop` ALSA kernel module in the Firecracker
   guest kernel (`modprobe: FATAL: Module snd-dummy not found`, `spike-audio.json`). The
   PulseAudio null-sink path was sufficient for every app exercised (REAPER and MuseScore

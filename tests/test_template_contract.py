@@ -120,7 +120,6 @@ def test_fetch_server_applies_every_committed_patch_to_the_pinned_checkout():
     assert [patch.name for patch in patches] == [
         "osworld-server-atspi-guards.patch",
         "osworld-server-runtime-reliability.patch",
-        "osworld-server-timeout-response.patch",
     ]
     assert 'PATCH_DIR="$REPO_ROOT/patches"' in fetch
     assert 'for patch_file in "$PATCH_DIR"/*.patch; do' in fetch
@@ -138,23 +137,6 @@ def test_server_runtime_patch_adds_exact_path_fallback_and_quiet_recording():
         patch,
         re.MULTILINE,
     )
-
-
-def test_server_timeout_patch_fails_agent_actions_closed_without_retry():
-    patch = (ROOT / "patches" / "osworld-server-timeout-response.patch").read_text()
-    names = sorted(p.name for p in (ROOT / "patches").glob("osworld-server-*.patch"))
-
-    # Lexical order matters: the runtime-reliability patch addresses
-    # http_routes.py by line number, so this patch must apply after it.
-    assert names.index("osworld-server-timeout-response.patch") > names.index(
-        "osworld-server-runtime-reliability.patch"
-    )
-    assert "+++ b/src/http_routes.py" in patch
-    assert "except subprocess.TimeoutExpired as exc:" in patch
-    assert 'if request.path == "/execute":' in patch
-    assert '"error": "TimeoutExpired"' in patch
-    # Setup commands keep upstream's failing status code.
-    assert 'return jsonify({"status": "error", "message": str(exc)}), 500' in patch
 
 
 def test_public_docs_and_scripts_use_only_standalone_repository_paths():
