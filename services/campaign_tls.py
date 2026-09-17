@@ -78,12 +78,6 @@ def _bundle(ca_cert: Path) -> Path:
     return bundle
 
 
-def tls_paths() -> dict:
-    """The `tls` section of .runtime.json, or {} when absent."""
-    section = fl.read_runtime().get("tls")
-    return dict(section) if isinstance(section, dict) else {}
-
-
 def ensure_campaign_tls(campaign_id: str, hosts: list[str]) -> dict:
     """Create or extend the campaign CA/leaf so the leaf covers every host.
 
@@ -99,7 +93,8 @@ def ensure_campaign_tls(campaign_id: str, hosts: list[str]) -> dict:
     "leaf_cert", "leaf_key", "bundle"} with absolute path strings; writes the
     same dict minus "ca_key" as the `tls` section of .runtime.json.
     """
-    current = tls_paths()
+    persisted = fl.read_runtime().get("tls")
+    current = dict(persisted) if isinstance(persisted, dict) else {}
     ca_key, ca_cert = TLS_DIR / "ca.key", TLS_DIR / "ca.crt"
     same_campaign = (
         current.get("campaign_id") == campaign_id

@@ -230,16 +230,21 @@ def _rewrite_location(
     return _rewrite_absolute_site_urls(value.encode(), host, authority, scheme).decode()
 
 
-def _load_rules() -> dict:
-    """Build {incoming_host_lower: (ingress_host, token)} from the runtime file.
+def _load_rules() -> tuple[dict[str, dict], dict[bytes, bytes]]:
+    """Read the runtime file once and return (routes, asset_url_map).
 
-    Rebuilt on every request so a relaunch of either service is picked up without
-    restarting the proxy."""
+    Routes are {incoming_host_lower: {ingress_host, traffic_token, ...}}; the
+    asset map is websites.asset_url_map (dead task asset URLs -> fleet-served
+    replacements) pre-encoded for `_map_asset_urls`. Both are rebuilt on every
+    request so a relaunch of either service is picked up without restarting the
+    proxy -- which is exactly why they are read together: one request must not
+    parse the same file twice.
+    """
     rules: dict[str, dict] = {}
     try:
         runtime = json.loads(RUNTIME_FILE.read_text())
     except (OSError, json.JSONDecodeError):
-        return rules
+        return rules, {}
     web = runtime.get("websites") or {}
     suffix = web.get("host_suffix", HOST_SUFFIX)
     token = web.get("traffic_token")
@@ -269,17 +274,11 @@ def _load_rules() -> dict:
                 **gitlab_rule,
                 "canonical_host": gl["host"].lower(),
             }
-    return rules
-
-
-def _load_asset_url_map() -> dict[bytes, bytes]:
-    """Dead task asset URLs -> fleet-served replacements (websites.asset_url_map)."""
-    try:
-        runtime = json.loads(RUNTIME_FILE.read_text())
-    except (OSError, json.JSONDecodeError):
-        return {}
-    mapping = (runtime.get("websites") or {}).get("asset_url_map") or {}
-    return {str(k).encode(): str(v).encode() for k, v in mapping.items()}
+    asset_url_map = {
+        str(dead).encode(): str(served).encode()
+        for dead, served in (web.get("asset_url_map") or {}).items()
+    }
+    return rules, asset_url_map
 
 
 def _map_asset_urls(body: bytes, path: str, mapping: dict[bytes, bytes]) -> bytes:
@@ -296,7 +295,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def _resolve(self):
         host = (self.headers.get("Host") or "").split(":")[0].lower()
-        return _load_rules().get(host), host
+        rules, asset_url_map = _load_rules()
+        return rules.get(host), host, asset_url_map
 
     def _scheme(self) -> str:
         return "https" if isinstance(self.connection, ssl.SSLSocket) else "http"
@@ -338,7 +338,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
-        target, host = self._resolve()
+        target, host, asset_url_map = self._resolve()
         if target is None:
             self.send_error(502, f"no fleet route for Host {host!r}")
             return
@@ -350,7 +350,7 @@ class Handler(BaseHTTPRequestHandler):
         incoming_authority = self.headers.get("Host") or host
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length) if length else None
-        body = _map_asset_urls(body or b"", self.path, _load_asset_url_map()) or None
+        body = _map_asset_urls(body or b"", self.path, asset_url_map) or None
 
         req = urllib.request.Request(url, data=body, method=self.command)
         for key, value in self.headers.items():
@@ -388,7 +388,14 @@ class Handler(BaseHTTPRequestHandler):
                 exc.code, exc.headers, payload, rewrite_host, incoming_authority
             )
         except Exception as exc:  # noqa: BLE001
-            self.send_error(502, f"upstream {ingress_host} failed: {exc}")
+            # The body size is part of the diagnosis: a guest-originated
+            # /api/state write large enough to trip E2B ingress's request-body
+            # boundary fails here and nowhere else.
+            self.send_error(
+                502,
+                f"upstream {ingress_host} failed "
+                f"({len(body or b'')}-byte request body): {exc}",
+            )
 
     do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = do_HEAD = do_OPTIONS = _proxy
 

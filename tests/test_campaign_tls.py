@@ -60,7 +60,7 @@ def test_ensure_creates_ca_leaf_bundle_and_runtime_section(tmp_path):
     section = json.loads(fleetlib.RUNTIME_FILE.read_text())["tls"]
     assert section["campaign_id"] == "camp-a"
     assert "ca_key" not in section
-    assert tls.tls_paths()["leaf_cert"] == info["leaf_cert"]
+    assert section["leaf_cert"] == info["leaf_cert"]
 
 
 def test_ensure_reissues_leaf_when_new_hosts_appear_but_keeps_the_ca(tmp_path):

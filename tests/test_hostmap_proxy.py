@@ -141,8 +141,9 @@ def test_guest_routes_load_traffic_tokens_for_authenticated_ingress(tmp_path):
     )
 
     with patch.object(hostmap_proxy, "RUNTIME_FILE", runtime_file):
-        rules = hostmap_proxy._load_rules()
+        rules, asset_map = hostmap_proxy._load_rules()
 
+    assert asset_map == {}  # absent websites.asset_url_map
     assert rules["mailhub.127.0.0.1.nip.io"] == {
         "ingress_host": "13001-websites.e2b.app",
         "traffic_token": "websites-traffic-token",
@@ -256,8 +257,7 @@ def test_rules_include_gitlab_aliases_and_the_asset_url_map(tmp_path):
         )
     )
     with patch.object(hostmap_proxy, "RUNTIME_FILE", runtime_file):
-        rules = hostmap_proxy._load_rules()
-        asset_map = hostmap_proxy._load_asset_url_map()
+        rules, asset_map = hostmap_proxy._load_rules()
 
     assert rules["54.174.16.65.sslip.io"]["ingress_host"] == "8929-g.e2b.app"
     assert rules["54.174.16.65.sslip.io"]["canonical_host"] == "gitlab.127.0.0.1.nip.io"
@@ -381,7 +381,9 @@ def test_head_keeps_upstreams_content_length_and_sends_no_body():
     with (
         _serving(server),
         patch.object(
-            hostmap_proxy, "_load_rules", return_value={"files.127.0.0.1.nip.io": route}
+            hostmap_proxy,
+            "_load_rules",
+            return_value=({"files.127.0.0.1.nip.io": route}, {}),
         ),
         patch.object(hostmap_proxy, "_open_upstream", return_value=FakeResponse()),
     ):
@@ -400,3 +402,36 @@ def test_head_keeps_upstreams_content_length_and_sends_no_body():
     assert head.getheader("Content-Length") == "4096"
     assert get.getheader("Content-Length") == "0"
     assert body == b""
+
+
+def test_upstream_failure_502_names_the_request_body_size():
+    """An oversized guest-originated /api/state write is otherwise invisible."""
+    server = hostmap_proxy.make_server(0, tls=None)
+    route = {"ingress_host": "13030-w.e2b.app", "traffic_token": None}
+    with (
+        _serving(server),
+        patch.object(
+            hostmap_proxy,
+            "_load_rules",
+            return_value=({"s.127.0.0.1.nip.io": route}, {}),
+        ),
+        patch.object(
+            hostmap_proxy, "_open_upstream", side_effect=OSError("connection reset")
+        ),
+    ):
+        conn = http.client.HTTPConnection(
+            "127.0.0.1", server.server_address[1], timeout=5
+        )
+        conn.request(
+            "POST",
+            "/api/state",
+            body=b"x" * 4096,
+            headers={"Host": "s.127.0.0.1.nip.io"},
+        )
+        response = conn.getresponse()
+        body = response.read().decode()
+        conn.close()
+
+    assert response.status == 502
+    assert "4096" in body
+    assert "connection reset" in body
