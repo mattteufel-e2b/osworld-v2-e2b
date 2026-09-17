@@ -192,6 +192,7 @@ def _install_guest_proxy(sandbox: Sandbox, config: BridgeConfig) -> None:
                 f"/opt/hostmap-tls/{guest_name}",
                 Path(tls[runtime_key]).read_text(),
                 user="root",
+                request_timeout=60,
             )
         # Trust install runs before the proxy starts below, so Chrome (started
         # later, after the guest server responds ready) always sees the CA

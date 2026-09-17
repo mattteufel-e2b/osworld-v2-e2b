@@ -82,9 +82,11 @@ class RecordingFiles:
 
     def __init__(self):
         self.written: dict[str, object] = {}
+        self.write_kwargs: dict[str, dict] = {}
 
-    def write(self, path, content):
+    def write(self, path, content, **kwargs):
         self.written[path] = content
+        self.write_kwargs[path] = kwargs
 
 
 class FakeFleetSandbox:
@@ -917,6 +919,9 @@ class FleetRuntimePolicyTests(unittest.TestCase):
         staged_path = f"{launcher.REPO_DIR}/assets/task_026/AI-Assisted_Healthcare.zip"
         self.assertIn(staged_path, sbx.files.written)
         self.assertEqual(sbx.files.written[staged_path], fixture_bytes)
+        # Bounded like the neighbouring compose command: a stalled multi-MB
+        # upload must not hang the launcher indefinitely.
+        self.assertEqual(sbx.files.write_kwargs[staged_path]["request_timeout"], 180)
 
     def test_stage_task_assets_refuses_a_drifted_archive(self):
         launcher = load_websites_launcher()

@@ -222,7 +222,9 @@ def stage_task_assets(sbx, suffix: str) -> dict[str, str]:
             raise RuntimeError(
                 f"asset hash mismatch for {relative}: {actual} != pinned {expected}"
             )
-        sbx.files.write(f"{REPO_DIR}/assets/{relative}", data)
+        # Multi-megabyte binary upload; bound it like the neighbouring
+        # compose command so a stalled transfer cannot hang the launcher.
+        sbx.files.write(f"{REPO_DIR}/assets/{relative}", data, request_timeout=180)
         mapping[dead_url] = f"https://{FILES_SITE}.{suffix}/{relative}"
     fl.log(f"staged {len(mapping)} pinned task assets on the files site")
     return mapping

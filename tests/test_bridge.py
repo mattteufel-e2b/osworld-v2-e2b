@@ -450,6 +450,9 @@ class GuestManagerTests(unittest.IsolatedAsyncioTestCase):
             "/opt/hostmap-tls/ca.crt",
         ):
             self.assertEqual(sandbox.files.write_kwargs[tls_path].get("user"), "root")
+            self.assertEqual(
+                sandbox.files.write_kwargs[tls_path].get("request_timeout"), 60
+            )
         trust_install = [c for c in calls if "update-ca-certificates" in c][0]
         self.assertIn(
             "chown root:root /opt/hostmap-tls /opt/hostmap-tls/leaf.crt "
