@@ -301,6 +301,35 @@ class Handler(BaseHTTPRequestHandler):
     def _scheme(self) -> str:
         return "https" if isinstance(self.connection, ssl.SSLSocket) else "http"
 
+    def _relay(self, status, headers, payload, rewrite_host, authority):
+        """Send one upstream response (success or HTTPError) back to the client.
+
+        A HEAD reply must keep upstream's Content-Length -- it describes the
+        body a GET would return -- and must not carry a body of its own;
+        recomputing it from the empty HEAD payload reports every resource as
+        zero bytes.
+        """
+        scheme = self._scheme()
+        head = self.command == "HEAD"
+        upstream_length = None
+        self.send_response(status)
+        for key, value in headers.items():
+            lower = key.lower()
+            if lower == "content-length":
+                upstream_length = value
+                continue
+            if lower in _HOP:
+                continue
+            if lower == "location":
+                value = _rewrite_location(value, rewrite_host, authority, scheme)
+            self.send_header(key, value)
+        self.send_header(
+            "Content-Length", (upstream_length or "0") if head else str(len(payload))
+        )
+        self.end_headers()
+        if not head:
+            self.wfile.write(payload)
+
     def _proxy(self):
         if self.server.redirect_to_https:
             host = (self.headers.get("Host") or "").split(":")[0]
@@ -348,34 +377,16 @@ class Handler(BaseHTTPRequestHandler):
                 payload = _rewrite_absolute_site_urls(
                     resp.read(), rewrite_host, incoming_authority, scheme
                 )
-                self.send_response(resp.status)
-                for key, value in resp.headers.items():
-                    if key.lower() in _HOP or key.lower() == "content-length":
-                        continue
-                    if key.lower() == "location":
-                        value = _rewrite_location(
-                            value, rewrite_host, incoming_authority, scheme
-                        )
-                    self.send_header(key, value)
-                self.send_header("Content-Length", str(len(payload)))
-                self.end_headers()
-                self.wfile.write(payload)
+                self._relay(
+                    resp.status, resp.headers, payload, rewrite_host, incoming_authority
+                )
         except urllib.error.HTTPError as exc:
             payload = _rewrite_absolute_site_urls(
                 exc.read(), rewrite_host, incoming_authority, scheme
             )
-            self.send_response(exc.code)
-            for key, value in exc.headers.items():
-                if key.lower() in _HOP or key.lower() == "content-length":
-                    continue
-                if key.lower() == "location":
-                    value = _rewrite_location(
-                        value, rewrite_host, incoming_authority, scheme
-                    )
-                self.send_header(key, value)
-            self.send_header("Content-Length", str(len(payload)))
-            self.end_headers()
-            self.wfile.write(payload)
+            self._relay(
+                exc.code, exc.headers, payload, rewrite_host, incoming_authority
+            )
         except Exception as exc:  # noqa: BLE001
             self.send_error(502, f"upstream {ingress_host} failed: {exc}")
 

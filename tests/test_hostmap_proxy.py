@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import http.client
 import importlib.util
 import json
 import shutil
@@ -355,3 +356,47 @@ def test_tls_handshakes_run_off_the_accept_loop_and_survive_bad_clients(tls_cert
             assert err.value.code == 502
         finally:
             idle.close()
+
+
+def test_head_keeps_upstreams_content_length_and_sends_no_body():
+    """A HEAD must describe the body a GET would return, not the empty one."""
+
+    class FakeResponse:
+        status = 200
+        headers = hostmap_proxy._HeaderList(
+            [("Content-Type", "application/pdf"), ("Content-Length", "4096")]
+        )
+
+        def read(self):
+            return b""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    server = hostmap_proxy.make_server(0, tls=None)
+    route = {"ingress_host": "13030-w.e2b.app", "traffic_token": None}
+    with (
+        _serving(server),
+        patch.object(
+            hostmap_proxy, "_load_rules", return_value={"files.127.0.0.1.nip.io": route}
+        ),
+        patch.object(hostmap_proxy, "_open_upstream", return_value=FakeResponse()),
+    ):
+        conn = http.client.HTTPConnection(
+            "127.0.0.1", server.server_address[1], timeout=5
+        )
+        headers = {"Host": "files.127.0.0.1.nip.io"}
+        conn.request("HEAD", "/a.pdf", headers=headers)
+        head = conn.getresponse()
+        head.read()
+        conn.request("GET", "/a.pdf", headers=headers)
+        get = conn.getresponse()
+        body = get.read()
+        conn.close()
+
+    assert head.getheader("Content-Length") == "4096"
+    assert get.getheader("Content-Length") == "0"
+    assert body == b""
