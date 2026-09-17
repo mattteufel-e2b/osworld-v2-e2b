@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import contextlib
 import importlib.util
 import json
 import shutil
+import socket
 import ssl
 import subprocess
 import threading
@@ -20,6 +22,52 @@ spec = importlib.util.spec_from_file_location(
 hostmap_proxy = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
 spec.loader.exec_module(hostmap_proxy)
+
+requires_openssl = pytest.mark.skipif(
+    shutil.which("openssl") is None, reason="openssl CLI required"
+)
+
+
+@pytest.fixture(scope="module")
+def tls_cert(tmp_path_factory):
+    """A throwaway localhost leaf cert/key pair for the TLS listener tests."""
+    tmp_path = tmp_path_factory.mktemp("hostmap-tls")
+    key, crt = tmp_path / "k.pem", tmp_path / "c.pem"
+    subprocess.run(
+        [
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            str(key),
+            "-out",
+            str(crt),
+            "-days",
+            "1",
+            "-subj",
+            "/CN=localhost",
+            "-addext",
+            "subjectAltName=DNS:localhost",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return crt, key
+
+
+@contextlib.contextmanager
+def _serving(*servers):
+    for server in servers:
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        yield
+    finally:
+        for server in servers:
+            server.shutdown()
+            server.server_close()
 
 
 def test_upstream_open_retries_transient_transport_failure():
@@ -227,40 +275,12 @@ def test_state_payloads_get_dead_asset_urls_mapped_only_on_state_endpoints():
     assert hostmap_proxy._map_asset_urls(body, "/api/other", mapping) == body
 
 
-@pytest.mark.skipif(shutil.which("openssl") is None, reason="openssl CLI required")
-def test_tls_listener_terminates_tls_and_plain_listener_redirects(tmp_path):
-    key, crt = tmp_path / "k.pem", tmp_path / "c.pem"
-    subprocess.run(
-        [
-            "openssl",
-            "req",
-            "-x509",
-            "-newkey",
-            "rsa:2048",
-            "-nodes",
-            "-keyout",
-            str(key),
-            "-out",
-            str(crt),
-            "-days",
-            "1",
-            "-subj",
-            "/CN=localhost",
-            "-addext",
-            "subjectAltName=DNS:localhost",
-        ],
-        check=True,
-        capture_output=True,
-    )
+@requires_openssl
+def test_tls_listener_terminates_tls_and_plain_listener_redirects(tls_cert):
+    crt, key = tls_cert
     tls_server = hostmap_proxy.make_server(0, tls=(str(crt), str(key)))
     plain_server = hostmap_proxy.make_server(0, tls=None, redirect_to_https=True)
-    threads = [
-        threading.Thread(target=s.serve_forever, daemon=True)
-        for s in (tls_server, plain_server)
-    ]
-    for t in threads:
-        t.start()
-    try:
+    with _serving(tls_server, plain_server):
         ctx = ssl.create_default_context(cafile=str(crt))
         with pytest.raises(urllib.error.HTTPError) as err:
             urllib.request.urlopen(
@@ -289,8 +309,49 @@ def test_tls_listener_terminates_tls_and_plain_listener_redirects(tmp_path):
         assert err.value.code == 301
         assert err.value.headers["Location"] == "https://mailhub.127.0.0.1.nip.io/x?y=1"
         err.value.close()
-    finally:
-        tls_server.shutdown()
-        plain_server.shutdown()
-        tls_server.server_close()
-        plain_server.server_close()
+
+
+@requires_openssl
+def test_tls_handshakes_run_off_the_accept_loop_and_survive_bad_clients(tls_cert):
+    """One silent TCP connection must not wedge the single accept thread.
+
+    Chrome preconnects constantly, so a TLS handshake performed inside
+    `get_request()` blocks every other client on that listener forever.
+    """
+    crt, key = tls_cert
+    tls_server = hostmap_proxy.make_server(0, tls=(str(crt), str(key)))
+    port = tls_server.server_address[1]
+    ctx = ssl.create_default_context(cafile=str(crt))
+
+    def get_state():
+        return urllib.request.urlopen(
+            urllib.request.Request(
+                f"https://localhost:{port}/api/state",
+                headers={"Host": "nowhere.127.0.0.1.nip.io"},
+            ),
+            context=ctx,
+            timeout=5,
+        )
+
+    with _serving(tls_server):
+        idle = socket.create_connection(("127.0.0.1", port), timeout=5)
+        try:
+            with pytest.raises(urllib.error.HTTPError) as err:
+                get_state()
+            assert err.value.code == 502
+
+            # Plain HTTP bytes on the TLS port fail cleanly (a TLS alert and
+            # a closed or reset socket -- never an HTTP response)...
+            with socket.create_connection(("127.0.0.1", port), timeout=5) as plain:
+                plain.sendall(b"GET / HTTP/1.1\r\nHost: mailhub\r\n\r\n")
+                try:
+                    assert not plain.recv(4096).startswith(b"HTTP/")
+                except ConnectionResetError:
+                    pass
+
+            # ...and the listener still answers afterwards.
+            with pytest.raises(urllib.error.HTTPError) as err:
+                get_state()
+            assert err.value.code == 502
+        finally:
+            idle.close()

@@ -389,6 +389,40 @@ class ReusableThreadingHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = True
     request_queue_size = 128
     redirect_to_https = False  # per-instance override set by make_server
+    tls_context: ssl.SSLContext | None = None  # ditto
+    handshake_timeout = 30
+
+    def get_request(self):
+        """Accept a connection without performing the TLS handshake here.
+
+        socketserver runs `get_request()` on the single accept thread, so
+        wrapping the *listening* socket would make every handshake serialise
+        there with no timeout: one silent TCP connection (Chrome preconnects
+        constantly) wedges the listener permanently. Wrapping the accepted
+        socket with `do_handshake_on_connect=False` defers the handshake to
+        the per-connection thread's first read, bounded by a socket timeout.
+        """
+        sock, addr = self.socket.accept()
+        if self.tls_context is None:
+            return sock, addr
+        sock.settimeout(self.handshake_timeout)
+        return (
+            self.tls_context.wrap_socket(
+                sock, server_side=True, do_handshake_on_connect=False
+            ),
+            addr,
+        )
+
+    def handle_error(self, request, client_address):
+        """Stay quiet about one client's broken connection.
+
+        Plain HTTP bytes sent to the TLS port, a client that disappears, or
+        one that never completes the handshake all raise on the connection
+        thread; none of them is a proxy fault worth a traceback.
+        """
+        if isinstance(sys.exc_info()[1], (ssl.SSLError, TimeoutError, ConnectionError)):
+            return
+        super().handle_error(request, client_address)
 
 
 def make_server(
@@ -398,8 +432,9 @@ def make_server(
 ) -> ReusableThreadingHTTPServer:
     """Build one listener: plain HTTP, a TLS terminator, or an HTTPS-redirector.
 
-    `tls` is a (certfile, keyfile) pair; when given, the server's socket is
-    wrapped in a TLS context so it terminates HTTPS. `redirect_to_https` marks
+    `tls` is a (certfile, keyfile) pair; when given, the context is stored on
+    the server so each accepted connection terminates HTTPS on its own thread
+    (see `ReusableThreadingHTTPServer.get_request`). `redirect_to_https` marks
     a plain listener that must answer every request with a 301 to the same
     path on `https://` instead of proxying it.
     """
@@ -408,7 +443,7 @@ def make_server(
     if tls is not None:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.load_cert_chain(certfile=tls[0], keyfile=tls[1])
-        server.socket = context.wrap_socket(server.socket, server_side=True)
+        server.tls_context = context
     return server
 
 
