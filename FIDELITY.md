@@ -356,6 +356,11 @@ unpatched parser; and the worst-case span of a non-timeout retry inside
 `execute_python_command` grew with the longer per-request deadline (three attempts at up to
 130 s each instead of 90 s), because (h) short-circuits only the guest's own timeout 500.
 
+`maintainer/typing_control.py` is the isolated control that exercises (g) and (h) together
+against one live guest build — one 3,000-keypress action, the returned value and its wall
+time, two screenshots 15 s apart, and the guest's own `POST /execute` count. It has not been
+run yet: it needs a candidate build id, so no result is claimed here.
+
 Upstream issue drafts for (e), (f), and the 90 s-client/120 s-guest deadline mismatch are
 prepared under `out/osworld-v2-evidence/upstream-issues/`; they have not been filed.
 

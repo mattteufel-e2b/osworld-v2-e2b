@@ -15,6 +15,7 @@ optional `REQUIRE_NO_MODEL_COVERAGE=1` gate in `runner/run_agent_parallel.sh` co
 | `no_model.py`, `readiness.py` | Evaluator stubs and bounded observation retries used by the harness |
 | `profile_resources.sh` | Ladder rung 7: publish measured CPU/RAM/disk from evidence |
 | `receipt_summary.py` | Reduce a no-model aggregate receipt to the committable summary (also summarizes an agent campaign receipt from `runner/aggregate_agent.py`) |
+| `typing_control.py` | Isolated long-typing control for the disclosed controller patches (g)+(h): one 3,000-keypress action against one live guest, run by hand against a candidate build |
 
 Each harness process owns its E2B guest through the provider's in-process bridge; there is
 no separate relay to start or clean up. Shared path and environment gates live in
