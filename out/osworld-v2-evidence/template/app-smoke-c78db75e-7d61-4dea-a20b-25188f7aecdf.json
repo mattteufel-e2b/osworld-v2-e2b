@@ -1,6 +1,6 @@
 {
-  "template": "osworld-v2-gnome:cf428cd4-bdae-4280-8afc-5f0c08a11385",
-  "sandbox_id": "i05h5d3795otlrfhs4inp",
+  "template": "osworld-v2-gnome:c78db75e-7d61-4dea-a20b-25188f7aecdf",
+  "sandbox_id": "igsl0ytb9yvbakovt31nt",
   "apps": {
     "musescore": {
       "args": [
@@ -8,12 +8,13 @@
         "/home/user/Desktop/music_init.mscz"
       ],
       "launch_status": 200,
+      "screenshot_ok": true,
       "launch_body": "musescore /home/user/Desktop/music_init.mscz launched successfully",
       "window_found": true,
       "first_run_titles": [],
-      "seconds_to_window": 9.4,
+      "seconds_to_window": 9.5,
       "settle_seconds": 90,
-      "screenshot_bytes": 238756,
+      "screenshot_bytes": 238759,
       "windows": [
         "0x01e00014  0 e2b.local music_init"
       ]
@@ -24,12 +25,13 @@
         "/home/user/Desktop/nexachain_pitch_template.pptx"
       ],
       "launch_status": 200,
+      "screenshot_ok": true,
       "launch_body": "wpp /home/user/Desktop/nexachain_pitch_template.pptx launched successfully",
       "window_found": true,
       "first_run_titles": [],
-      "seconds_to_window": 6.3,
+      "seconds_to_window": 9.6,
       "settle_seconds": 90,
-      "screenshot_bytes": 1023922,
+      "screenshot_bytes": 1023975,
       "windows": [
         "0x01e0000f  0 e2b.local nexachain_pitch_template.pptx - Presentation"
       ]
@@ -39,10 +41,11 @@
         "blender"
       ],
       "launch_status": 200,
+      "screenshot_ok": true,
       "launch_body": "blender launched successfully",
       "window_found": true,
       "first_run_titles": [],
-      "seconds_to_window": 6.3,
+      "seconds_to_window": 6.4,
       "settle_seconds": 90,
       "screenshot_bytes": 401063,
       "windows": [
@@ -55,12 +58,13 @@
         "/home/user/Desktop/smoke_kicad/heart_rate_power.kicad_pro"
       ],
       "launch_status": 200,
+      "screenshot_ok": true,
       "launch_body": "kicad /home/user/Desktop/smoke_kicad/heart_rate_power.kicad_pro launched successfully",
       "window_found": true,
       "first_run_titles": [],
-      "seconds_to_window": 6.3,
+      "seconds_to_window": 6.4,
       "settle_seconds": 90,
-      "screenshot_bytes": 110842,
+      "screenshot_bytes": 101744,
       "windows": [
         "0x01e00017  0 e2b.local heart_rate_power \u2014 KiCad 10.0"
       ]
@@ -70,12 +74,13 @@
         "freecad"
       ],
       "launch_status": 200,
+      "screenshot_ok": true,
       "launch_body": "freecad launched successfully",
       "window_found": true,
       "first_run_titles": [],
-      "seconds_to_window": 9.4,
+      "seconds_to_window": 28.0,
       "settle_seconds": 90,
-      "screenshot_bytes": 189762,
+      "screenshot_bytes": 189842,
       "windows": [
         "0x01e00045  0 e2b.local FreeCAD 1.1.3"
       ]

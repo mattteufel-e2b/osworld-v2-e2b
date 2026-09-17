@@ -455,16 +455,27 @@ export const template = Template({ fileContextPath: filesDir })
   // would write - and the one setting that differs from factory defaults
   // stays readable on this line. Verified on that guest: with the file in
   // place `blender` opens straight onto the default cube, no panel.
-  // Running it under HOME=/home/user also leaves a ~/.cache behind, which the
-  // GNOME session would otherwise create itself at first login; baking that
-  // directory into the image was the one environmental difference between
-  // this build and 0eecdb03, so the cleanup below puts /home/user back to
-  // exactly what it held before, plus the config file.
+  // Running it under HOME=/home/user also leaves a ~/.cache behind (Blender
+  // creates ~/.cache/thumbnails/{fail,large}), which the GNOME session would
+  // otherwise create itself, 0700, at first login. Do not drop the cleanup
+  // below as tidying. The discarded build c324b7e4 shipped that directory and
+  // came up with a colord polkit modal - "Authentication Required /
+  // Authentication is required to create a color managed device" - standing
+  // over the whole desktop from session start, before any application
+  // launched, on every sandbox of it; 0eecdb03, which has no ~/.cache in the
+  // image, and every build since this cleanup was added have been clean.
+  // Honest limit on that: the first version of this cleanup removed
+  // ~/.cache/blender, which Blender never creates, and then `rmdir`d ~/.cache
+  // with `|| true`, so it was a no-op and builds 472f8e35 and cf428cd4 shipped
+  // the directory anyway without the modal returning. The mechanism is
+  // therefore not proven, only the correlation. What is enforced here is the
+  // state 0eecdb03 had: `rm -rf` takes the whole directory whatever put files
+  // in it, and `test ! -d` fails the build rather than shipping it again.
   .runCmd([
     'HOME=/home/user blender --background --factory-startup --python-expr "import bpy; bpy.context.preferences.view.show_splash = False; bpy.ops.wm.save_userpref()"',
     'test -s /home/user/.config/blender/4.5/config/userpref.blend',
-    'rm -rf /home/user/.cache/blender',
-    'rmdir /home/user/.cache 2>/dev/null || true',
+    'rm -rf /home/user/.cache',
+    'test ! -d /home/user/.cache',
     'chown -R user:user /home/user/.config/blender',
   ])
   // ---- KiCad 10 first-run suppression (captured config) ------------------
@@ -483,6 +494,20 @@ export const template = Template({ fileContextPath: filesDir })
   // nothing, and the three library tables on their own are not enough either.
   // With these six files present, `kicad <project>` opened straight into
   // "heart_rate_power - KiCad 10.0" with the project tree loaded.
+  // Re-captured on build cf428cd4 with KiCad launched from /home/user, because
+  // `system.working_dir` in kicad_common.json is whatever cwd KiCad was
+  // started in and it is the directory its file dialogs open on. The first
+  // capture was made through the guest server's /setup/launch, so it had
+  // recorded that server's own cwd, /opt/osworld-server - a directory `user`
+  // cannot write, which tasks 107 and 108 save files from. The re-capture also
+  // turned off both update checks through KiCad's own Preferences > Packages
+  // and Updates page (`system.check_for_kicad_updates` and
+  // `pcm.check_for_updates`, both now false), so KiCad cannot raise the same
+  // class of nag over a long run that MuseScore's update modal raised here.
+  // Opening that page is also why kicad_common.json now carries a
+  // `dialog.controls.Preferences` blob: wxWidgets remembers the Preferences
+  // dialog's geometry and per-widget state, it matches the settings above, and
+  // it is committed as written rather than edited out.
   .makeDir('/home/user/.config/kicad/10.0')
   .copy('kicad-config', '/home/user/.config/kicad/10.0')
   // ---- system-wide dconf defaults: a11y + interface + DPI/scaling ---------

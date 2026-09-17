@@ -51,14 +51,29 @@ DISPLAY_ENV = {"DISPLAY": ":0"}
 # Time for the application to finish painting its document after its window is
 # mapped; a screenshot taken the instant wmctrl sees the title catches a blank
 # frame and proves nothing. Measured on task 079's 3.3 MB deck: WPS
-# Presentation maps its window ~19s after launch and is still showing
-# "Opening: ... 40%" at 64s, with all 26 slides painted by ~105s. FreeCAD
-# likewise maps an unpainted window well before it has drawn anything. 90s of
-# settle puts the recorded screenshot past both.
+# Presentation maps its window 6-19s after launch (it varies run to run) and is
+# still showing "Opening: ... 40%" at 64s, with all 26 slides painted by ~105s.
+# FreeCAD likewise maps an unpainted window well before it has drawn anything.
+# 90s of settle puts the recorded screenshot past both.
 SETTLE_S = 90
 # Window titles that mean a first-run/licence dialog is still on screen.
 FIRST_RUN_MARKERS = ("setup", "welcome", "wizard", "license", "licence", "agreement")
 DESKTOP = "/home/user/Desktop"
+
+
+def _passed(result: dict) -> bool:
+    """Everything the run can check itself; the screenshot is the rest.
+
+    A non-200 /setup/launch, or an error body saved as <app>.png, must not
+    reach a green summary just because a window with a matching title happened
+    to be on screen.
+    """
+    return bool(
+        result["launch_status"] == 200
+        and result["screenshot_ok"]
+        and result["window_found"]
+        and not result["first_run_titles"]
+    )
 
 
 def _windows(sbx: Sandbox) -> str:
@@ -124,14 +139,15 @@ def main() -> int:
                 timeout=60,
             )
             windows = ""
+            seconds_to_window = None
             # FreeCAD's extracted AppImage takes ~90s to map its window on a
             # cold guest, so this waits well past that before giving up.
             for _ in range(60):
                 windows = _windows(sbx)
                 if title.lower() in windows.lower():
+                    seconds_to_window = round(time.time() - t0, 1)
                     break
                 time.sleep(3)
-            seconds_to_window = round(time.time() - t0, 1)
             time.sleep(SETTLE_S)
             windows = _windows(sbx)
             shot = requests.get(f"{server}/screenshot", headers=headers, timeout=30)
@@ -140,11 +156,15 @@ def main() -> int:
             report["apps"][app] = {
                 "args": args,
                 "launch_status": launch.status_code,
+                "screenshot_ok": shot.ok,
                 "launch_body": launch.text.strip()[:200],
                 "window_found": title.lower() in windows.lower(),
                 "first_run_titles": [
                     t for t in titles if any(m in t.lower() for m in FIRST_RUN_MARKERS)
                 ],
+                # null when the window never appeared, rather than the full
+                # 180s the poll spent waiting - an elapsed time recorded as
+                # time-to-window reads as a slow success, not a failure.
                 "seconds_to_window": seconds_to_window,
                 "settle_seconds": SETTLE_S,
                 "screenshot_bytes": len(shot.content),
@@ -162,22 +182,8 @@ def main() -> int:
         (out / "report.json").write_text(json.dumps(report, indent=2) + "\n")
         sbx.kill()
         print(f"killed {sbx.sandbox_id}", flush=True)
-    print(
-        json.dumps(
-            {
-                a: r["window_found"] and not r["first_run_titles"]
-                for a, r in report["apps"].items()
-            }
-        )
-    )
-    return (
-        0
-        if all(
-            r["window_found"] and not r["first_run_titles"]
-            for r in report["apps"].values()
-        )
-        else 1
-    )
+    print(json.dumps({a: _passed(r) for a, r in report["apps"].items()}))
+    return 0 if all(_passed(r) for r in report["apps"].values()) else 1
 
 
 if __name__ == "__main__":

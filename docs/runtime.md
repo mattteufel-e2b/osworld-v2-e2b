@@ -34,10 +34,10 @@ sandbox-metrics API; 15 sandboxes, no CPU/memory/disk saturation flags):
 | Fleet ×2 (websites, GitLab) | 4 | 8 GB (+8 GB swap at launch) | same entitlement | first compose build is the heavy phase (~524 s) |
 
 The guest disk entry is the image footprint, not a live-run peak: the build's own smoke sandbox
-on `osworld-v2-gnome:cf428cd4-bdae-4280-8afc-5f0c08a11385` reported 17,381,175,296 bytes used of
+on `osworld-v2-gnome:c78db75e-7d61-4dea-a20b-25188f7aecdf` reported 17,381,732,352 bytes used of
 114,834,632,704 usable on `/` before any task wrote anything (`rootUsedBytes` in that build's
 receipt, committed at
-`out/osworld-v2-evidence/template/template-build-cf428cd4-bdae-4280-8afc-5f0c08a11385.json`),
+`out/osworld-v2-evidence/template/template-build-c78db75e-7d61-4dea-a20b-25188f7aecdf.json`),
 so a running task only adds to it. The cell previously read ~7 GiB, a live-run peak
 measured on an earlier build that did not yet carry the applications below; the two figures are
 not directly comparable. That footprint covers the preinstalled application set recorded in the

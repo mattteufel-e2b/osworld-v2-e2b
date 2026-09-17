@@ -5,7 +5,7 @@
   },
   "appearance": {
     "grid_striping": false,
-    "hicontrast_dimming_factor": 0.800000011920929,
+    "hicontrast_dimming_factor": 0.8,
     "icon_theme": 2,
     "show_scrollbars": false,
     "text_editor_zoom": 0,
@@ -21,7 +21,61 @@
     "location": 0
   },
   "dialog": {
-    "controls": {}
+    "controls": {
+      "Preferences": {
+        "__geometry": {
+          "h": 702,
+          "w": 1046,
+          "x": 462,
+          "y": 218
+        },
+        "wxPanel_0wxTreebook_0wxPanel_0wxSearchCtrl_0": "",
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxCheckBox_0": true,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxCheckBox_1": false,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxCheckBox_10": false,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxCheckBox_11": true,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxCheckBox_2": false,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxCheckBox_3": true,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxCheckBox_4": false,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxCheckBox_5": false,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxCheckBox_6": false,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxCheckBox_7": false,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxCheckBox_8": true,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxCheckBox_9": false,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxChoice_0": 2,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxChoice_1": 0,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxChoice_2": 0,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxPanel_2wxChoice_0": 0,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxPanel_2wxSpinCtrl_0": 91,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxRadioButton_0": true,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxRadioButton_1": false,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxRadioButton_10": false,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxRadioButton_11": false,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxRadioButton_12": true,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxRadioButton_2": true,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxRadioButton_3": false,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxRadioButton_4": false,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxRadioButton_5": false,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxRadioButton_6": true,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxRadioButton_7": false,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxRadioButton_8": true,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxRadioButton_9": false,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxSpinCtrl_0": 9,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxSpinCtrl_1": 100,
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxTextCtrl_0": "",
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxTextCtrl_1": "",
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxTextCtrl_2": "",
+        "wxPanel_0wxTreebook_0wxPanel_1wxPanel_0wxTextCtrl_3": "80",
+        "wxPanel_0wxTreebook_0wxPanel_54wxPanel_0wxCheckBox_0": false,
+        "wxPanel_0wxTreebook_0wxPanel_54wxPanel_0wxCheckBox_1": false,
+        "wxPanel_0wxTreebook_0wxPanel_54wxPanel_0wxCheckBox_2": true,
+        "wxPanel_0wxTreebook_0wxPanel_54wxPanel_0wxCheckBox_3": true,
+        "wxPanel_0wxTreebook_0wxPanel_54wxPanel_0wxTextCtrl_0": "PCM_",
+        "wxPanel_0wxTreebook_0wxPanel_55wxCheckBox_0": false,
+        "wxPanel_0wxTreebook_0wxPanel_55wxFilePickerCtrl_0wxTextCtrl_0": "/usr/bin/python3",
+        "wxPanel_0wxTreebook_0wxPanel_56wxSpinCtrl_0": 30
+      }
+    }
   },
   "do_not_show_again": {
     "data_collection_prompt": true,
@@ -104,6 +158,6 @@
     "pdf_viewer_name": "",
     "text_editor": "",
     "use_system_pdf_viewer": true,
-    "working_dir": "/opt/osworld-server"
+    "working_dir": "/home/user"
   }
 }
