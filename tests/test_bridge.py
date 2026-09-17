@@ -346,7 +346,6 @@ class GuestManagerTests(unittest.IsolatedAsyncioTestCase):
                 "traffic_token": "websites-traffic-token",
                 "host_suffix": "127.0.0.1.nip.io",
                 "public_host_suffix": "127.0.0.1.nip.io:8090",
-                "scheme": "https",
                 "caddy_ingress_host": "80-websites.e2b.app",
                 "mode": "per-port-fanout",
                 "asset_url_map": {
@@ -370,7 +369,6 @@ class GuestManagerTests(unittest.IsolatedAsyncioTestCase):
                 "port": 8929,
                 "url": "https://gitlab.127.0.0.1.nip.io:8090",
                 "external_url": "https://gitlab.127.0.0.1.nip.io",
-                "scheme": "https",
                 "aliases": ["54.174.16.65.sslip.io"],
                 "private_token": "gitlab-private-token",
                 "token_file": "/host/services/.gitlab-token",

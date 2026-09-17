@@ -260,7 +260,6 @@ def main() -> int:
                 # Task 041 hardcodes this public GitLab host; the hostmap
                 # proxy routes it here as an alias of our real GitLab host.
                 "aliases": [campaign_tls.TASK_041_GITLAB_ALIAS],
-                "scheme": "https",
                 "private_token": token,
                 "token_file": str(TOKEN_FILE),
             },

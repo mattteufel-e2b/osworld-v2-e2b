@@ -295,7 +295,6 @@ def _guest_proxy_runtime_json(rules_json: str) -> str:
                 "traffic_token",
                 "host_suffix",
                 "public_host_suffix",
-                "scheme",
                 "asset_url_map",
             )
             if key in websites
@@ -317,7 +316,6 @@ def _guest_proxy_runtime_json(rules_json: str) -> str:
                 "url",
                 "ingress_host",
                 "port",
-                "scheme",
                 "aliases",
             )
             if key in gitlab

@@ -519,7 +519,6 @@ def main() -> int:
                 "caddy_ingress_host": sbx.get_host(80),
                 "mode": "per-port-fanout",
                 "sites": site_map,
-                "scheme": "https",
                 "asset_url_map": asset_url_map,
             },
         )

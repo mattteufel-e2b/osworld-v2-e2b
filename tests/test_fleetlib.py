@@ -1045,7 +1045,7 @@ class FleetRuntimePolicyTests(unittest.TestCase):
 
         self.assertIsNone(captured["env"])
 
-    def test_websites_main_publishes_https_scheme_and_asset_url_map(self):
+    def test_websites_main_publishes_the_asset_url_map(self):
         websites = load_websites_launcher()
         sandbox = type(
             "Sandbox",
@@ -1143,7 +1143,6 @@ class FleetRuntimePolicyTests(unittest.TestCase):
         )
         stage_assets.assert_called_once_with(sandbox, websites.fl.HOST_SUFFIX)
         self.assertEqual(v2check.call_args.kwargs["ca_bundle"], FAKE_TLS["bundle"])
-        self.assertEqual(runtime["websites"]["scheme"], "https")
         self.assertEqual(runtime["websites"]["asset_url_map"], asset_map)
 
     def test_tls_env_is_empty_before_the_tls_section_exists(self):
@@ -1357,7 +1356,6 @@ class FleetRuntimePolicyTests(unittest.TestCase):
             runtime["gitlab"]["url"].startswith("https://gitlab.127.0.0.1.nip.io:")
         )
         self.assertEqual(runtime["gitlab"]["aliases"], ["54.174.16.65.sslip.io"])
-        self.assertEqual(runtime["gitlab"]["scheme"], "https")
 
     def test_websites_then_gitlab_tls_calls_cover_both_fleets_in_the_documented_order(
         self,
