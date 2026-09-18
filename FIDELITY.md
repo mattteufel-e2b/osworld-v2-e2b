@@ -52,11 +52,17 @@ Those three are one signature, not three defects. Each records `stage: reset`, `
 reset-or-observation`, `evaluator_ran: false`, `score: null`, with a second-generation guest
 (post strict-reset) answering `502` to every accessibility-tree request; 008 and 009 also drew
 `500` from the CDP `/json/version` endpoint. All three started inside the first three seconds
-of the 80-worker launch wave. The 5xx responses and the launch timings are in the gitignored
-worker logs
-(`out/osworld-v2-raw/live-osworld-live-20260918T000607Z/ladder/no-model-raw/workers/task_{008,009,030}.log`)
-and the coordinator's own log
-(`out/osworld-v2-raw/live-osworld-live-20260918T000607Z/ladder/coordinator-stdout.log`).
+of the 80-worker launch wave. The 5xx responses are in the gitignored worker logs
+(`out/osworld-v2-raw/live-osworld-live-20260918T000607Z/ladder/no-model-raw/workers/task_{008,009,030}.log`).
+The launch timings are not: neither those logs nor the coordinator's own log
+(`out/osworld-v2-raw/live-osworld-live-20260918T000607Z/ladder/coordinator-stdout.log`) carries
+a timestamp — the coordinator log only prints `launched task NNN pid=…` lines in order. The
+timings come from the gitignored aggregate receipt
+(`out/osworld-v2-raw/live-osworld-live-20260918T000607Z/ladder/no-model.json`), whose per-record
+`started_at` values — `2026-09-18T01:04:38.836599+00:00` (008), `01:04:40.084920` (009), and
+`01:04:41.363405` (030), against the run's first launch at `01:04:38.429432` — place all three
+in that window. The committed summary carries no per-task `started_at`, so the raw receipt is
+the only source for the timings.
 This is the reset-time ingress 5xx burst already recorded for
 030 on `c78db75e…` and for 043 on `0d796343…`. A follow-up wave re-ran exactly those three on
 fresh sandboxes at concurrency 3 and all three passed:
@@ -76,7 +82,8 @@ long-typing control
 is covered in the controller-patch section below.
 
 Nine application and fleet tasks then ran with the upstream M3 agent at 500 steps, concurrency
-9, Haiku 4.5 on Bedrock Mantle configured as judge and user simulator:
+9, Haiku 4.5 on Bedrock Mantle configured as judge, and the same model configured as user
+simulator with no provider or transport recorded in the receipt:
 [summary](out/osworld-v2-evidence/live/agent-nine-20260918.summary.json). The summary carries
 no judge or simulator configuration fields — `maintainer/receipt_summary.py` keeps none — so
 that configuration is checkable only in the gitignored raw receipt
@@ -201,11 +208,12 @@ directory `out/osworld-v2-raw/live-osworld-live-20260918T000607Z/`: the per-task
 
 - **Applications.** The five tasks whose applications were missing or incompatible (067
   `musescore`, 079 and 087 `wpp`, 092 `blender`, 107 `kicad` failing with APT code 100 behind a
-  FreeCAD package hold) set up with completely empty worker logs on build `00124a57…`: no
-  `command not found`, no `Failed to launch application`, and for 107 no `apt-get` activity at
-  all, with the agent opening KiCad in its first steps. That closes launcher presence and setup
-  success, and nothing more. The original 067 finding (`docs/pr-1-verification.md:114`) has a
-  second half — installed `musescore3` is 3.2.3 and rejects the input created by MuseScore
+  FreeCAD package hold) show no launcher or install failures in the worker logs on build
+  `00124a57…`: zero occurrences of `command not found`, zero of `Failed to launch application`,
+  and for 107 zero `apt-get` activity, with the agent opening KiCad in its first steps. That
+  closes launcher presence and setup success, and nothing more. The original 067 finding
+  (`docs/pr-1-verification.md:114`) has a second half — installed `musescore3` is 3.2.3 and
+  rejects the input created by MuseScore
   4.6.5, producing no export — and that half is untested and still open: `musescore3` is still
   3.2.3 on this build (recorded under "Unpinnable applications" below), nothing in this wave
   opened or exported the pinned score, and 067 scored `0.0`. It does not establish MuseScore
