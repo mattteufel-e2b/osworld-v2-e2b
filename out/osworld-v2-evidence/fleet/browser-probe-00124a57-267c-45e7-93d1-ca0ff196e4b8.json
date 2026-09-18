@@ -1571,7 +1571,7 @@
   "purpose": "guest-browser secure-context probe over the campaign HTTPS fleet origins; not a benchmark score",
   "sanitized": {
     "certificate_blobs_removed": 26,
-    "note": "committed reduction of the raw receipt under out/osworld-v2-raw/: base64 DER certificate chains removed from Security events (the chain is the campaign CA plus its fleet leaf, both regenerated per campaign and already described by issuer/subjectName here); every acceptance value, per-origin probe value, recorded request, log entry and blocked URL is verbatim from the raw file."
+    "note": "committed reduction of the raw receipt under out/osworld-v2-raw/: base64 DER certificate chains removed from Security events (the chain is the campaign CA plus its fleet leaf, both regenerated per campaign and already described by issuer/subjectName here); every acceptance value, per-origin probe value, recorded request, log entry and blocked URL is verbatim from the raw file. The fleet session cookies are retained deliberately: teamchat.cookie_after_set and cloudcrm.cookie_visible each hold a user_id uuid, and those two values ARE the cookie-isolation result -- the check is that the id set on TeamChat is absent from CloudCRM's own document.cookie, which is unverifiable if the ids are redacted. They are per-campaign fleet state identifiers minted by the mock websites, not credentials: they grant nothing, the campaign's fleet sandboxes were swept after the run, and each campaign mints its own."
   },
   "schema_version": 1,
   "socat_launch": [

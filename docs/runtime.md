@@ -160,9 +160,13 @@ Trust is installed into the guest before Chrome ever starts: the CA cert is copi
 `/usr/local/share/ca-certificates/osworld-campaign.crt` and picked up by
 `update-ca-certificates` (system trust store), and separately imported into Chrome's own NSS
 database with `certutil -d sql:/home/user/.pki/nssdb -A -t "C,," -n osworld-campaign -i
-/opt/hostmap-tls/ca.crt` — Chrome on Linux consults NSS, not just the system store, so both
-installs are required for `isSecureContext` to be true. Neither install command backgrounds
-or swallows its exit code, so a missing `certutil`/nssdb or a failed `update-ca-certificates`
+/usr/local/share/ca-certificates/osworld-campaign.crt` — Chrome on Linux consults NSS, not just
+the system store, so both installs are required for `isSecureContext` to be true. That `-i`
+reads the installed copy, not `/opt/hostmap-tls/ca.crt`, because `certutil` runs as `user` (it
+writes the user-owned NSS database) and `/opt/hostmap-tls` is root-owned mode `0700`, so the
+root-only path fails with EACCES and aborts the session — do not "tidy" it back. Neither
+install command backgrounds or swallows its exit code, so a missing `certutil`/nssdb or a
+failed `update-ca-certificates`
 raises rather than silently leaving Chrome untrusting. The guest template ships
 `libnss3-tools` (for `certutil`) and a `/home/user/.pki/nssdb` seeded by `certutil -N`. Guest TLS
 material (`leaf.crt`, `leaf.key`, `ca.crt`) lives at `/opt/hostmap-tls/`, root-owned,
@@ -212,10 +216,22 @@ than guessing, naming the sandbox to kill manually. On a clean teardown, `remove
 deletes `services/.campaign-tls/` and the `tls` runtime section along with the rest of the
 campaign's state.
 
-Status: everything above is implemented and covered by unit tests against faked sandboxes; the
-guest-side half (trust install, guest proxy TLS termination, `isSecureContext`) has not yet been
-exercised against a live guest — that live verification, and priced inference on top of it, are
-separate, unrun roadmap tasks.
+Status: everything above is implemented and covered by unit tests against faked sandboxes. The
+guest-side half has since been exercised against a live guest on build
+`osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8`. The guest-browser probe
+([evidence](../out/osworld-v2-evidence/fleet/browser-probe-00124a57-267c-45e7-93d1-ca0ff196e4b8.json))
+read `isSecureContext: true`, a `secure` visible security state over TLS 1.3, and no
+certificate interstitial from inside the guest's own Chrome on all six fleet origins, which
+means the trust install and the guest proxy's TLS termination both worked; priced inference ran
+on top of the same build and fleet campaign
+([summary](../out/osworld-v2-evidence/live/agent-nine-20260918.summary.json)), nine tasks with
+the upstream M3 agent.
+
+That is one build, one fleet campaign and one probe run. The probe drove only the portless
+`:443` origins, not the `:8090` origins upstream's URL builder hands tasks, and it loaded only
+landing pages; the nine-task run returned a **FAIL** gate and scores at or near zero.
+`FIDELITY.md` states what those two runs do and do not establish, and it is the authority on
+that, not this file.
 
 ## Snapshots
 

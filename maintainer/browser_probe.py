@@ -80,6 +80,14 @@ Four of the booleans guard the probe against scoring itself green on nothing:
     The comparison is on origin (scheme + host), not full URL, because these
     apps redirect within their own origin and that is correct.
 
+Before any guest is created, ``_origin_literal_check`` asserts that the literal
+``ORIGINS`` list still names the fleet's real hosts — the portless
+``WEBSITE_HOST_SUFFIX`` host and the task-041 alias in the campaign leaf's SAN
+list — and raises naming both values if not, recording in
+``origin_literal_check`` which halves ran and which were skipped for want of an
+input. A probe silently testing origins no task uses would read exactly like a
+passing one.
+
 Every raw per-origin value is recorded whether it passes or fails: a failure has
 to be diagnosable from the JSON alone. A real defect found here (a genuine
 mixed-content block, say) is a valid outcome — do not weaken a check to make the
@@ -137,6 +145,22 @@ ORIGINS: tuple[tuple[str, str], ...] = (
     ("streamview", "https://streamview.127.0.0.1.nip.io"),
     ("studio-streamview", "https://studio.streamview.127.0.0.1.nip.io"),
     ("gitlab-041", "https://54.174.16.65.sslip.io/users/sign_in"),
+)
+# ORIGINS stays literal on purpose: the probe has to state the origins it
+# claims to have tested rather than derive them from the same wiring under
+# test. The cost of that is drift -- the two values those literals encode
+# duplicate services/fleetlib.py's HOST_SUFFIX and services/campaign_tls.py's
+# TASK_041_GITLAB_ALIAS, and if either moved, the probe would keep passing
+# while testing hosts no task uses. So they are named here and checked against
+# the live campaign at startup by _origin_literal_check. The services modules
+# are deliberately not imported: services/campaign_tls.py pulls in fleetlib and
+# the e2b SDK and mutates sys.path at import, which the probe (which already
+# inserts the upstream checkout at sys.path[0]) must not depend on. The
+# campaign's own runtime file is the authority instead.
+ORIGIN_HOST_SUFFIX = "127.0.0.1.nip.io"
+ORIGIN_GITLAB_ALIAS = "54.174.16.65.sslip.io"
+SERVICES_RUNTIME_FILE = (
+    Path(__file__).resolve().parents[1] / "services" / ".runtime.json"
 )
 # The argv the brief pins, and the socat forward all 78 upstream Chrome task
 # configs issue right after it (tasks/task_016.py:297-298). The template's
@@ -234,6 +258,99 @@ def _origin_of(url: str) -> str:
     if len(parts) < 3 or not parts[0].endswith(":") or parts[1] != "" or not parts[2]:
         return ""
     return f"{parts[0]}//{parts[2]}".lower()
+
+
+def _origin_literal_check(runtime_file: Path | None = None) -> dict:
+    """Check ORIGINS against the live campaign before a guest is created.
+
+    Three things, all cheap, none of which changes which origins are probed:
+
+      1. The literals are self-consistent -- every host in ORIGINS is either
+         under ``ORIGIN_HOST_SUFFIX`` or is exactly ``ORIGIN_GITLAB_ALIAS``.
+         A typo'd entry fails here instead of producing a green record for an
+         origin nothing serves.
+      2. ``WEBSITE_HOST_SUFFIX`` (which the record already stores but never
+         checked) names the same host, once its ``:port`` is stripped. The
+         suffix carries a port for the tasks (``…nip.io:8090``); the probe
+         navigates the portless form, so only the host half is comparable.
+      3. ``services/.runtime.json``'s ``tls.hosts`` -- the campaign leaf's own
+         SAN list -- contains ``ORIGIN_GITLAB_ALIAS``.
+         ``campaign_tls.ensure_campaign_tls`` folds ``TASK_041_GITLAB_ALIAS``
+         into every leaf unconditionally, so its absence means the constant
+         here is no longer that one.
+
+    Raises ``RuntimeError`` naming both values on a mismatch: a probe testing
+    the wrong origins is worse than no probe, because its record reads the
+    same. Where an input is unavailable (no ``WEBSITE_HOST_SUFFIX`` exported,
+    no runtime file, or a runtime file with no ``tls`` section) the check is
+    recorded as skipped rather than quietly passed -- the returned dict goes
+    into the receipt so a reader can see which halves actually ran.
+    """
+    runtime_file = SERVICES_RUNTIME_FILE if runtime_file is None else runtime_file
+    hosts = [_origin_of(url).split("//", 1)[-1] for _, url in ORIGINS]
+    result: dict = {
+        "origin_host_suffix": ORIGIN_HOST_SUFFIX,
+        "gitlab_alias": ORIGIN_GITLAB_ALIAS,
+        "probed_hosts": hosts,
+        "runtime_file": str(runtime_file),
+    }
+
+    stray = [
+        host
+        for host in hosts
+        if host != ORIGIN_GITLAB_ALIAS and not host.endswith(f".{ORIGIN_HOST_SUFFIX}")
+    ]
+    if stray:
+        raise RuntimeError(
+            "browser_probe ORIGINS is internally inconsistent: "
+            f"{stray} is neither under {ORIGIN_HOST_SUFFIX!r} nor the task-041 "
+            f"alias {ORIGIN_GITLAB_ALIAS!r}"
+        )
+
+    suffix_env = os.environ.get("WEBSITE_HOST_SUFFIX")
+    if not suffix_env:
+        result["host_suffix_checked"] = False
+        result["host_suffix_skipped_because"] = "WEBSITE_HOST_SUFFIX is not set"
+    else:
+        # rsplit, not split: the suffix is a bare host[:port], never a URL, and
+        # the host itself contains dots but no colon.
+        suffix_host = suffix_env.rsplit(":", 1)[0] if ":" in suffix_env else suffix_env
+        result["website_host_suffix_host"] = suffix_host
+        if suffix_host != ORIGIN_HOST_SUFFIX:
+            raise RuntimeError(
+                "browser_probe would test the wrong fleet origins: "
+                f"WEBSITE_HOST_SUFFIX={suffix_env!r} (host {suffix_host!r}) but "
+                f"ORIGINS is built on {ORIGIN_HOST_SUFFIX!r}. The fleet suffix "
+                "moved; update ORIGINS and ORIGIN_HOST_SUFFIX together."
+            )
+        result["host_suffix_checked"] = True
+
+    tls_hosts = None
+    if runtime_file.exists():
+        try:
+            tls_hosts = (json.loads(runtime_file.read_text()).get("tls") or {}).get(
+                "hosts"
+            )
+        except (OSError, ValueError) as error:
+            result["runtime_file_error"] = f"{type(error).__name__}: {error}"
+    if not tls_hosts:
+        result["gitlab_alias_checked"] = False
+        result["gitlab_alias_skipped_because"] = (
+            f"{runtime_file} has no tls.hosts (no live campaign recorded)"
+        )
+    else:
+        result["tls_hosts"] = list(tls_hosts)
+        if ORIGIN_GITLAB_ALIAS not in tls_hosts:
+            raise RuntimeError(
+                "browser_probe would test the wrong task-041 GitLab origin: "
+                f"{ORIGIN_GITLAB_ALIAS!r} is not in the campaign leaf's SAN list "
+                f"{sorted(tls_hosts)!r} from {runtime_file}. campaign_tls.py's "
+                "TASK_041_GITLAB_ALIAS moved; update ORIGIN_GITLAB_ALIAS and the "
+                "gitlab-041 entry in ORIGINS together."
+            )
+        result["gitlab_alias_checked"] = True
+
+    return result
 
 
 def _short_exception(details: dict | None) -> dict | None:
@@ -986,6 +1103,9 @@ def main() -> int:
     build_id = template.split(":", 1)[1] if ":" in template else template
     output_dir = args.output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    # Before any guest exists, so a drifted origin list costs nothing and
+    # cannot produce a record at all.
+    origin_literal_check = _origin_literal_check()
 
     record: dict = {
         "schema_version": 1,
@@ -998,6 +1118,7 @@ def main() -> int:
         "build_id": build_id,
         "campaign_id": os.environ.get("OSWORLD_CAMPAIGN_ID"),
         "website_host_suffix": os.environ.get("WEBSITE_HOST_SUFFIX"),
+        "origin_literal_check": origin_literal_check,
         "origins_requested": [{"label": label, "url": url} for label, url in ORIGINS],
         "chrome_launch": CHROME_LAUNCH,
         "socat_launch": SOCAT_LAUNCH,
