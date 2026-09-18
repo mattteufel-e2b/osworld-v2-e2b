@@ -547,10 +547,9 @@ The M3 prompt still forbids asking for clarification and omits the parser-suppor
 scoring function remain upstream's. Patch (k) changes typing speed; other PyAutoGUI calls
 retain the guest's 0.1-second pause.
 
-With (f), an `[INFEASIBLE]` emitted only
-inside the reasoning block with no accompanying tool call now continues the rollout instead of
-terminating it, so such runs consume more steps and more inference spend than they did on the
-unpatched parser; and the worst-case span of a non-timeout retry inside
+With (f), an `[INFEASIBLE]` emitted only inside the reasoning block does not terminate
+the rollout. If no executable action accompanies it, (l) retries the response within
+the configured limit and then fails the task. The worst-case span of a non-timeout retry inside
 `execute_python_command` grew with the longer per-request deadline (three attempts at up to
 130 s each instead of 90 s), because (h) short-circuits only the guest's own timeout 500.
 
@@ -574,6 +573,34 @@ matched the expected text, including quotes, backslashes and newlines. See the
 
 Upstream issue drafts for (e), (f), and the 90 s-client/120 s-guest deadline mismatch are
 prepared under `out/osworld-v2-evidence/upstream-issues/`; they have not been filed.
+
+## Bedrock sample on the current build
+
+Tasks 008, 019, 026, 041, 092 and 095 ran on
+`osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8` with Bedrock Sonnet 5,
+the M3 agent, adaptive thinking, 4,096 output tokens, six concurrent workers and
+a 100-action limit. All six completed setup, inference and evaluation without
+a task-level error: [sample receipt](out/osworld-v2-evidence/pr5-bedrock-sample/sample.json).
+Task 092 scored 0.1; the other five scored 0. Task 095 declared failure after
+23 actions; the other tasks exhausted the limit. No task retry was used.
+
+This verifies bounded execution, not benchmark performance or scoring parity.
+Sonnet repeatedly supplied out-of-bounds pointer positions in four tasks despite
+the M3 prompt's normalized-coordinate rule:
+[pointer diagnostics](out/osworld-v2-evidence/pr5-bedrock-sample/pointer-diagnostics.json).
+This agent/model pairing is not validated for a larger performance run.
+The sample did not reach an LLM judge or user-simulator call; their live coverage
+comes from the explicit task-loop controls described above.
+
+The [inference accounting](out/osworld-v2-evidence/pr5-bedrock-sample/inference-spend.json)
+covers all diagnostic attempts, controls and sample requests: $55.25 estimated
+measured usage, plus $40.37 retained reservations for responses without usage,
+or $95.62 accounted against the shared $160 cutoff and requested $200 limit.
+The estimate uses published prices with a 10% allowance, not an AWS invoice.
+Both service fleets and all campaign guests were stopped after verification.
+Earlier Haiku attempts are preserved as
+[diagnostics](out/osworld-v2-evidence/pr5-bedrock-sample/diagnostic-attempts.json),
+including intentional interruptions and malformed-action failures.
 
 ## Not-certified / excluded
 

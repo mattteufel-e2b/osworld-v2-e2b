@@ -62,6 +62,11 @@
     "passed": true
   },
   "campaign_id": "osworld-v2-pr5-bedrock-20260918",
+  "cleanup": {
+    "campaign_sandboxes_remaining": 0,
+    "guest_sandboxes_remaining_before_fleet_stop": 0,
+    "service_sandboxes_stopped": 2
+  },
   "judge": {
     "kind": "scripted DONE control through unmodified task035 evaluator, not an agent performance result",
     "model": "anthropic.claude-haiku-4-5",
