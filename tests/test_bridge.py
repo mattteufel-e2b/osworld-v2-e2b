@@ -599,7 +599,9 @@ class GuestManagerTests(unittest.IsolatedAsyncioTestCase):
         # root -- a root-run certutil would leave root-owned files under
         # /home/user/.pki/nssdb.
         certutil_kwargs = [
-            kwargs for command, kwargs in sandbox.commands.calls if "certutil" in command
+            kwargs
+            for command, kwargs in sandbox.commands.calls
+            if "certutil" in command
         ][0]
         self.assertEqual(certutil_kwargs.get("user"), "user")
 
