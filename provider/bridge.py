@@ -221,9 +221,19 @@ def _install_guest_proxy(sandbox: Sandbox, config: BridgeConfig) -> None:
         # libnss3-tools and a seeded /home/user/.pki/nssdb; if either were
         # missing, the SDK's CommandExitException already fails the session
         # loudly rather than leaving Chrome untrusting.
+        #
+        # certutil runs as `user` (it must write the user-owned NSS database
+        # at /home/user/.pki/nssdb -- a root-run certutil would leave
+        # root-owned files there), so it reads the CA from the world-readable
+        # copy the command above already installed at
+        # /usr/local/share/ca-certificates/osworld-campaign.crt (mode 0644),
+        # not from /opt/hostmap-tls/ca.crt: the chmod 0700 above deliberately
+        # makes that directory unreadable to `user`, so certutil would fail
+        # with EACCES trying to open a path under it.
         sandbox.commands.run(
             'certutil -d sql:/home/user/.pki/nssdb -A -t "C,," '
-            "-n osworld-campaign -i /opt/hostmap-tls/ca.crt",
+            "-n osworld-campaign "
+            "-i /usr/local/share/ca-certificates/osworld-campaign.crt",
             user="user",
             timeout=30,
         )

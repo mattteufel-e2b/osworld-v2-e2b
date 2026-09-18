@@ -493,6 +493,116 @@ class GuestManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("token_file", serialized)
         self.assertNotIn("/host/", serialized)
 
+    async def test_guest_proxy_certutil_reads_installed_ca_not_hostmap_tls_dir(self):
+        # Step 1 (the chown/chmod/install trust-install command) roots-owns
+        # /opt/hostmap-tls at mode 0700, so the unprivileged `user` account
+        # that runs certutil below can never traverse into it -- that's the
+        # 0921f49 hardening this test must not weaken. Step 1 also installs a
+        # world-readable copy of the CA cert to
+        # /usr/local/share/ca-certificates/osworld-campaign.crt (mode 0644),
+        # and certutil must read that copy instead: reading anything under
+        # /opt/hostmap-tls as `user` fails with EACCES and aborts guest
+        # creation.
+        runtime = {
+            "websites": {
+                "traffic_token": "websites-traffic-token",
+                "host_suffix": "127.0.0.1.nip.io",
+                "sites": {
+                    "mailhub": {
+                        "ingress_host": "13001-websites.e2b.app",
+                        "port": 13001,
+                    }
+                },
+            },
+            "gitlab": {
+                "traffic_token": "gitlab-traffic-token",
+                "host": "gitlab.127.0.0.1.nip.io",
+                "ingress_host": "8929-gitlab.e2b.app",
+                "port": 8929,
+            },
+            "tls": {
+                "campaign_id": "test-campaign",
+                "hosts": ["mailhub.127.0.0.1.nip.io", "gitlab.127.0.0.1.nip.io"],
+            },
+        }
+
+        class Files:
+            def __init__(self):
+                self.writes = {}
+
+            def write(self, path, content, **kwargs):
+                self.writes[path] = content
+
+        class Commands:
+            def __init__(self):
+                self.calls = []
+
+            def run(self, command, **kwargs):
+                self.calls.append((command, kwargs))
+                return type("Result", (), {"stdout": "ok\n"})()
+
+        sandbox = type("Sandbox", (), {"files": Files(), "commands": Commands()})()
+        with tempfile.TemporaryDirectory() as directory:
+            script_file = Path(directory) / "hostmap_proxy.py"
+            runtime_file = Path(directory) / "runtime.json"
+            ca_cert_file = Path(directory) / "ca.crt"
+            leaf_cert_file = Path(directory) / "leaf.crt"
+            leaf_key_file = Path(directory) / "leaf.key"
+            ca_cert_file.write_text("CACERT")
+            leaf_cert_file.write_text("LEAFCERT")
+            leaf_key_file.write_text("LEAFKEY")
+            runtime["tls"].update(
+                {
+                    "ca_cert": str(ca_cert_file),
+                    "leaf_cert": str(leaf_cert_file),
+                    "leaf_key": str(leaf_key_file),
+                }
+            )
+            script_file.write_text("# guest proxy")
+            runtime_file.write_text(json.dumps(runtime))
+            config = bridge.BridgeConfig(
+                template=IMMUTABLE_TEMPLATE,
+                campaign_id="test-campaign",
+                guest_proxy_script=str(script_file),
+                fleet_rules=str(runtime_file),
+            )
+            bridge._install_guest_proxy(sandbox, config)
+
+        calls = [command for command, _kwargs in sandbox.commands.calls]
+        certutil_calls = [c for c in calls if "certutil" in c]
+        self.assertEqual(len(certutil_calls), 1)
+        certutil = certutil_calls[0]
+
+        # The bug: certutil issued against /opt/hostmap-tls/ca.crt, which
+        # step 1's chmod 0700 makes unreadable to the `user` account that
+        # runs this command, so it exits 255 and aborts guest creation.
+        self.assertNotIn("/opt/hostmap-tls", certutil)
+        # The fix: certutil reads the world-readable copy step 1 already
+        # installed.
+        self.assertIn(
+            "-i /usr/local/share/ca-certificates/osworld-campaign.crt", certutil
+        )
+
+        # The 0921f49 hardening itself must still hold: /opt/hostmap-tls
+        # stays root-owned, mode 0700, leaf.key mode 0600 -- this test must
+        # not have weakened that to make certutil pass.
+        trust_install = [c for c in calls if "update-ca-certificates" in c][0]
+        self.assertIn("chmod 0700 /opt/hostmap-tls", trust_install)
+        self.assertIn("chmod 0600 /opt/hostmap-tls/leaf.key", trust_install)
+        self.assertIn(
+            "chown root:root /opt/hostmap-tls /opt/hostmap-tls/leaf.crt "
+            "/opt/hostmap-tls/leaf.key /opt/hostmap-tls/ca.crt",
+            trust_install,
+        )
+
+        # certutil still writes the user-owned NSS database as `user`, not
+        # root -- a root-run certutil would leave root-owned files under
+        # /home/user/.pki/nssdb.
+        certutil_kwargs = [
+            kwargs for command, kwargs in sandbox.commands.calls if "certutil" in command
+        ][0]
+        self.assertEqual(certutil_kwargs.get("user"), "user")
+
     async def test_guest_proxy_without_tls_section_behaves_as_before(self):
         runtime = {
             "websites": {
