@@ -15,6 +15,7 @@ optional `REQUIRE_NO_MODEL_COVERAGE=1` gate in `runner/run_agent_parallel.sh` co
 | `no_model.py`, `readiness.py` | Evaluator stubs and bounded observation retries used by the harness |
 | `profile_resources.sh` | Ladder rung 7: publish measured CPU/RAM/disk from evidence |
 | `receipt_summary.py` | Reduce a no-model aggregate receipt to the committable summary (also summarizes an agent campaign receipt from `runner/aggregate_agent.py`) |
+| `app_smoke.py` | Open each parity application on a fresh guest of one build on its pinned task input, and record windows plus a screenshot per application (`GUEST_TEMPLATE=...`); the screenshots are the evidence and a human reads them |
 
 Each harness process owns its E2B guest through the provider's in-process bridge; there is
 no separate relay to start or clean up. Shared path and environment gates live in

@@ -129,6 +129,32 @@ Register your agent in [`runner/agents.py`](runner/agents.py), implementing upst
 You can also use the included `prompt` agent with an OpenAI-compatible endpoint.
 See [agent configuration and examples](docs/configuration.md#bring-your-own-agent).
 
+## Licences you maintain
+
+You build the guest image yourself; this repository redistributes none of these binaries.
+The template installs the following components whose terms you are responsible for:
+
+| Component | Version | Licence |
+|---|---|---|
+| Google Chrome | `153.0.8010.47-1` in build `00124a57-267c-45e7-93d1-ca0ff196e4b8`; each build freezes whatever the Google repo served, recorded in the build's own `template/results/template-build.json` and committed for this build at `out/osworld-v2-evidence/template/template-build-00124a57-267c-45e7-93d1-ca0ff196e4b8.json` | [Google Chrome Terms of Service](https://www.google.com/chrome/terms/) |
+| WPS Office for Linux | 11.1.0.11723 | [Kingsoft EULA](https://www.wps.com/eula/) (proprietary) |
+| REAPER | 7.79 | [Evaluation licence](https://www.reaper.fm/purchase.php); a paid licence is required for continued use |
+| Visual Studio Code | 1.91.1 | [Microsoft Software License](https://code.visualstudio.com/license); Microsoft's `.deb` build is proprietary, not the MIT-licensed `vscode` source |
+
+Open-source components installed from vendor releases or Ubuntu 22.04: MuseScore Studio 4.6.5 (GPL-3.0),
+Blender 4.5.14 (GPL-2.0-or-later), KiCad 10.0 (GPL-3.0-or-later, via the KiCad PPA; `apt-get install -y kicad` runs with recommends,
+so it also pulls `kicad-libraries` — the symbol, footprint and 3D-model data, which is
+[CC-BY-SA-4.0 with the KiCad library exception](https://www.kicad.org/libraries/license/), a
+separate obligation from the application's GPL), FreeCAD 1.1.3
+(LGPL-2.1), Zotero 7.0.15 (AGPL-3.0), Shotcut (GPL-3.0), OpenBoard (GPL-3.0), LibreOffice (MPL-2.0),
+x11vnc (GPL-2.0), noVNC (MPL-2.0), websockify (LGPL-3.0), and task 082's Docker Compose v2 CLI plugin
+(Apache-2.0). Also from Ubuntu 22.04's archive: GIMP (GPL-3.0-or-later), VLC (GPL-2.0-or-later),
+Thunderbird (MPL-2.0) and Evince (GPL-2.0-or-later), alongside the GNOME desktop, fonts, PulseAudio
+and the X/screenshot tooling the evaluators call; every archive package's authoritative terms are its
+own `/usr/share/doc/<package>/copyright` file inside the guest. The upstream
+guest server (`xlang-ai/osworld-server`) publishes no licence and is fetched at build time, never
+redistributed (see `docs/runtime.md`).
+
 ## Documentation
 
 - [Agent, judge, and run configuration](docs/configuration.md)

@@ -1,0 +1,11 @@
+{
+  "meta": {
+    "version": 0
+  },
+  "pcm": {
+    "check_for_updates": false
+  },
+  "system": {
+    "check_for_kicad_updates": false
+  }
+}

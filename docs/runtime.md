@@ -30,8 +30,30 @@ sandbox-metrics API; 15 sandboxes, no CPU/memory/disk saturation flags):
 
 | Sandbox | vCPU | RAM | Disk (root) | Measured peaks |
 | --- | --- | --- | --- | --- |
-| Guest (one per task/worker) | 4 | 8 GB | ≥100 GB usable | 1.5 cores, 0.8 GiB RAM, ~7 GiB disk |
+| Guest (one per task/worker) | 4 | 8 GB | ≥100 GB usable | 1.5 cores, 0.8 GiB RAM, 16.2 GiB disk at boot |
 | Fleet ×2 (websites, GitLab) | 4 | 8 GB (+8 GB swap at launch) | same entitlement | first compose build is the heavy phase (~524 s) |
+
+The guest disk entry is the image footprint, not a live-run peak: the build's own smoke sandbox
+on `osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8` reported 17,381,838,848 bytes used of
+114,834,632,704 usable on `/` before any task wrote anything (`rootUsedBytes` in that build's
+receipt, committed at
+`out/osworld-v2-evidence/template/template-build-00124a57-267c-45e7-93d1-ca0ff196e4b8.json`),
+so a running task only adds to it. The cell previously read ~7 GiB, a live-run peak
+measured on an earlier build that did not yet carry the applications below; the two figures are
+not directly comparable. That footprint covers the preinstalled application set recorded in the
+receipt's `applicationInventory` — Google Chrome 153.0.8010.47-1 and KiCad 10.0.6~ubuntu22.04.1
+(apt, `apt-mark hold`, version frozen by the build id rather than by a source pin), WPS Office
+11.1.0.11723.XA, Blender 4.5.14 LTS, x11vnc 0.9.16-8, novnc 1:1.0.0-5, websockify
+0.10.0+dfsg1-2build1 and libnss3-tools 2:3.98-0ubuntu0.22.04.4 — plus the sha256-pinned MuseScore
+Studio 4.6.5 and FreeCAD 1.1.3 AppImages under `/opt`, whose versions are pinned in
+`template/template.ts` and whose extracted AppImage payloads the same smoke listed.
+
+This recipe has a shelf life. Kingsoft serves only its current WPS build (older build numbers
+return 403) and the KiCad PPA serves whatever is current, so when either rotates, the pinned
+`curl -f` download or the held apt version stops being available and the template build hard-fails
+instead of silently installing something else. That fail-closed behaviour is intended — an already
+built image is immutable and unaffected — but a rebuild after a rotation needs the artifact
+re-pinned in `template/template.ts` and its sha256 recomputed from the new download.
 
 Don't trim below these even though measured peaks look low:
 

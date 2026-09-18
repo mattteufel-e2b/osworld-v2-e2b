@@ -15,6 +15,47 @@ Release pin: `osworld-v2-2026.08.08`. OSWorld-V2 checkout: `d578d2d4e0dc82b43e27
 This ledger separates what was verified to match a stated reference, what was recorded
 without a reference to match against, and what is excluded or unexercised outright.
 
+## September 17 parity-build ladder, and the disposition of task 030
+
+The guest template was rebuilt as `osworld-v2-gnome:c78db75e-7d61-4dea-a20b-25188f7aecdf` and
+re-run through the full no-model ladder at 80 concurrent workers:
+[summary](out/osworld-v2-evidence/full-suite/validate-108-parity-20260917.summary.json).
+108 unique sandboxes, `external_model_calls: 0`, checkout `d578d2d`: **106 `PATH_PASS`, one
+`MODEL_BOUNDARY_PASS` (035, the judge boundary reached and refused as designed), and one
+`PATH_FAIL` (030)**. The previous ladder on `0d796343…`
+([summary](out/osworld-v2-evidence/full-suite/validate-108-bridge-20260914.summary.json))
+recorded 107 `PATH_PASS` and zero failures, so the committed file reads as a regression. It is
+committed red and stays red; this is its disposition, not a correction of it.
+
+That ladder is evidence for `c78db75e…` and for no other build. The template has since been
+rebuilt as `osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8`, which drops the
+`/execute` timeout patch and slims the baked first-run configs to their decisive keys. That
+build carries the application-launcher smoke
+([receipt](out/osworld-v2-evidence/template/app-smoke-00124a57-267c-45e7-93d1-ca0ff196e4b8.json))
+and no ladder: the 108-task run against it happens on the integrated branch, and until it does,
+nothing here certifies the new build at suite level.
+
+Task 030's record is `stage: reset`, `evaluator_ran: false`, `score: null` — the reset never
+completed, so nothing was scored and no evaluator ran. Its gitignored worker log
+(`out/osworld-v2-raw/parity-ladder/no-model-raw/workers/task_030.log`) contains twelve failed
+accessibility-tree fetches: nine `Failed to get accessibility tree. Status code: 502`
+responses in three groups of three, each group followed by the controller's bounded-retry
+exhaustion line (`get_accessibility_tree` retries `retry_times = 3`), after which the harness
+failed closed at 117.2 s. Five sibling workers in the same wave logged the same getter failing
+and recovered inside or after one retry round — 004 (four occurrences, one exhausted round),
+008 (one), 014 (two), 027 (one), 091 (one) — all with status 500 rather than 502; only 030
+exhausted the budget repeatedly. An isolated re-run of 030 alone at `PARALLEL_CONCURRENCY=1`
+on the same build reached `stage: complete` with `PATH_PASS`, `evaluator_ran: true` and no 502
+at all; that re-run is recorded separately and was deliberately **not** folded into the
+committed summary. Task 030's own `related_apps` are `vscode` and `terminal` — neither is an
+application this template change added or reconfigured.
+
+On that evidence the failure is attributable to transient guest-ingress unreachability under
+80-way concurrency rather than to the template change. The mechanism is not proven: nothing
+here observed the ingress layer itself, and the correlation (repeated 502s on one worker,
+recovery in isolation, an untouched application set) is what the attribution rests on. The
+task is not a closed item.
+
 ## September 14 judge and 36-task full-inference verification
 
 The [36-task campaign](out/osworld-v2-evidence/sample-36/agent-main36-m3-500-20260914.json)
@@ -299,6 +340,15 @@ full native-result parity or a passing 24-task sample.
 - **Fonts, seeded profiles, application preferences/accounts**: not reproduced or certified
   against any reference image, same caveat as the V1 conversion — no file-by-file reference
   inventory exists to check against (V2's reference is a gated qcow2/AMI, never inspected).
+- **Symbol and Wingdings are absent from the guest; only WPS's warning about them is
+  suppressed**: a fresh `wpp` raises a "System Check" window reading "Some formula symbols
+  might not be displayed correctly due to missing fonts Symbol, Wingdings...". The baked
+  `wps-office.conf` carries the key WPS itself wrote when that window was dismissed
+  (`common\system_check\no_necessary_symbol_fonts=false`), so the window no longer appears —
+  but the fonts are still not installed, and a document using them renders with a substitute
+  face. Tasks 049/060/077/079/087/090/096 drive `wpp`, so substituted glyphs could change
+  rendered output and therefore a score. The open fonts the template does install alongside WPS
+  (Carlito, Caladea) do not supply either face.
 - **Service fleet topology**: mocked websites and GitLab are self-hosted-in-sandbox per
   campaign (fresh fleet per campaign), not a team-hosted shared deployment — a deliberate
   choice (turns GitLab's shared-root-token problem into per-run isolation; deferred
