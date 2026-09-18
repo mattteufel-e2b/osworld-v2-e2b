@@ -1,0 +1,1613 @@
+{
+  "acceptance": {
+    "all_origins_probed": true,
+    "cdp_domains_enabled": true,
+    "cloudcrm.all_subresources_https": true,
+    "cloudcrm.clipboard_object": true,
+    "cloudcrm.loaded": true,
+    "cloudcrm.no_mixed_content": true,
+    "cloudcrm.secure": true,
+    "cloudcrm.security_state_secure": true,
+    "cloudcrm.title_not_interstitial": true,
+    "cloudcrm.url_origin_matches": true,
+    "cookie_isolation_teamchat_to_cloudcrm": true,
+    "gitlab-041.all_subresources_https": true,
+    "gitlab-041.clipboard_object": true,
+    "gitlab-041.loaded": true,
+    "gitlab-041.no_mixed_content": true,
+    "gitlab-041.secure": true,
+    "gitlab-041.security_state_secure": true,
+    "gitlab-041.title_not_interstitial": true,
+    "gitlab-041.url_origin_matches": true,
+    "gitlab_041_title_contains_gitlab": true,
+    "mailhub.all_subresources_https": true,
+    "mailhub.clipboard_object": true,
+    "mailhub.loaded": true,
+    "mailhub.no_mixed_content": true,
+    "mailhub.secure": true,
+    "mailhub.security_state_secure": true,
+    "mailhub.title_not_interstitial": true,
+    "mailhub.url_origin_matches": true,
+    "streamview.all_subresources_https": true,
+    "streamview.clipboard_object": true,
+    "streamview.loaded": true,
+    "streamview.no_mixed_content": true,
+    "streamview.secure": true,
+    "streamview.security_state_secure": true,
+    "streamview.title_not_interstitial": true,
+    "streamview.url_origin_matches": true,
+    "studio-streamview.all_subresources_https": true,
+    "studio-streamview.clipboard_object": true,
+    "studio-streamview.loaded": true,
+    "studio-streamview.no_mixed_content": true,
+    "studio-streamview.secure": true,
+    "studio-streamview.security_state_secure": true,
+    "studio-streamview.title_not_interstitial": true,
+    "studio-streamview.url_origin_matches": true,
+    "teamchat.all_subresources_https": true,
+    "teamchat.clipboard_object": true,
+    "teamchat.clipboard_roundtrip_probe": true,
+    "teamchat.loaded": true,
+    "teamchat.no_mixed_content": true,
+    "teamchat.notifications_granted": true,
+    "teamchat.secure": true,
+    "teamchat.security_state_secure": true,
+    "teamchat.title_not_interstitial": true,
+    "teamchat.url_origin_matches": true
+  },
+  "bridge": {
+    "campaign_id": "osworld-live-20260918T000607Z",
+    "generation": 1,
+    "heartbeat_interval_seconds": 300,
+    "ready": true,
+    "restricted_ingress": true,
+    "sandbox_id": "i30wth5o5pb2tg0x6xxuv",
+    "sandbox_timeout_seconds": 3600,
+    "snapshots": {},
+    "source": "template",
+    "template": "osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8"
+  },
+  "build_id": "00124a57-267c-45e7-93d1-ca0ff196e4b8",
+  "campaign_id": "osworld-live-20260918T000607Z",
+  "cdp": {
+    "browser_version": {
+      "Browser": "Chrome/153.0.8010.47",
+      "Protocol-Version": "1.3",
+      "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+      "V8-Version": "15.3.76.12",
+      "WebKit-Version": "537.36 (@73934a44f61e6b3878d1943064c141a5a820f5f7)",
+      "webSocketDebuggerUrl": "ws://127.0.0.1:64145/devtools/browser/0d407493-8dbd-41e1-9a68-65a1d69b19ef"
+    },
+    "enable_errors": {
+      "Log": null,
+      "Network": null,
+      "Page": null,
+      "Runtime": null,
+      "Security": null
+    },
+    "endpoint": "http://127.0.0.1:64145",
+    "event_count": 223,
+    "event_methods": {
+      "Log.entryAdded": 1,
+      "Network.dataReceived": 197,
+      "Network.loadingFailed": 2,
+      "Network.loadingFinished": 99,
+      "Network.policyUpdated": 6,
+      "Network.requestServedFromCache": 1,
+      "Network.requestWillBeSent": 129,
+      "Network.requestWillBeSentExtraInfo": 120,
+      "Network.resourceChangedPriority": 21,
+      "Network.responseReceived": 99,
+      "Network.responseReceivedExtraInfo": 120,
+      "Page.domContentEventFired": 6,
+      "Page.frameNavigated": 6,
+      "Page.frameStartedLoading": 13,
+      "Page.frameStartedNavigating": 6,
+      "Page.frameStoppedLoading": 13,
+      "Page.loadEventFired": 6,
+      "Page.navigatedWithinDocument": 7,
+      "Runtime.consoleAPICalled": 1,
+      "Runtime.executionContextCreated": 7,
+      "Runtime.executionContextsCleared": 12,
+      "Security.visibleSecurityStateChanged": 14
+    },
+    "target": {
+      "id": "D890B7B22A56F4BEAF6607C081C545D0",
+      "title": "about:blank",
+      "type": "page",
+      "url": "about:blank"
+    },
+    "ws_url": "ws://127.0.0.1:64145/devtools/page/D890B7B22A56F4BEAF6607C081C545D0"
+  },
+  "cdp_9222_listening_before_socat": true,
+  "chrome_launch": [
+    "google-chrome",
+    "--remote-debugging-port=1337",
+    "about:blank"
+  ],
+  "finished_at": "2026-09-18T01:08:38.546933+00:00",
+  "host": {
+    "platform": "macOS-26.5.2-arm64-arm-64bit",
+    "python": "3.12.13"
+  },
+  "origins": [
+    {
+      "blocked_urls": [],
+      "console_entries": [],
+      "console_entries_truncated": false,
+      "evaluate_error": null,
+      "evaluate_exception": null,
+      "label": "teamchat",
+      "load_event_fired": true,
+      "log_findings": [],
+      "navigate": {
+        "error": null,
+        "result": {
+          "frameId": "D890B7B22A56F4BEAF6607C081C545D0",
+          "isDownload": false,
+          "loaderId": "7BD7A03A359F312F5DF2C49E9460F8DC"
+        }
+      },
+      "network": {
+        "failures": [],
+        "insecure_requests": [],
+        "insecure_urls": [],
+        "mixed_content_blocked": [],
+        "requests": [
+          {
+            "resource_type": "Document",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://teamchat.127.0.0.1.nip.io/"
+          },
+          {
+            "resource_type": "Script",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://teamchat.127.0.0.1.nip.io/assets/index-DlLyki33.js"
+          },
+          {
+            "resource_type": "Stylesheet",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://teamchat.127.0.0.1.nip.io/assets/index-BakCpj6Y.css"
+          },
+          {
+            "resource_type": "Stylesheet",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+          },
+          {
+            "resource_type": "Fetch",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://teamchat.127.0.0.1.nip.io/api/teamchat/workspace"
+          },
+          {
+            "resource_type": "Other",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://teamchat.127.0.0.1.nip.io/teamchat.png"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://picsum.photos/id/1062/64/64"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://picsum.photos/id/1005/200/200"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://picsum.photos/id/1011/200/200"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://picsum.photos/id/1012/200/200"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://picsum.photos/id/1027/200/200"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://picsum.photos/id/1040/200/200"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fastly.picsum.photos/id/1011/200/200.jpg?hmac=ISwJXaLKDOtBGE_n3myoHUev_P_OH3zpWqLx0yHp0pY"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fastly.picsum.photos/id/1012/200/200.jpg?hmac=kENwT0f1ecqbPzBGAw3ITKIrm1xoJdF0oh5tq6nosuM"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fastly.picsum.photos/id/1062/64/64.jpg?hmac=k3r32Vx85v_GQogSso6jY4R9f5L2HHq-9FegviZGF1A"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fastly.picsum.photos/id/1005/200/200.jpg?hmac=TlSxs8p2lqA8VkV-Kpg7DKnp8BkwK9UDBHrU2UegLzI"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fastly.picsum.photos/id/1040/200/200.jpg?hmac=l5Cp_plxzlfQobWWyd5uqBPiqjX1CApBpWP3w8DzYK0"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fastly.picsum.photos/id/1027/200/200.jpg?hmac=fiXlkLLwYm7JmmU80uRIj9g21XD4q9v_lM_2Z57UhuA"
+          },
+          {
+            "resource_type": "Fetch",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://teamchat.127.0.0.1.nip.io/api/teamchat/workspace"
+          }
+        ],
+        "requests_truncated": false,
+        "schemes": {
+          "https": 19
+        },
+        "total_requests": 19
+      },
+      "probe_expression": "brief",
+      "raw_probe": "{\"secure\":true,\"clipboard\":\"object\",\"notif\":\"default\",\"uuid\":\"function\",\"title\":\"TeamChat\",\"url\":\"https://teamchat.127.0.0.1.nip.io/channel/general\"}",
+      "requested_at": "2026-09-18T01:08:16.807077+00:00",
+      "requested_url": "https://teamchat.127.0.0.1.nip.io",
+      "security": {
+        "command_error": {
+          "code": -32601,
+          "message": "'Security.getSecurityState' wasn't found"
+        },
+        "events": [
+          {
+            "at": "2026-09-18T01:08:16.944216+00:00",
+            "certificate": {
+              "certificateHasSha1Signature": false,
+              "certificateHasWeakSignature": false,
+              "cipher": "AES_256_GCM",
+              "issuer": "OSWorld campaign CA osworld-live-20260918T000607Z",
+              "keyExchangeGroup": "X25519",
+              "modernSSL": true,
+              "obsoleteSslCipher": false,
+              "obsoleteSslKeyExchange": false,
+              "obsoleteSslProtocol": false,
+              "obsoleteSslSignature": false,
+              "protocol": "TLS 1.3",
+              "subjectName": "osworld-campaign-fleet",
+              "validFrom": 1789690588,
+              "validTo": 1792282588
+            },
+            "method": "Security.visibleSecurityStateChanged",
+            "securityState": "secure",
+            "securityStateIssueIds": []
+          },
+          {
+            "at": "2026-09-18T01:08:17.044089+00:00",
+            "certificate": {
+              "certificateHasSha1Signature": false,
+              "certificateHasWeakSignature": false,
+              "cipher": "AES_256_GCM",
+              "issuer": "OSWorld campaign CA osworld-live-20260918T000607Z",
+              "keyExchangeGroup": "X25519",
+              "modernSSL": true,
+              "obsoleteSslCipher": false,
+              "obsoleteSslKeyExchange": false,
+              "obsoleteSslProtocol": false,
+              "obsoleteSslSignature": false,
+              "protocol": "TLS 1.3",
+              "subjectName": "osworld-campaign-fleet",
+              "validFrom": 1789690588,
+              "validTo": 1792282588
+            },
+            "method": "Security.visibleSecurityStateChanged",
+            "securityState": "secure",
+            "securityStateIssueIds": []
+          },
+          {
+            "at": "2026-09-18T01:08:17.184021+00:00",
+            "certificate": {
+              "certificateHasSha1Signature": false,
+              "certificateHasWeakSignature": false,
+              "cipher": "AES_256_GCM",
+              "issuer": "OSWorld campaign CA osworld-live-20260918T000607Z",
+              "keyExchangeGroup": "X25519",
+              "modernSSL": true,
+              "obsoleteSslCipher": false,
+              "obsoleteSslKeyExchange": false,
+              "obsoleteSslProtocol": false,
+              "obsoleteSslSignature": false,
+              "protocol": "TLS 1.3",
+              "subjectName": "osworld-campaign-fleet",
+              "validFrom": 1789690588,
+              "validTo": 1792282588
+            },
+            "method": "Security.visibleSecurityStateChanged",
+            "securityState": "secure",
+            "securityStateIssueIds": []
+          }
+        ],
+        "source": "Security.visibleSecurityStateChanged",
+        "value": "secure"
+      },
+      "values": {
+        "clipboard": "object",
+        "notif": "default",
+        "secure": true,
+        "title": "TeamChat",
+        "url": "https://teamchat.127.0.0.1.nip.io/channel/general",
+        "uuid": "function"
+      }
+    },
+    {
+      "blocked_urls": [],
+      "console_entries": [],
+      "console_entries_truncated": false,
+      "cookie_read_error": null,
+      "cookie_visible": "user_id=4888d3bf-d372-4686-bc43-721146eb146a",
+      "evaluate_error": null,
+      "evaluate_exception": null,
+      "label": "cloudcrm",
+      "load_event_fired": true,
+      "log_findings": [],
+      "navigate": {
+        "error": null,
+        "result": {
+          "frameId": "D890B7B22A56F4BEAF6607C081C545D0",
+          "isDownload": false,
+          "loaderId": "A3B70583C016EA7B1C0036BDD89E2F56"
+        }
+      },
+      "network": {
+        "failures": [],
+        "insecure_requests": [],
+        "insecure_urls": [],
+        "mixed_content_blocked": [],
+        "requests": [
+          {
+            "resource_type": "Document",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://cloudcrm.127.0.0.1.nip.io/"
+          },
+          {
+            "resource_type": "Script",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://cloudcrm.127.0.0.1.nip.io/assets/index-CKozhloG.js"
+          },
+          {
+            "resource_type": "Stylesheet",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://cloudcrm.127.0.0.1.nip.io/assets/index-B-bKxqG6.css"
+          },
+          {
+            "resource_type": "Stylesheet",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+          },
+          {
+            "resource_type": "Fetch",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://cloudcrm.127.0.0.1.nip.io/api/crm/workspace"
+          },
+          {
+            "resource_type": "Other",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://cloudcrm.127.0.0.1.nip.io/vite.svg"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://picsum.photos/100/100?random=currentuser"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://picsum.photos/100/100?random=user1"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://picsum.photos/100/100?random=user5"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://picsum.photos/100/100?random=user4"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fastly.picsum.photos/id/503/100/100.jpg?hmac=KRvAyDRGpr4CXxNlFUPTUPxhsb8NNvrNpzBNHVifmyA"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fastly.picsum.photos/id/156/100/100.jpg?hmac=W2gdtalDBjTq0AEJwUyKNN0QwlSCOL1RnR0XS3G_uAE"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fastly.picsum.photos/id/11/100/100.jpg?hmac=mZNU84BZtOYn4RHVjOrLuBlSWDMuZOlg2n_aNUym7OY"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fastly.picsum.photos/id/608/100/100.jpg?hmac=DKA18quk9_VTcsIownS6w150lRTonA9-ow6ye0D2MIM"
+          }
+        ],
+        "requests_truncated": false,
+        "schemes": {
+          "https": 14
+        },
+        "total_requests": 14
+      },
+      "probe_expression": "brief",
+      "raw_probe": "{\"secure\":true,\"clipboard\":\"object\",\"notif\":\"default\",\"uuid\":\"function\",\"title\":\"frontend\",\"url\":\"https://cloudcrm.127.0.0.1.nip.io/\"}",
+      "requested_at": "2026-09-18T01:08:20.802093+00:00",
+      "requested_url": "https://cloudcrm.127.0.0.1.nip.io",
+      "security": {
+        "command_error": {
+          "code": -32601,
+          "message": "'Security.getSecurityState' wasn't found"
+        },
+        "events": [
+          {
+            "at": "2026-09-18T01:08:20.936846+00:00",
+            "certificate": {
+              "certificateHasSha1Signature": false,
+              "certificateHasWeakSignature": false,
+              "cipher": "AES_256_GCM",
+              "issuer": "OSWorld campaign CA osworld-live-20260918T000607Z",
+              "keyExchangeGroup": "X25519",
+              "modernSSL": true,
+              "obsoleteSslCipher": false,
+              "obsoleteSslKeyExchange": false,
+              "obsoleteSslProtocol": false,
+              "obsoleteSslSignature": false,
+              "protocol": "TLS 1.3",
+              "subjectName": "osworld-campaign-fleet",
+              "validFrom": 1789690588,
+              "validTo": 1792282588
+            },
+            "method": "Security.visibleSecurityStateChanged",
+            "securityState": "secure",
+            "securityStateIssueIds": []
+          },
+          {
+            "at": "2026-09-18T01:08:21.315501+00:00",
+            "certificate": {
+              "certificateHasSha1Signature": false,
+              "certificateHasWeakSignature": false,
+              "cipher": "AES_256_GCM",
+              "issuer": "OSWorld campaign CA osworld-live-20260918T000607Z",
+              "keyExchangeGroup": "X25519",
+              "modernSSL": true,
+              "obsoleteSslCipher": false,
+              "obsoleteSslKeyExchange": false,
+              "obsoleteSslProtocol": false,
+              "obsoleteSslSignature": false,
+              "protocol": "TLS 1.3",
+              "subjectName": "osworld-campaign-fleet",
+              "validFrom": 1789690588,
+              "validTo": 1792282588
+            },
+            "method": "Security.visibleSecurityStateChanged",
+            "securityState": "secure",
+            "securityStateIssueIds": []
+          }
+        ],
+        "source": "Security.visibleSecurityStateChanged",
+        "value": "secure"
+      },
+      "values": {
+        "clipboard": "object",
+        "notif": "default",
+        "secure": true,
+        "title": "frontend",
+        "url": "https://cloudcrm.127.0.0.1.nip.io/",
+        "uuid": "function"
+      }
+    },
+    {
+      "blocked_urls": [],
+      "console_entries": [],
+      "console_entries_truncated": false,
+      "evaluate_error": null,
+      "evaluate_exception": null,
+      "label": "mailhub",
+      "load_event_fired": true,
+      "log_findings": [],
+      "navigate": {
+        "error": null,
+        "result": {
+          "frameId": "D890B7B22A56F4BEAF6607C081C545D0",
+          "isDownload": false,
+          "loaderId": "751EC674E0DCDA0E19EB7E770F3A0BA1"
+        }
+      },
+      "network": {
+        "failures": [],
+        "insecure_requests": [],
+        "insecure_urls": [],
+        "mixed_content_blocked": [],
+        "requests": [
+          {
+            "resource_type": "Document",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://mailhub.127.0.0.1.nip.io/"
+          },
+          {
+            "resource_type": "Stylesheet",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600&display=swap"
+          },
+          {
+            "resource_type": "Script",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://mailhub.127.0.0.1.nip.io/assets/index-C4UFxMFp.js"
+          },
+          {
+            "resource_type": "Stylesheet",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://mailhub.127.0.0.1.nip.io/assets/index-DoqQro7P.css"
+          },
+          {
+            "resource_type": "Stylesheet",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+          },
+          {
+            "resource_type": "Other",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://mailhub.127.0.0.1.nip.io/mailhub.png"
+          },
+          {
+            "resource_type": "Fetch",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://mailhub.127.0.0.1.nip.io/api/mail"
+          },
+          {
+            "resource_type": "Font",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fonts.gstatic.com/s/googlesans/v70/4UasrENHsxJlGDuGo1OIlJfC6l_24rlCK1Yo_Iqcsih3SAyH6cAwhX9RPjIUvQ.woff2"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://picsum.photos/100/100?random=825"
+          },
+          {
+            "resource_type": "Other",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://mailhub.127.0.0.1.nip.io/mailhub.png"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fastly.picsum.photos/id/527/100/100.jpg?hmac=f1pF6Fs0Ec7yXfnHPQwNi6Yh24hQyuybpCrIu_isS64"
+          }
+        ],
+        "requests_truncated": false,
+        "schemes": {
+          "https": 11
+        },
+        "total_requests": 11
+      },
+      "probe_expression": "brief",
+      "raw_probe": "{\"secure\":true,\"clipboard\":\"object\",\"notif\":\"default\",\"uuid\":\"function\",\"title\":\"MailHub\",\"url\":\"https://mailhub.127.0.0.1.nip.io/#/inbox\"}",
+      "requested_at": "2026-09-18T01:08:24.341027+00:00",
+      "requested_url": "https://mailhub.127.0.0.1.nip.io",
+      "security": {
+        "command_error": {
+          "code": -32601,
+          "message": "'Security.getSecurityState' wasn't found"
+        },
+        "events": [
+          {
+            "at": "2026-09-18T01:08:24.610165+00:00",
+            "certificate": {
+              "certificateHasSha1Signature": false,
+              "certificateHasWeakSignature": false,
+              "cipher": "AES_256_GCM",
+              "issuer": "OSWorld campaign CA osworld-live-20260918T000607Z",
+              "keyExchangeGroup": "X25519",
+              "modernSSL": true,
+              "obsoleteSslCipher": false,
+              "obsoleteSslKeyExchange": false,
+              "obsoleteSslProtocol": false,
+              "obsoleteSslSignature": false,
+              "protocol": "TLS 1.3",
+              "subjectName": "osworld-campaign-fleet",
+              "validFrom": 1789690588,
+              "validTo": 1792282588
+            },
+            "method": "Security.visibleSecurityStateChanged",
+            "securityState": "secure",
+            "securityStateIssueIds": []
+          },
+          {
+            "at": "2026-09-18T01:08:24.760301+00:00",
+            "certificate": {
+              "certificateHasSha1Signature": false,
+              "certificateHasWeakSignature": false,
+              "cipher": "AES_256_GCM",
+              "issuer": "OSWorld campaign CA osworld-live-20260918T000607Z",
+              "keyExchangeGroup": "X25519",
+              "modernSSL": true,
+              "obsoleteSslCipher": false,
+              "obsoleteSslKeyExchange": false,
+              "obsoleteSslProtocol": false,
+              "obsoleteSslSignature": false,
+              "protocol": "TLS 1.3",
+              "subjectName": "osworld-campaign-fleet",
+              "validFrom": 1789690588,
+              "validTo": 1792282588
+            },
+            "method": "Security.visibleSecurityStateChanged",
+            "securityState": "secure",
+            "securityStateIssueIds": []
+          },
+          {
+            "at": "2026-09-18T01:08:24.781089+00:00",
+            "certificate": {
+              "certificateHasSha1Signature": false,
+              "certificateHasWeakSignature": false,
+              "cipher": "AES_256_GCM",
+              "issuer": "OSWorld campaign CA osworld-live-20260918T000607Z",
+              "keyExchangeGroup": "X25519",
+              "modernSSL": true,
+              "obsoleteSslCipher": false,
+              "obsoleteSslKeyExchange": false,
+              "obsoleteSslProtocol": false,
+              "obsoleteSslSignature": false,
+              "protocol": "TLS 1.3",
+              "subjectName": "osworld-campaign-fleet",
+              "validFrom": 1789690588,
+              "validTo": 1792282588
+            },
+            "method": "Security.visibleSecurityStateChanged",
+            "securityState": "secure",
+            "securityStateIssueIds": []
+          }
+        ],
+        "source": "Security.visibleSecurityStateChanged",
+        "value": "secure"
+      },
+      "values": {
+        "clipboard": "object",
+        "notif": "default",
+        "secure": true,
+        "title": "MailHub",
+        "url": "https://mailhub.127.0.0.1.nip.io/#/inbox",
+        "uuid": "function"
+      }
+    },
+    {
+      "blocked_urls": [],
+      "console_entries": [],
+      "console_entries_truncated": false,
+      "evaluate_error": null,
+      "evaluate_exception": null,
+      "label": "streamview",
+      "load_event_fired": true,
+      "log_findings": [],
+      "navigate": {
+        "error": null,
+        "result": {
+          "frameId": "D890B7B22A56F4BEAF6607C081C545D0",
+          "isDownload": false,
+          "loaderId": "93A44E226159F505FA6E23E1FCD7AA3A"
+        }
+      },
+      "network": {
+        "failures": [],
+        "insecure_requests": [],
+        "insecure_urls": [],
+        "mixed_content_blocked": [],
+        "requests": [
+          {
+            "resource_type": "Document",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://streamview.127.0.0.1.nip.io/"
+          },
+          {
+            "resource_type": "Script",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://streamview.127.0.0.1.nip.io/assets/index-BqE3WFq2.js"
+          },
+          {
+            "resource_type": "Stylesheet",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://streamview.127.0.0.1.nip.io/assets/index-C5fUTaQV.css"
+          },
+          {
+            "resource_type": "Stylesheet",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+          },
+          {
+            "resource_type": "Fetch",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://streamview.127.0.0.1.nip.io/api/streamview/bootstrap"
+          },
+          {
+            "resource_type": "Other",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://streamview.127.0.0.1.nip.io/streamview.svg"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://picsum.photos/100/100?random=current"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://picsum.photos/100/100?random=channel1"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://picsum.photos/100/100?random=channel2"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://picsum.photos/100/100?random=channel3"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://picsum.photos/100/100?random=channel4"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://picsum.photos/100/100?random=channel5"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://picsum.photos/100/100?random=channel6"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://picsum.photos/100/100?random=channel7"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://img.youtube.com/vi/M7lc1UVf-VE/hqdefault.jpg"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://img.youtube.com/vi/aqz-KE-bpKQ/hqdefault.jpg"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://img.youtube.com/vi/tgbNymZ7vqY/hqdefault.jpg"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://picsum.photos/100/100?random=channel8"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://picsum.photos/100/100?random=channel10"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://picsum.photos/100/100?random=channel9"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://picsum.photos/100/100?random=channel11"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://picsum.photos/100/100?random=channel12"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://picsum.photos/100/100?random=channel13"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://picsum.photos/100/100?random=channel14"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://picsum.photos/100/100?random=channel15"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fastly.picsum.photos/id/149/100/100.jpg?hmac=4qM5iCwzt5mtTtEF9tkvPG_Qv0zRWxFxwEJYfcTL86Y"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fastly.picsum.photos/id/836/100/100.jpg?hmac=lHGp7rM318FER_wn5lwTBAq7fRhCzOerfmiehcHBop8"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fastly.picsum.photos/id/865/100/100.jpg?hmac=aNeflGxgAp5XDiNdXbvCQ0dbQed55F550T2nKe8mDrs"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fastly.picsum.photos/id/235/100/100.jpg?hmac=Ej2aIKBIZcK2Vd6HmF772Gn4ttHwmFKCDYGDGweVvF0"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fastly.picsum.photos/id/950/100/100.jpg?hmac=EuQCNB9BLyrijqSXADBSKAK8IGF9FJj6Zq96yaTTreU"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fastly.picsum.photos/id/453/100/100.jpg?hmac=hQ65wMfykoigoL9sezsVjACANjzXK29ZLNwb5sjPHtM"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fastly.picsum.photos/id/159/100/100.jpg?hmac=3gSb6w4NNJ8x_QCtIWVr0Cv7KKFDb34E4_LXvzeIFXg"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fastly.picsum.photos/id/983/100/100.jpg?hmac=1KxUX5habuF2b0xCYCz2uGHttY8BlaufijKwh1_2RA0"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fastly.picsum.photos/id/8/100/100.jpg?hmac=57Kp0Mcu8uqmiBdlwOKBQESnKuBxVXpha1ZVTmaE9X0"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fastly.picsum.photos/id/846/100/100.jpg?hmac=MIrweaSnfc3PC93ZXP2_RIwTtSgyr4Rj59QNAKYgsfg"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fastly.picsum.photos/id/0/100/100.jpg?hmac=WWCdo2mnff1yh6Zgdsie_tKa6t5Sbu9y7a22fr4XyZk"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fastly.picsum.photos/id/670/100/100.jpg?hmac=82iwnTVdQjI51yjtv0RcvutZpHP1PFYFPX33peYlctI"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fastly.picsum.photos/id/502/100/100.jpg?hmac=shDQYWWQj7Ci0V05tzKdweuNohX-ftc5x6oCd-k-CQ4"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fastly.picsum.photos/id/615/100/100.jpg?hmac=ohxrmKK3LYhzJ2XZ8pK5jxXJ55qPH4i23q-d3Kxw1QY"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fastly.picsum.photos/id/1032/100/100.jpg?hmac=Zs3sf2xCalP6hquSkueCo4Eqw9fhUmlSWb_XT9o-Ehs"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fastly.picsum.photos/id/383/100/100.jpg?hmac=USPHQV9hy_FwDO_SsbRJ0DWcFpqtQrIo-IrwjaRuFJs"
+          }
+        ],
+        "requests_truncated": false,
+        "schemes": {
+          "https": 42
+        },
+        "total_requests": 42
+      },
+      "probe_expression": "brief",
+      "raw_probe": "{\"secure\":true,\"clipboard\":\"object\",\"notif\":\"default\",\"uuid\":\"function\",\"title\":\"StreamView\",\"url\":\"https://streamview.127.0.0.1.nip.io/\"}",
+      "requested_at": "2026-09-18T01:08:27.804862+00:00",
+      "requested_url": "https://streamview.127.0.0.1.nip.io",
+      "security": {
+        "command_error": {
+          "code": -32601,
+          "message": "'Security.getSecurityState' wasn't found"
+        },
+        "events": [
+          {
+            "at": "2026-09-18T01:08:27.928623+00:00",
+            "certificate": {
+              "certificateHasSha1Signature": false,
+              "certificateHasWeakSignature": false,
+              "cipher": "AES_256_GCM",
+              "issuer": "OSWorld campaign CA osworld-live-20260918T000607Z",
+              "keyExchangeGroup": "X25519",
+              "modernSSL": true,
+              "obsoleteSslCipher": false,
+              "obsoleteSslKeyExchange": false,
+              "obsoleteSslProtocol": false,
+              "obsoleteSslSignature": false,
+              "protocol": "TLS 1.3",
+              "subjectName": "osworld-campaign-fleet",
+              "validFrom": 1789690588,
+              "validTo": 1792282588
+            },
+            "method": "Security.visibleSecurityStateChanged",
+            "securityState": "secure",
+            "securityStateIssueIds": []
+          },
+          {
+            "at": "2026-09-18T01:08:28.022963+00:00",
+            "certificate": {
+              "certificateHasSha1Signature": false,
+              "certificateHasWeakSignature": false,
+              "cipher": "AES_256_GCM",
+              "issuer": "OSWorld campaign CA osworld-live-20260918T000607Z",
+              "keyExchangeGroup": "X25519",
+              "modernSSL": true,
+              "obsoleteSslCipher": false,
+              "obsoleteSslKeyExchange": false,
+              "obsoleteSslProtocol": false,
+              "obsoleteSslSignature": false,
+              "protocol": "TLS 1.3",
+              "subjectName": "osworld-campaign-fleet",
+              "validFrom": 1789690588,
+              "validTo": 1792282588
+            },
+            "method": "Security.visibleSecurityStateChanged",
+            "securityState": "secure",
+            "securityStateIssueIds": []
+          }
+        ],
+        "source": "Security.visibleSecurityStateChanged",
+        "value": "secure"
+      },
+      "values": {
+        "clipboard": "object",
+        "notif": "default",
+        "secure": true,
+        "title": "StreamView",
+        "url": "https://streamview.127.0.0.1.nip.io/",
+        "uuid": "function"
+      }
+    },
+    {
+      "blocked_urls": [],
+      "console_entries": [],
+      "console_entries_truncated": false,
+      "evaluate_error": null,
+      "evaluate_exception": null,
+      "label": "studio-streamview",
+      "load_event_fired": true,
+      "log_findings": [],
+      "navigate": {
+        "error": null,
+        "result": {
+          "frameId": "D890B7B22A56F4BEAF6607C081C545D0",
+          "isDownload": false,
+          "loaderId": "A8636CC35D62A6871755CBE6A5BD180F"
+        }
+      },
+      "network": {
+        "failures": [],
+        "insecure_requests": [],
+        "insecure_urls": [],
+        "mixed_content_blocked": [],
+        "requests": [
+          {
+            "resource_type": "Document",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://studio.streamview.127.0.0.1.nip.io/"
+          },
+          {
+            "resource_type": "Script",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://studio.streamview.127.0.0.1.nip.io/assets/index-BqE3WFq2.js"
+          },
+          {
+            "resource_type": "Stylesheet",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://studio.streamview.127.0.0.1.nip.io/assets/index-C5fUTaQV.css"
+          },
+          {
+            "resource_type": "Stylesheet",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+          },
+          {
+            "resource_type": "Fetch",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://studio.streamview.127.0.0.1.nip.io/api/streamview/bootstrap"
+          },
+          {
+            "resource_type": "Other",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://studio.streamview.127.0.0.1.nip.io/streamview.svg"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://img.youtube.com/vi/M7lc1UVf-VE/hqdefault.jpg"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://studio.streamview.127.0.0.1.nip.io/youtube_studio_logo.png"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://picsum.photos/32/32?random=user2"
+          },
+          {
+            "resource_type": "Font",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fonts.gstatic.com/s/ibmplexsans/v23/zYXzKVElMYYaJe8bpLHnCwDKr932-G7dytD-Dmu1syxeKYY.woff2"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://fastly.picsum.photos/id/832/32/32.jpg?hmac=S7P3d6yjhDkxSTfoqu0uEGue_Qmy1dXYrWT-oMfunNE"
+          }
+        ],
+        "requests_truncated": false,
+        "schemes": {
+          "https": 11
+        },
+        "total_requests": 11
+      },
+      "probe_expression": "brief",
+      "raw_probe": "{\"secure\":true,\"clipboard\":\"object\",\"notif\":\"default\",\"uuid\":\"function\",\"title\":\"StreamView\",\"url\":\"https://studio.streamview.127.0.0.1.nip.io/\"}",
+      "requested_at": "2026-09-18T01:08:31.143554+00:00",
+      "requested_url": "https://studio.streamview.127.0.0.1.nip.io",
+      "security": {
+        "command_error": {
+          "code": -32601,
+          "message": "'Security.getSecurityState' wasn't found"
+        },
+        "events": [
+          {
+            "at": "2026-09-18T01:08:31.292796+00:00",
+            "certificate": {
+              "certificateHasSha1Signature": false,
+              "certificateHasWeakSignature": false,
+              "cipher": "AES_256_GCM",
+              "issuer": "OSWorld campaign CA osworld-live-20260918T000607Z",
+              "keyExchangeGroup": "X25519",
+              "modernSSL": true,
+              "obsoleteSslCipher": false,
+              "obsoleteSslKeyExchange": false,
+              "obsoleteSslProtocol": false,
+              "obsoleteSslSignature": false,
+              "protocol": "TLS 1.3",
+              "subjectName": "osworld-campaign-fleet",
+              "validFrom": 1789690588,
+              "validTo": 1792282588
+            },
+            "method": "Security.visibleSecurityStateChanged",
+            "securityState": "secure",
+            "securityStateIssueIds": []
+          },
+          {
+            "at": "2026-09-18T01:08:31.372312+00:00",
+            "certificate": {
+              "certificateHasSha1Signature": false,
+              "certificateHasWeakSignature": false,
+              "cipher": "AES_256_GCM",
+              "issuer": "OSWorld campaign CA osworld-live-20260918T000607Z",
+              "keyExchangeGroup": "X25519",
+              "modernSSL": true,
+              "obsoleteSslCipher": false,
+              "obsoleteSslKeyExchange": false,
+              "obsoleteSslProtocol": false,
+              "obsoleteSslSignature": false,
+              "protocol": "TLS 1.3",
+              "subjectName": "osworld-campaign-fleet",
+              "validFrom": 1789690588,
+              "validTo": 1792282588
+            },
+            "method": "Security.visibleSecurityStateChanged",
+            "securityState": "secure",
+            "securityStateIssueIds": []
+          }
+        ],
+        "source": "Security.visibleSecurityStateChanged",
+        "value": "secure"
+      },
+      "values": {
+        "clipboard": "object",
+        "notif": "default",
+        "secure": true,
+        "title": "StreamView",
+        "url": "https://studio.streamview.127.0.0.1.nip.io/",
+        "uuid": "function"
+      }
+    },
+    {
+      "blocked_urls": [],
+      "console_entries": [
+        {
+          "at": "2026-09-18T01:08:35.348048+00:00",
+          "method": "Runtime.consoleAPICalled",
+          "text": "log %cWelcome to GitLab!%c\n\nDoes this page need fixes or improvements? Open an issue or contribute a merge request to help make GitLab more lovable. At GitLab, everyone can contribute!\n\n\ud83e\udd1d Contribute to GitLab: https://about.gitlab.com/community/contribute/\n\ud83d\udd0e Create a new GitLab issue: https://gitlab.com/gitlab-org/gitlab/-/issues/new\n padding-top: 0.5em; font-size: 2em; padding-bottom: 0.5em;",
+          "text_truncated": false
+        },
+        {
+          "at": "2026-09-18T01:08:35.387633+00:00",
+          "method": "Log.entryAdded",
+          "text": "network error Failed to load resource: net::ERR_SSL_PROTOCOL_ERROR https://gitlab.127.0.0.1.nip.io:80/-/collect_events",
+          "text_truncated": false
+        }
+      ],
+      "console_entries_truncated": false,
+      "evaluate_error": null,
+      "evaluate_exception": null,
+      "label": "gitlab-041",
+      "load_event_fired": true,
+      "log_findings": [],
+      "navigate": {
+        "error": null,
+        "result": {
+          "frameId": "D890B7B22A56F4BEAF6607C081C545D0",
+          "isDownload": false,
+          "loaderId": "596693A96AD24585BCD3EFB9C9389FE4"
+        }
+      },
+      "network": {
+        "failures": [
+          {
+            "blocked_reason": null,
+            "canceled": false,
+            "error_text": "net::ERR_SSL_PROTOCOL_ERROR",
+            "resource_type": "Preflight",
+            "url": "https://gitlab.127.0.0.1.nip.io:80/-/collect_events"
+          },
+          {
+            "blocked_reason": null,
+            "canceled": false,
+            "error_text": "net::ERR_SSL_PROTOCOL_ERROR",
+            "resource_type": "XHR",
+            "url": "https://gitlab.127.0.0.1.nip.io:80/-/collect_events"
+          }
+        ],
+        "insecure_requests": [],
+        "insecure_urls": [],
+        "mixed_content_blocked": [],
+        "requests": [
+          {
+            "resource_type": "Document",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://54.174.16.65.sslip.io/users/sign_in"
+          },
+          {
+            "resource_type": "Stylesheet",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://54.174.16.65.sslip.io/assets/application-267421195ad431679553836c5b410ffe630f2a3119c436775ff47aa32bd041a8.css"
+          },
+          {
+            "resource_type": "Stylesheet",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://54.174.16.65.sslip.io/assets/page_bundles/login-7240ec00cf3969b710fe5e8959f8ef8eeff66d635ded28839b1b4256ae8d96a3.css"
+          },
+          {
+            "resource_type": "Stylesheet",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://54.174.16.65.sslip.io/assets/page_bundles/commit_description-9e7efe20f0cef17d0606edabfad0418e9eb224aaeaa2dae32c817060fa60abcc.css"
+          },
+          {
+            "resource_type": "Stylesheet",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://54.174.16.65.sslip.io/assets/page_bundles/work_items-9f34e9e1785e95144a97edb25299b8dd0d2e641f7efb2d8b7bea3717104ed8f2.css"
+          },
+          {
+            "resource_type": "Stylesheet",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://54.174.16.65.sslip.io/assets/page_bundles/notes_shared-8f7a9513332533cc4a53b3be3d16e69570e82bc87b3f8913578eaeb0dce57e21.css"
+          },
+          {
+            "resource_type": "Stylesheet",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://54.174.16.65.sslip.io/assets/tailwind_cqs-0e9add9895902b334f85f3a8c9ded0e9bcbfef603bbd1efcb51df7dac57c209e.css"
+          },
+          {
+            "resource_type": "Stylesheet",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://54.174.16.65.sslip.io/assets/fonts-deb7ad1d55ca77c0172d8538d53442af63604ff490c74acc2859db295c125bdb.css"
+          },
+          {
+            "resource_type": "Stylesheet",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://54.174.16.65.sslip.io/assets/highlight/themes/white-c47e38e4a3eafd97b389c0f8eec06dce295f311cdc1c9e55073ea9406b8fe5b0.css"
+          },
+          {
+            "resource_type": "Script",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://54.174.16.65.sslip.io/assets/webpack/runtime.bada1433.bundle.js"
+          },
+          {
+            "resource_type": "Script",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://54.174.16.65.sslip.io/assets/webpack/main.eb29241f.chunk.js"
+          },
+          {
+            "resource_type": "Script",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://54.174.16.65.sslip.io/assets/webpack/tracker.4ac2efa2.chunk.js"
+          },
+          {
+            "resource_type": "Script",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://54.174.16.65.sslip.io/assets/webpack/commons-pages.groups.new-pages.import.gitlab_projects.new-pages.import.manifest.new-pages.projects.n-44c6c18e.57adf505.chunk.js"
+          },
+          {
+            "resource_type": "Script",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://54.174.16.65.sslip.io/assets/webpack/commons-pages.search.show-super_sidebar.6acb116e.chunk.js"
+          },
+          {
+            "resource_type": "Script",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://54.174.16.65.sslip.io/assets/webpack/super_sidebar.d81b6984.chunk.js"
+          },
+          {
+            "resource_type": "Script",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://54.174.16.65.sslip.io/assets/webpack/commons-pages.admin.sessions-pages.ldap.omniauth_callbacks-pages.omniauth_callbacks-pages.sessions-p-ea3be603.a30659c6.chunk.js"
+          },
+          {
+            "resource_type": "Script",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://54.174.16.65.sslip.io/assets/webpack/commons-pages.registrations.new-pages.sessions.new.274f9295.chunk.js"
+          },
+          {
+            "resource_type": "Script",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://54.174.16.65.sslip.io/assets/webpack/pages.sessions.new.edba2f29.chunk.js"
+          },
+          {
+            "resource_type": "Stylesheet",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://54.174.16.65.sslip.io/assets/application_dark-eb6a2be3fa84f122bcfdb01700ceb93d31abe14bec53e18529b0230fdb8d07ce.css"
+          },
+          {
+            "resource_type": "Stylesheet",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://54.174.16.65.sslip.io/assets/highlight/themes/dark-8796b0549a7cd8fd6d2646619fa5840db4505d7031a76d5441a3cee1d12390d2.css"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "data",
+            "source": "Network.requestWillBeSent",
+            "url": "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+          },
+          {
+            "resource_type": "Font",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://54.174.16.65.sslip.io/assets/gitlab-sans/GitLabSans-9892dc17af892e03de41625c0ee325117a3b8ee4ba6005f3a3eac68510030aed.woff2"
+          },
+          {
+            "resource_type": "Script",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://54.174.16.65.sslip.io/assets/webpack/shortcutsBundle.41624e86.chunk.js"
+          },
+          {
+            "resource_type": "Script",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://54.174.16.65.sslip.io/assets/webpack/hello.df204cbc.chunk.js"
+          },
+          {
+            "resource_type": "Other",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://54.174.16.65.sslip.io/assets/icons-dafe78f1f5f3f39844d40e6211b4b6b2b89533b96324c26e6ca12cfd6cf1b0ca.svg"
+          },
+          {
+            "resource_type": "Manifest",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://54.174.16.65.sslip.io/-/manifest.json"
+          },
+          {
+            "resource_type": "Other",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://54.174.16.65.sslip.io/assets/favicon-72a2cad5025aa931d6ea56c3201d1f18e68a8cd39788c7c80d5b2b82aa5143ef.png"
+          },
+          {
+            "resource_type": "Script",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://54.174.16.65.sslip.io/assets/webpack/initInviteMembersTrigger.662883f9.chunk.js"
+          },
+          {
+            "resource_type": "Other",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://gitlab.127.0.0.1.nip.io:80/-/collect_events"
+          },
+          {
+            "resource_type": "XHR",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://gitlab.127.0.0.1.nip.io:80/-/collect_events"
+          },
+          {
+            "resource_type": "Image",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://54.174.16.65.sslip.io/assets/logo-911de323fa0def29aaf817fca33916653fc92f3ff31647ac41d2c39bbe243edb.svg"
+          },
+          {
+            "resource_type": "Other",
+            "scheme": "https",
+            "source": "Network.requestWillBeSent",
+            "url": "https://54.174.16.65.sslip.io/-/pwa-icons/logo-192.png"
+          }
+        ],
+        "requests_truncated": false,
+        "schemes": {
+          "data": 1,
+          "https": 31
+        },
+        "total_requests": 32
+      },
+      "probe_expression": "brief",
+      "raw_probe": "{\"secure\":true,\"clipboard\":\"object\",\"notif\":\"default\",\"uuid\":\"function\",\"title\":\"Sign in \u00b7 GitLab\",\"url\":\"https://54.174.16.65.sslip.io/users/sign_in\"}",
+      "requested_at": "2026-09-18T01:08:34.510835+00:00",
+      "requested_url": "https://54.174.16.65.sslip.io/users/sign_in",
+      "security": {
+        "command_error": {
+          "code": -32601,
+          "message": "'Security.getSecurityState' wasn't found"
+        },
+        "events": [
+          {
+            "at": "2026-09-18T01:08:34.693108+00:00",
+            "certificate": {
+              "certificateHasSha1Signature": false,
+              "certificateHasWeakSignature": false,
+              "cipher": "AES_256_GCM",
+              "issuer": "OSWorld campaign CA osworld-live-20260918T000607Z",
+              "keyExchangeGroup": "X25519",
+              "modernSSL": true,
+              "obsoleteSslCipher": false,
+              "obsoleteSslKeyExchange": false,
+              "obsoleteSslProtocol": false,
+              "obsoleteSslSignature": false,
+              "protocol": "TLS 1.3",
+              "subjectName": "osworld-campaign-fleet",
+              "validFrom": 1789690588,
+              "validTo": 1792282588
+            },
+            "method": "Security.visibleSecurityStateChanged",
+            "securityState": "secure",
+            "securityStateIssueIds": []
+          }
+        ],
+        "source": "Security.visibleSecurityStateChanged",
+        "value": "secure"
+      },
+      "values": {
+        "clipboard": "object",
+        "notif": "default",
+        "secure": true,
+        "title": "Sign in \u00b7 GitLab",
+        "url": "https://54.174.16.65.sslip.io/users/sign_in",
+        "uuid": "function"
+      }
+    }
+  ],
+  "origins_requested": [
+    {
+      "label": "teamchat",
+      "url": "https://teamchat.127.0.0.1.nip.io"
+    },
+    {
+      "label": "cloudcrm",
+      "url": "https://cloudcrm.127.0.0.1.nip.io"
+    },
+    {
+      "label": "mailhub",
+      "url": "https://mailhub.127.0.0.1.nip.io"
+    },
+    {
+      "label": "streamview",
+      "url": "https://streamview.127.0.0.1.nip.io"
+    },
+    {
+      "label": "studio-streamview",
+      "url": "https://studio.streamview.127.0.0.1.nip.io"
+    },
+    {
+      "label": "gitlab-041",
+      "url": "https://54.174.16.65.sslip.io/users/sign_in"
+    }
+  ],
+  "passed": true,
+  "purpose": "guest-browser secure-context probe over the campaign HTTPS fleet origins; not a benchmark score",
+  "sanitized": {
+    "certificate_blobs_removed": 26,
+    "note": "committed reduction of the raw receipt under out/osworld-v2-raw/: base64 DER certificate chains removed from Security events (the chain is the campaign CA plus its fleet leaf, both regenerated per campaign and already described by issuer/subjectName here); every acceptance value, per-origin probe value, recorded request, log entry and blocked URL is verbatim from the raw file."
+  },
+  "schema_version": 1,
+  "socat_launch": [
+    "socat",
+    "tcp-listen:9222,fork",
+    "tcp:localhost:1337"
+  ],
+  "started_at": "2026-09-18T01:08:05.507742+00:00",
+  "teamchat": {
+    "bring_to_front_error": null,
+    "clipboard_permission_errors": {
+      "clipboard-read": null,
+      "clipboard-sanitized-write": {
+        "code": -32602,
+        "message": "Invalid PermissionDescriptor name: clipboard-sanitized-write"
+      },
+      "clipboard-write": null
+    },
+    "clipboard_roundtrip": {
+      "attempts": [
+        {
+          "error": null,
+          "exception": null,
+          "focus_emulation": false,
+          "value": "probe"
+        }
+      ],
+      "value": "probe"
+    },
+    "cookie_after_set": "user_id=568f19d4-10bb-4471-a5e7-70349cae0de7; probe=1",
+    "cookie_set_error": null,
+    "notification_permission_after_grant": "granted",
+    "notification_permission_error": null,
+    "origin": "https://teamchat.127.0.0.1.nip.io",
+    "set_permission_notifications_error": null
+  },
+  "template": "osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8",
+  "website_host_suffix": "127.0.0.1.nip.io:8090"
+}

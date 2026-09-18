@@ -16,8 +16,8 @@ optional `REQUIRE_NO_MODEL_COVERAGE=1` gate in `runner/run_agent_parallel.sh` co
 | `profile_resources.sh` | Ladder rung 7: publish measured CPU/RAM/disk from evidence |
 | `receipt_summary.py` | Reduce a no-model aggregate receipt to the committable summary (also summarizes an agent campaign receipt from `runner/aggregate_agent.py`) |
 | `app_smoke.py` | Open each parity application on a fresh guest of one build on its pinned task input, and record windows plus a screenshot per application (`GUEST_TEMPLATE=...`); the screenshots are the evidence and a human reads them |
-
 | `typing_control.py` | Isolated long-typing control for the disclosed controller patches (g)+(h): one 3,000-keypress action against one live guest, run by hand against a candidate build |
+| `browser_probe.py` | Guest-browser secure-context probe over the campaign's HTTPS fleet origins: drives one guest's own Chrome over CDP across TeamChat, CloudCRM, MailHub, StreamView, `studio.streamview` and the task-041 GitLab alias, and records `isSecureContext`, `navigator.clipboard`, notification grants, the clipboard round-trip, cookie isolation, every mixed-content block, and the full per-origin request list that proves every subresource was fetched over HTTPS (needs a live fleet campaign; `GUEST_TEMPLATE=...` plus `export_fleet_wiring`) |
 
 Each harness process owns its E2B guest through the provider's in-process bridge; there is
 no separate relay to start or clean up. Shared path and environment gates live in
