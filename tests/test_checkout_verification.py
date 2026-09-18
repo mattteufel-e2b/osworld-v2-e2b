@@ -1,8 +1,16 @@
+import ast
+import base64
 import json
+import logging
+import os
 import subprocess
+from functools import lru_cache
+from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+import requests
 
 ROOT = Path(__file__).resolve().parents[1]
 PIN = json.loads((ROOT / "examples/osworld-v2/upstream.lock.json").read_text())["code"][
@@ -156,8 +164,139 @@ def _seed_minimal_checkout(dest: Path, parser_text: str, controller_text: str) -
     (dest / "scripts" / "python" / "run_multienv_m3.py").write_text(
         'choices=["aws", "virtualbox", "vmware", "docker", "azure"]\n'
     )
-    (dest / "mm_agents" / "m3" / "parser.py").write_text(parser_text)
+    (dest / "mm_agents" / "m3" / "parser.py").write_text(parser_text + PINNED_TYPING)
     (dest / "desktop_env" / "controllers" / "python.py").write_text(controller_text)
+
+
+PINNED_TYPING = """            for char in text:
+                if char == '\\n':
+                    code.append("pyautogui.press('enter')")
+    elif action == "scroll":
+"""
+
+
+@pytest.fixture
+def patched_checkout(tmp_path):
+    source = ROOT / "OSWorld-V2"
+    if not (source / ".git").exists():
+        pytest.skip("pinned upstream checkout not installed")
+    _seed_minimal_checkout(tmp_path, "", "")
+    for relative in (
+        "mm_agents/m3/parser.py",
+        "mm_agents/m3/agent.py",
+        "desktop_env/controllers/python.py",
+        "desktop_env/controllers/website.py",
+    ):
+        (tmp_path / relative).write_bytes(
+            subprocess.check_output(
+                ["git", "-C", str(source), "show", f"{PIN}:{relative}"]
+            )
+        )
+    _apply_patches(tmp_path)
+    return tmp_path
+
+
+def test_fleet_scheme_does_not_downgrade_on_transient_probe_failure(
+    patched_checkout, monkeypatch
+):
+    source = ast.parse(
+        (patched_checkout / "desktop_env/controllers/website.py").read_text()
+    )
+    function = next(
+        n
+        for n in source.body
+        if isinstance(n, ast.FunctionDef) and n.name == "_select_website_scheme"
+    )
+    namespace = {
+        "os": os,
+        "requests": requests,
+        "lru_cache": lru_cache,
+        "logger": logging.getLogger(__name__),
+    }
+    exec(
+        compile(ast.Module(body=[function], type_ignores=[]), "website.py", "exec"),
+        namespace,
+    )
+
+    def timeout(*args, **kwargs):
+        raise requests.Timeout("slow fleet")
+
+    monkeypatch.setattr(requests, "get", timeout)
+    monkeypatch.setenv("OSWORLD_WEBSITE_SCHEME", "https")
+    assert namespace["_select_website_scheme"]("mailhub.test:8090") == "https://"
+    monkeypatch.delenv("OSWORLD_WEBSITE_SCHEME")
+    assert namespace["_select_website_scheme"]("unconfigured.test") == "http://"
+
+
+def test_m3_exhausted_transport_error_propagates(patched_checkout):
+    source = ast.parse((patched_checkout / "mm_agents/m3/agent.py").read_text())
+    cls = next(
+        n for n in source.body if isinstance(n, ast.ClassDef) and n.name == "M3Agent"
+    )
+    predict = next(
+        n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "predict"
+    )
+    namespace = {
+        "Dict": dict,
+        "List": list,
+        "Image": SimpleNamespace(open=lambda _: SimpleNamespace(size=(1920, 1080))),
+        "BytesIO": BytesIO,
+        "base64": base64,
+        "logger": logging.getLogger(__name__),
+        "_encode_screenshot": lambda _: ("eA==", "image/png"),
+        "wrap_for_history": lambda s: s,
+    }
+    exec(
+        compile(ast.Module(body=[predict], type_ignores=[]), "agent.py", "exec"),
+        namespace,
+    )
+
+    def failed(messages):
+        raise ConnectionError("exhausted transport retries")
+
+    logs = []
+    agent = SimpleNamespace(
+        _api_call_count=0,
+        _api_log_dir=None,
+        screenshots=[],
+        responses=[],
+        user_responses=[],
+        _build_messages=lambda *a: [],
+        _build_request_body=lambda *a: {},
+        _call_llm=failed,
+        max_llm_retries=0,
+        _save_api_log=lambda *a, **kw: logs.append(kw),
+        actions=[],
+        thoughts=[],
+    )
+    with pytest.raises(ConnectionError, match="exhausted transport retries"):
+        namespace["predict"](agent, "test", {"screenshot": b"x"})
+    assert logs[0]["retry_attempts"][0]["outcome"] == "exception"
+
+
+def test_m3_long_typing_preserves_text_without_per_character_pauses(patched_checkout):
+    namespace = {}
+    exec((patched_checkout / "mm_agents/m3/parser.py").read_text(), namespace)
+    text = 'A "quoted" path \\tmp\n' * 250
+    code = namespace["tool_action_to_pyautogui"](
+        "type", {"text": text}, lambda x, y: (x, y)
+    )
+    typed = []
+    elapsed = 0.0
+
+    def press(key):
+        nonlocal elapsed
+        typed.append("\n" if key == "enter" else key)
+        elapsed += 0.1
+
+    def write(value, interval=0):
+        nonlocal elapsed
+        typed.extend(value)
+        elapsed += 0.1 + len(value) * interval
+
+    exec("\n".join(code), {"pyautogui": SimpleNamespace(press=press, write=write)})
+    assert "".join(typed) == text
+    assert elapsed < 120
 
 
 def test_setup_patches_the_m3_runner_provider_choices(tmp_path):

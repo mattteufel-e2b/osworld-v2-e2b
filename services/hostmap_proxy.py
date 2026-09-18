@@ -293,6 +293,36 @@ def _map_asset_urls(body: bytes, path: str, mapping: dict[bytes, bytes]) -> byte
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
+    def _read_body(self):
+        encoding = self.headers.get("Transfer-Encoding")
+        if encoding is None:
+            length = int(self.headers.get("Content-Length") or 0)
+            if length < 0:
+                raise ValueError("negative Content-Length")
+            return self.rfile.read(length)
+        if encoding.lower() != "chunked" or "Content-Length" in self.headers:
+            raise ValueError("unsupported or ambiguous request framing")
+        body = bytearray()
+        while True:
+            line = self.rfile.readline(65537)
+            if len(line) > 65536 or not line.endswith(b"\r\n"):
+                raise ValueError("invalid chunk header")
+            size = int(line.split(b";", 1)[0].strip(), 16)
+            if size < 0:
+                raise ValueError("negative chunk size")
+            if size == 0:
+                # Consume trailers before accepting another keep-alive request.
+                while True:
+                    line = self.rfile.readline(65537)
+                    if line == b"\r\n":
+                        return bytes(body)
+                    if len(line) > 65536 or not line.endswith(b"\r\n"):
+                        raise ValueError("invalid chunk trailer")
+            chunk = self.rfile.read(size)
+            if len(chunk) != size or self.rfile.read(2) != b"\r\n":
+                raise ValueError("incomplete chunk")
+            body.extend(chunk)
+
     def _resolve(self):
         host = (self.headers.get("Host") or "").split(":")[0].lower()
         rules, asset_url_map = _load_rules()
@@ -348,8 +378,11 @@ class Handler(BaseHTTPRequestHandler):
         token = target.get("traffic_token")
         url = f"https://{ingress_host}{self.path}"
         incoming_authority = self.headers.get("Host") or host
-        length = int(self.headers.get("Content-Length") or 0)
-        body = self.rfile.read(length) if length else None
+        try:
+            body = self._read_body()
+        except ValueError as exc:
+            self.send_error(400, str(exc))
+            return
         body = _map_asset_urls(body or b"", self.path, asset_url_map) or None
 
         req = urllib.request.Request(url, data=body, method=self.command)

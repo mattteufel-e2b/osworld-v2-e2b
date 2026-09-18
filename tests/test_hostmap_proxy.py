@@ -88,6 +88,64 @@ def test_upstream_open_retries_transient_transport_failure():
     sleep.assert_called_once_with(0.25)
 
 
+def test_chunked_request_body_and_trailers_leave_next_request_intact():
+    route = {"ingress_host": "gitlab.example", "traffic_token": None}
+    bodies = []
+
+    def upstream(request):
+        bodies.append(request.data)
+        return hostmap_proxy._DirectResponse(
+            {"status": 200, "headers": [], "body_base64": "e30="}
+        )
+
+    server = hostmap_proxy.make_server(0, tls=None)
+    with (
+        _serving(server),
+        patch.object(
+            hostmap_proxy, "_load_rules", return_value=({"gitlab": route}, {})
+        ),
+        patch.object(hostmap_proxy, "_open_upstream", side_effect=upstream),
+    ):
+        conn = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+        conn.putrequest("POST", "/repo.git/git-receive-pack", skip_host=True)
+        conn.putheader("Host", "gitlab")
+        conn.putheader("Transfer-Encoding", "chunked")
+        conn.endheaders()
+        conn.send(b"4;ext=yes\r\nPACK\r\n4\r\ndata\r\n0\r\nX-Checksum: ignored\r\n\r\n")
+        response = conn.getresponse()
+        assert response.status == 200
+        response.read()
+        conn.request("POST", "/next", body=b"next", headers={"Host": "gitlab"})
+        response = conn.getresponse()
+        assert response.status == 200
+        response.read()
+        conn.close()
+    assert bodies == [b"PACKdata", b"next"]
+
+
+@pytest.mark.parametrize("body", [b"nope\r\n", b"-1\r\n", b"3\r\nabcXX", b"4\r\nab"])
+def test_malformed_chunked_request_is_rejected(body):
+    server = hostmap_proxy.make_server(0, tls=None)
+    with (
+        _serving(server),
+        patch.object(
+            hostmap_proxy,
+            "_load_rules",
+            return_value=({"gitlab": {"ingress_host": "unused"}}, {}),
+        ),
+    ):
+        conn = socket.create_connection(("127.0.0.1", server.server_port), timeout=5)
+        conn.sendall(
+            b"POST / HTTP/1.1\r\nHost: gitlab\r\nTransfer-Encoding: chunked\r\n\r\n"
+            + body
+        )
+        conn.shutdown(socket.SHUT_WR)
+        response = http.client.HTTPResponse(conn)
+        response.begin()
+        assert response.status == 400
+        conn.close()
+
+
 def test_upstream_redirects_are_returned_to_the_client_for_cookie_fidelity():
     redirect_handler = hostmap_proxy._NoRedirect()
 

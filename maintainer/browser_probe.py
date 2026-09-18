@@ -51,7 +51,10 @@ What it does, once:
      round-trips ``navigator.clipboard.writeText("probe")`` -> ``readText()``; and
      sets ``document.cookie="probe=1"``, which the CloudCRM leg then asserts is
      absent from its own ``document.cookie``.
-  6. Writes ``<output-dir>/browser-probe-<build-id>.json`` and kills the guest.
+  6. Uploads a 2 MiB payload to StreamView, verifies its persisted bytes, and
+     clears the isolated probe session. Pushes a 2 MiB Git blob from the guest
+     with chunked HTTP, verifies it through GitLab, and deletes the probe project.
+  7. Writes ``<output-dir>/browser-probe-<build-id>.json`` and kills the guest.
 
 Acceptance criteria (evaluated into ``acceptance``; the script exits non-zero if
 any is false). Per origin: ``secure`` is ``true``, ``typeof navigator.clipboard``
@@ -62,7 +65,7 @@ and zero subresource requests used an insecure scheme. Plus: TeamChat's
 ``Notification.permission`` becomes ``"granted"`` after ``Browser.setPermission``;
 the clipboard round-trip returns exactly ``"probe"``; the cookie set on TeamChat
 is absent on CloudCRM; and the task-041 GitLab alias page's title contains
-``GitLab``.
+``GitLab``. Both upload and Git push round-trips must succeed.
 
 Four of the booleans guard the probe against scoring itself green on nothing:
 
@@ -81,9 +84,9 @@ Four of the booleans guard the probe against scoring itself green on nothing:
     apps redirect within their own origin and that is correct.
 
 Before any guest is created, ``_origin_literal_check`` asserts that the literal
-``ORIGINS`` list still names the fleet's real hosts — the portless
-``WEBSITE_HOST_SUFFIX`` host and the task-041 alias in the campaign leaf's SAN
-list — and raises naming both values if not, recording in
+``ORIGINS`` list still names the fleet's task origins — the full
+``WEBSITE_HOST_SUFFIX`` authority (including port) and the task-041 alias in the
+campaign leaf's SAN list — and raises naming both values if not, recording in
 ``origin_literal_check`` which halves ran and which were skipped for want of an
 input. A probe silently testing origins no task uses would read exactly like a
 passing one.
@@ -96,8 +99,8 @@ run pass.
 Not run in CI and not run by any ladder rung: it needs a live E2B guest build
 *and* a running fleet campaign. Point ``GUEST_TEMPLATE`` at the immutable
 ``name:build_id`` reference under test, export the fleet wiring, and run it from
-the pinned checkout root the same way ``maintainer/validate.sh`` launches
-``harness.py``:
+the pinned checkout root. Start the host proxy as described in README's upstream
+runner instructions first; GitLab's host-side verification uses it:
 
     source runner/common.sh && export_fleet_wiring
     cd OSWorld-V2
@@ -115,12 +118,15 @@ import json
 import os
 import platform
 import re
+import secrets
+import shlex
 import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
 
 import aiohttp
+import requests
 
 
 # desktop_env is imported from the pinned checkout, whose root must be the cwd
@@ -139,11 +145,11 @@ from desktop_env.desktop_env import DesktopEnv  # noqa: E402
 # is task 041's hardcoded public GitLab host, aliased to the guest proxy through
 # /etc/hosts.
 ORIGINS: tuple[tuple[str, str], ...] = (
-    ("teamchat", "https://teamchat.127.0.0.1.nip.io"),
-    ("cloudcrm", "https://cloudcrm.127.0.0.1.nip.io"),
-    ("mailhub", "https://mailhub.127.0.0.1.nip.io"),
-    ("streamview", "https://streamview.127.0.0.1.nip.io"),
-    ("studio-streamview", "https://studio.streamview.127.0.0.1.nip.io"),
+    ("teamchat", "https://teamchat.127.0.0.1.nip.io:8090"),
+    ("cloudcrm", "https://cloudcrm.127.0.0.1.nip.io:8090"),
+    ("mailhub", "https://mailhub.127.0.0.1.nip.io:8090"),
+    ("streamview", "https://streamview.127.0.0.1.nip.io:8090"),
+    ("studio-streamview", "https://studio.streamview.127.0.0.1.nip.io:8090"),
     ("gitlab-041", "https://54.174.16.65.sslip.io/users/sign_in"),
 )
 # ORIGINS stays literal on purpose: the probe has to state the origins it
@@ -157,7 +163,7 @@ ORIGINS: tuple[tuple[str, str], ...] = (
 # the e2b SDK and mutates sys.path at import, which the probe (which already
 # inserts the upstream checkout at sys.path[0]) must not depend on. The
 # campaign's own runtime file is the authority instead.
-ORIGIN_HOST_SUFFIX = "127.0.0.1.nip.io"
+ORIGIN_HOST_SUFFIX = "127.0.0.1.nip.io:8090"
 ORIGIN_GITLAB_ALIAS = "54.174.16.65.sslip.io"
 SERVICES_RUNTIME_FILE = (
     Path(__file__).resolve().parents[1] / "services" / ".runtime.json"
@@ -269,10 +275,7 @@ def _origin_literal_check(runtime_file: Path | None = None) -> dict:
          under ``ORIGIN_HOST_SUFFIX`` or is exactly ``ORIGIN_GITLAB_ALIAS``.
          A typo'd entry fails here instead of producing a green record for an
          origin nothing serves.
-      2. ``WEBSITE_HOST_SUFFIX`` (which the record already stores but never
-         checked) names the same host, once its ``:port`` is stripped. The
-         suffix carries a port for the tasks (``…nip.io:8090``); the probe
-         navigates the portless form, so only the host half is comparable.
+      2. ``WEBSITE_HOST_SUFFIX`` matches the full suffix, including the task port.
       3. ``services/.runtime.json``'s ``tls.hosts`` -- the campaign leaf's own
          SAN list -- contains ``ORIGIN_GITLAB_ALIAS``.
          ``campaign_tls.ensure_campaign_tls`` folds ``TASK_041_GITLAB_ALIAS``
@@ -312,14 +315,11 @@ def _origin_literal_check(runtime_file: Path | None = None) -> dict:
         result["host_suffix_checked"] = False
         result["host_suffix_skipped_because"] = "WEBSITE_HOST_SUFFIX is not set"
     else:
-        # rsplit, not split: the suffix is a bare host[:port], never a URL, and
-        # the host itself contains dots but no colon.
-        suffix_host = suffix_env.rsplit(":", 1)[0] if ":" in suffix_env else suffix_env
-        result["website_host_suffix_host"] = suffix_host
-        if suffix_host != ORIGIN_HOST_SUFFIX:
+        result["website_host_suffix"] = suffix_env
+        if suffix_env != ORIGIN_HOST_SUFFIX:
             raise RuntimeError(
                 "browser_probe would test the wrong fleet origins: "
-                f"WEBSITE_HOST_SUFFIX={suffix_env!r} (host {suffix_host!r}) but "
+                f"WEBSITE_HOST_SUFFIX={suffix_env!r} but "
                 f"ORIGINS is built on {ORIGIN_HOST_SUFFIX!r}. The fleet suffix "
                 "moved; update ORIGINS and ORIGIN_HOST_SUFFIX together."
             )
@@ -915,6 +915,104 @@ async def _teamchat_extras(
     return extras
 
 
+async def _streamview_upload(cdp: CdpSession) -> dict:
+    # Exercise the browser's real upload/download path with an isolated cookie.
+    # This is a transport payload, not a playable-video or rendering test.
+    return await _evaluate(
+        cdp,
+        """(async () => {
+        const oldCookie = document.cookie.split('; ').find(c => c.startsWith('user_id='));
+        document.cookie = `user_id=probe-${crypto.randomUUID()}; Path=/; SameSite=Lax`;
+        const title = `probe-${crypto.randomUUID()}`;
+        const bytes = new Uint8Array(2 * 1024 * 1024).fill(37);
+        const request = (url, options = {}) => fetch(url, {
+            ...options, signal: AbortSignal.timeout(30000),
+        });
+        try {
+            const form = new FormData();
+            form.append('file', new Blob([bytes], {type: 'video/mp4'}), 'probe.mp4');
+            form.append('title', title);
+            const upload = await request('/api/streamview/videos', {method: 'POST', body: form});
+            if (!upload.ok) throw new Error(`upload: ${upload.status}`);
+            const state = await (await request('/api/streamview/bootstrap')).json();
+            const video = state.data.videos.find(v => v.title === title);
+            if (!video) throw new Error('uploaded video missing from state');
+            const response = await request(video.asset.url);
+            const saved = new Uint8Array(await response.arrayBuffer());
+            return response.ok && saved.length === bytes.length && saved.every(b => b === 37);
+        } finally {
+            try {
+                const cleared = await request('/api/state', {method: 'DELETE'});
+                if (!cleared.ok) throw new Error(`cleanup: ${cleared.status}`);
+            } finally {
+                document.cookie = oldCookie ? `${oldCookie}; Path=/` : 'user_id=; Path=/; Max-Age=0';
+            }
+        }
+    })()""",
+        await_promise=True,
+        timeout=180,
+    )
+
+
+def _gitlab_push(controller) -> bool:
+    """Create an isolated project, push from the guest, verify its blob, delete it.
+
+    Only a project-scoped token reaches the guest; the campaign admin token stays
+    on the host. The random payload exceeds Git's normal chunking threshold.
+    """
+    base = os.environ["GITLAB_URL"].rstrip("/")
+    with requests.Session() as session:
+        session.headers["PRIVATE-TOKEN"] = os.environ["GITLAB_PRIVATE_TOKEN"]
+
+        def api(method, path, **kwargs):
+            response = session.request(
+                method, f"{base}/api/v4{path}", timeout=60, **kwargs
+            )
+            response.raise_for_status()
+            return response
+
+        project = api(
+            "POST", "/projects", json={"name": "osworld-probe-" + secrets.token_hex(6)}
+        ).json()
+        path = f"/projects/{project['id']}"
+        try:
+            token = api(
+                "POST",
+                path + "/access_tokens",
+                json={
+                    "name": "guest-push-probe",
+                    "scopes": ["write_repository"],
+                    "access_level": 40,
+                },
+            ).json()["token"]
+            url = (
+                base.replace("https://", f"https://oauth2:{token}@", 1)
+                + f"/{project['path_with_namespace']}.git"
+            )
+            result = (
+                controller.run_bash_script(
+                    'set -eu\nwork=$(mktemp -d)\ntrap \'rm -rf "$work"\' EXIT\ncd "$work"\n'
+                    "git init -q\npython3 -c \"import os;open('payload.bin','wb').write(os.urandom(2*1024*1024))\"\n"
+                    "git add payload.bin\ngit -c user.name=Probe -c user.email=probe@example.test commit -qm probe\n"
+                    f"git -c http.postBuffer=1024 push -q {shlex.quote(url)} HEAD:refs/heads/main\n"
+                    "git hash-object payload.bin\n",
+                    timeout=180,
+                )
+                or {}
+            )
+            if result.get("returncode") != 0:
+                return False
+            remote = api(
+                "HEAD", path + "/repository/files/payload.bin", params={"ref": "main"}
+            )
+            return (
+                remote.headers.get("X-Gitlab-Blob-Id")
+                == (result.get("output") or "").strip()
+            )
+        finally:
+            api("DELETE", path)
+
+
 async def run_cdp_probe(base: str, record: dict, args: argparse.Namespace) -> None:
     async with aiohttp.ClientSession() as session:
         version = await _wait_for_cdp(session, base, args.cdp_timeout_seconds)
@@ -958,6 +1056,8 @@ async def run_cdp_probe(base: str, record: dict, args: argparse.Namespace) -> No
                         cookie = await _evaluate(cdp, "document.cookie")
                         entry["cookie_visible"] = cookie["value"]
                         entry["cookie_read_error"] = cookie["error"]
+                    if label == "studio-streamview":
+                        record["streamview_upload"] = await _streamview_upload(cdp)
             finally:
                 record["cdp"]["event_count"] = len(cdp.events)
                 record["cdp"]["event_methods"] = cdp.event_methods()
@@ -981,7 +1081,13 @@ def _port_9222_listening(controller) -> bool | None:
 
 
 def _acceptance(record: dict) -> dict:
-    acceptance: dict = {}
+    acceptance: dict = {
+        "streamview.upload_roundtrip": (record.get("streamview_upload") or {}).get(
+            "value"
+        )
+        is True,
+        "gitlab.push_roundtrip": record.get("gitlab_push") is True,
+    }
     # Every CDP domain enabled cleanly. `cdp.call` returns protocol errors and
     # timeouts rather than raising, so a failed `Log.enable` or `Network.enable`
     # would leave the collectors silent and every "no mixed content" / "all
@@ -1157,6 +1263,7 @@ def main() -> int:
 
             base = f"http://127.0.0.1:{env.provider.bridge.cdp_port}"
             asyncio.run(run_cdp_probe(base, record, args))
+            record["gitlab_push"] = _gitlab_push(env.controller)
         except Exception as error:  # noqa: BLE001 - recorded, then reported by exit code
             record["error"] = {"type": type(error).__name__, "message": str(error)}
             print(f"probe error: {type(error).__name__}: {error}", file=sys.stderr)

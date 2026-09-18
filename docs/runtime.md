@@ -183,6 +183,11 @@ plumbing, then derives `REQUESTS_CA_BUNDLE`/`SSL_CERT_FILE` from the latter. The
 environment variables `hostmap_proxy.py` itself reads for TLS are `HOSTMAP_TLS_PORTS`,
 `HOSTMAP_TLS_CERT`, and `HOSTMAP_TLS_KEY`.
 
+`export_fleet_wiring` also sets `OSWORLD_WEBSITE_SCHEME=https`. The patched upstream
+URL builder uses that explicit scheme instead of caching an HTTP fallback when its
+HTTPS readiness probe times out. Port 8090 serves TLS only. The host and guest proxies
+decode chunked request bodies before forwarding, including large Git pushes.
+
 Task 026 depends on a Hugging Face-hosted zip whose upstream URL is dead. The websites
 launcher verifies the pinned local copy against a recorded sha256, uploads it into a
 `files.<suffix>` static nginx site (read-only bind mount, `Content-Disposition: attachment`)

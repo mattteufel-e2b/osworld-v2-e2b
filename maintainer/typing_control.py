@@ -11,9 +11,8 @@ What it does, once:
      ``maintainer/harness.py`` does (``DesktopEnv(provider_name="e2b", ...)``
      starts the sandbox and builds the ``PythonController``).
   2. Opens a graphical text editor in the guest and focuses its text area.
-  3. Issues ONE upstream-style action — ``--presses`` (default 3,000) chained
-     ``pyautogui.press()`` calls, the shape ``mm_agents/m3/parser.py`` emits for
-     typed text — through ``PythonController.execute_python_command``. With the
+  3. Issues ONE deliberately slow action — ``--presses`` (default 3,000) chained
+     ``pyautogui.press()`` calls — through ``PythonController.execute_python_command``. With the
      guest's 0.1 s PyAutoGUI pause that is ~300 s of work behind a 120 s guest
      deadline, so the guest is certain to kill it.
   4. Records the wall time of that call and its return value, takes a screenshot

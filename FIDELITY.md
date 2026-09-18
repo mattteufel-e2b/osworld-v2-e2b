@@ -486,7 +486,7 @@ full native-result parity or a passing 24-task sample.
   contexts rather than the HTTP origins that previously disabled notifications and the
   clipboard API. Verified from inside the guest's own Chrome 153 on build `00124a57…`
   ([evidence](out/osworld-v2-evidence/fleet/browser-probe-00124a57-267c-45e7-93d1-ca0ff196e4b8.json)),
-  on the **portless `:443`** half of that pair only — `maintainer/browser_probe.py` navigates
+  on the **portless `:443`** half of that pair only — that receipt navigated
   `https://<site>.127.0.0.1.nip.io` with no port, and every recorded `location.href` is
   portless. On all six of TeamChat, CloudCRM, MailHub, StreamView, `studio.streamview` and the
   task-041 GitLab alias, `isSecureContext` is `true`, `navigator.clipboard` is an object,
@@ -554,18 +554,21 @@ exact patched state before every run.
 | (f) `mm_agents/m3/parser.py` terminal marker | `[INFEASIBLE]` anywhere in the response — reasoning included — returns `FAIL` and ends the rollout | the marker counts only outside `<mm:think>…</mm:think>`; a marker in reasoning no longer overrides a tool call in the same response | `docs/sample-run-results.md` task 067 (marker in reasoning overrode an actual Ctrl+C tool call) |
 | (g) `desktop_env/controllers/python.py` action deadline | the client gives up at 90 s and returns `None` while the guest keeps executing to its own 120 s deadline, so typing continues under the next action | the client waits up to 130 s, so the guest's verdict for its 120 s kill arrives before the client gives up | `docs/sample-run-results.md` tasks 093, 059, 079, 082; the 2026-09-14 isolated typing control above (`None` at 90.12 s, completion at 102.61 s) |
 | (h) `desktop_env/controllers/python.py` guest-timeout retry | a non-200 is retried up to `retry_times`, so the guest's timeout 500 would replay a partially applied action | a 500 whose body carries subprocess's `timed out after` text breaks out of the retry loop and falls through to upstream's own `return None` — the same value upstream returns on a client-side `ReadTimeout`, with no replay | same tasks as (g); `tests/test_checkout_verification.py` pins the patched text and the anchor's uniqueness in the pin |
+| (i) `mm_agents/m3/agent.py` inference errors | exhausted errors return an empty action list, which becomes `ASK_USER` | save the API failure log and propagate the exception so the task receipt fails | `tests/test_checkout_verification.py` |
+| (j) `desktop_env/controllers/website.py` URL scheme | a failed HTTPS probe permanently caches HTTP | honor `OSWORLD_WEBSITE_SCHEME=https` for the TLS-only campaign fleet | `tests/test_checkout_verification.py` |
+| (k) `mm_agents/m3/parser.py` typing | each character incurs PyAutoGUI's 0.1-second pause, exceeding the 120-second guest deadline for long inputs | one ordered `pyautogui.write(text, interval=0.001)` call, with one final pause | `tests/test_checkout_verification.py` |
 
 (h) deliberately keeps `None` rather than inventing a success-shaped result: upstream evaluator
 getters read `env.controller.execute_python_command(...)["output"]`, so a 200 carrying empty
 output would convert an infrastructure failure into a silent zero score. No evaluator code path
 changes.
 
-Not patched, and still disclosed limitations: the M3 prompt forbids asking for clarification and
-omits the parser-supported `call_user` action (task 095); the guest's 0.1-second PyAutoGUI pause
-and every typing speed; `MAX_STEPS`; every agent and evaluator prompt; and every scoring function
-are upstream's, unchanged.
+The M3 prompt still forbids asking for clarification and omits the parser-supported
+`call_user` action (task 095). `MAX_STEPS`, every agent and evaluator prompt, and every
+scoring function remain upstream's. Patch (k) changes typing speed; other PyAutoGUI calls
+retain the guest's 0.1-second pause.
 
-Two behaviour changes these patches introduce, stated plainly: an `[INFEASIBLE]` emitted only
+With (f), an `[INFEASIBLE]` emitted only
 inside the reasoning block with no accompanying tool call now continues the rollout instead of
 terminating it, so such runs consume more steps and more inference spend than they did on the
 unpatched parser; and the worst-case span of a non-timeout retry inside

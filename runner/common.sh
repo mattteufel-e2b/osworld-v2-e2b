@@ -67,6 +67,8 @@ PY
     # for the campaign-signed fleet origins.
     REQUESTS_CA_BUNDLE="$OSWORLD_CA_BUNDLE"; SSL_CERT_FILE="$OSWORLD_CA_BUNDLE"
     export REQUESTS_CA_BUNDLE SSL_CERT_FILE
+    # :8090 is TLS-only; a transient scheme-probe timeout must not select HTTP.
+    export OSWORLD_WEBSITE_SCHEME=https
     export GITLAB_PRIVATE_TOKEN="$(cat "$SERVICES_DIR/.gitlab-token")"
     export OSWORLD_FILE_BASE_URL="$TASKS_DIR/assets"
     export HOSTMAP_PROXY_SCRIPT="$SERVICES_DIR/hostmap_proxy.py"

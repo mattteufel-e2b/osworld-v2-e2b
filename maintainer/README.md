@@ -60,6 +60,17 @@ sentinel or attempted an evaluator-model call that an upstream metric converted 
 The validation coordinators leave the fleets running so later rungs can reuse the campaign;
 stop it with `uv run --env-file .env.local --locked python services/stop.py --campaign-id "$OSWORLD_CAMPAIGN_ID"` when you are done with it.
 
+Before a large inference campaign, run `browser_probe.py` against the candidate guest and
+live fleet with the host proxy running (see its usage header). It checks the task origins
+on port 8090, a 2 MiB StreamView upload and download, and a chunked Git push from the guest.
+The upload checks transport and persistence, not video playback. The probe removes its
+temporary website state and GitLab project.
+
+Also inspect a small full-agent run's receipts for successful judge and simulator calls
+through the task loop. `check_models.py` verifies client connectivity; zero calls in an
+agent receipt do not establish coverage. M3's prompt omits `call_user`, so simulator
+coverage needs an explicit task-loop canary; a normal M3 rollout may never exercise it.
+
 To gate a full-model run on that coverage instead of running it ungated, set
 `REQUIRE_NO_MODEL_COVERAGE=1` and point `NO_MODEL_RECEIPT` at the receipt above — this is the
 same `run_agent_parallel.sh` invocation as the [Quick start](../README.md#quick-start), plus those two variables:

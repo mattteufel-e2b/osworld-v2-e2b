@@ -3,7 +3,7 @@
 # (examples/osworld-v2/upstream.lock.json) and wire in the E2B provider
 # (provider/provider.py + provider/manager.py + provider/bridge.py, the
 # in-process bridge) so OSWorld-V2's own run.py works with --provider_name e2b.
-# Idempotent: re-running is safe and each string patch (a)-(h) is grep-guarded,
+# Idempotent: re-running is safe and each string patch (a)-(k) is guarded,
 # reporting "already applied" on the second run.
 #
 # Checkout states (the checkout is gitignored, so its state lives on disk only):
@@ -54,7 +54,9 @@ PATCHED_TRACKED=(
     desktop_env/providers/__init__.py
     scripts/python/run_multienv_m3.py
     mm_agents/m3/parser.py
+    mm_agents/m3/agent.py
     desktop_env/controllers/python.py
+    desktop_env/controllers/website.py
 )
 VENDORED=(
     "desktop_env/providers/e2b/provider.py:$PROVIDER_DIR/provider.py"
@@ -275,6 +277,51 @@ if controller.exists():
         controller.write_text(src.replace(retry_anchor, retry_patched, 1))
         print("(h) controllers/python.py: patched (no retry after the guest's own timeout)")
 
+# (i)-(k) Inference-run contracts: failures propagate, fleet HTTPS is explicit,
+# and one text action incurs one PyAutoGUI pause instead of one per character.
+def replace_once(relative, before, after, label):
+    path = dest / relative
+    if not path.exists():
+        return
+    src = path.read_text()
+    if after in src:
+        print(f"{label}: already applied")
+        return
+    assert src.count(before) == 1, f"{label}: expected one anchor (OSWorld-V2 moved?)"
+    path.write_text(src.replace(before, after, 1))
+    print(f"{label}: patched")
+
+replace_once(
+    "mm_agents/m3/agent.py",
+    '                raw_response = {"error": str(e)}\n'
+    '                if attempt < self.max_llm_retries:\n'
+    '                    continue\n'
+    '                break\n',
+    '                raw_response = {"error": str(e)}\n'
+    '                if attempt < self.max_llm_retries:\n'
+    '                    continue\n'
+    '                self._save_api_log(request_body, raw_response, retry_attempts=retry_attempts)\n'
+    '                raise\n',
+    "(i) M3 exhausted transport errors propagate",
+)
+replace_once(
+    "desktop_env/controllers/website.py",
+    '    https_url = f"https://{host}"\n',
+    '    if os.environ.get("OSWORLD_WEBSITE_SCHEME") == "https":\n'
+    '        return "https://"\n'
+    '    https_url = f"https://{host}"\n',
+    "(j) campaign fleet scheme",
+)
+if parser.exists():
+    src = parser.read_text()
+    typed = '            code.append(f"pyautogui.write({text!r}, interval=0.001)")\n'
+    if typed not in src:
+        start = '            for char in text:\n'
+        end = '    elif action == "scroll":\n'
+        assert src.count(start) == src.count(end) == 1, "(k) M3 typing anchors moved"
+        before = src[src.index(start):src.index(end)]
+        replace_once("mm_agents/m3/parser.py", before, typed, "(k) M3 typing")
+
 EOF
 }
 
@@ -366,7 +413,7 @@ touch "$DEST/desktop_env/providers/e2b/__init__.py"
 # The bridge imports e2b_policy from the checkout root (run.py's cwd).
 cp "$POLICY_FILE" "$DEST/e2b_policy.py"
 
-# ---- string patches (a)-(h): register + classify the provider, force strict
+# ---- string patches (a)-(k): register + classify the provider, force strict
 #      reset, accept --provider_name e2b in the M3 multi-env runner, and the
 #      disclosed M3-parser / controller execution patches -------------------
 apply_adapter_patches "$DEST"
