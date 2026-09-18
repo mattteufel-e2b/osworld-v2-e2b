@@ -1,0 +1,24 @@
+{
+  "kind": "no-model-ladder-summary",
+  "source_receipt": "no-model.json",
+  "template": "osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8",
+  "osworld_commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154",
+  "release": "osworld-v2-2026.08.08",
+  "started_at": "2026-09-18T01:27:59.089124+00:00",
+  "finished_at": "2026-09-18T01:29:44.264678+00:00",
+  "evaluation_mode": "no-model-stub",
+  "path_passes": 3,
+  "path_failures": 0,
+  "model_boundary_passes": 0,
+  "unique_sandboxes": 3,
+  "all_recorded_sandboxes_unique": true,
+  "external_model_calls": 0,
+  "eval_model_call_attempts": 0,
+  "host_proxy_owned_for_campaign": true,
+  "task_count": 3,
+  "task_statuses": {
+    "008": "PATH_PASS",
+    "009": "PATH_PASS",
+    "030": "PATH_PASS"
+  }
+}

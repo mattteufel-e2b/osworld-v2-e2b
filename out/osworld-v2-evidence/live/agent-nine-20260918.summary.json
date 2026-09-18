@@ -1,0 +1,88 @@
+{
+  "kind": "agent-run-summary",
+  "source_receipt": "agent-nine.json",
+  "template": "osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8",
+  "osworld_commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154",
+  "release": "osworld-v2-2026.08.08",
+  "campaign_id": "osworld-live-20260918T000607Z",
+  "finished_at": "2026-09-18T03:58:06.606308+00:00",
+  "unique_sandboxes": 9,
+  "all_recorded_sandboxes_unique": true,
+  "eval_model_call_attempts": 0,
+  "host_proxy_owned_for_campaign": true,
+  "attested_records": 8,
+  "scored_tasks": 8,
+  "mean_score": 0.0325,
+  "binary_accuracy": 0.0,
+  "retried_task_ids": [],
+  "implicit_retries": false,
+  "model_usage": {
+    "agent": {
+      "calls": 3975,
+      "input_tokens": 23005009,
+      "output_tokens": 575693,
+      "unmeasured_calls": 0
+    },
+    "judge": {
+      "calls": 0,
+      "input_tokens": null,
+      "output_tokens": null,
+      "unmeasured_calls": 0
+    },
+    "simulator": {
+      "calls": 0,
+      "input_tokens": null,
+      "output_tokens": null,
+      "unmeasured_calls": 0
+    }
+  },
+  "task_count": 9,
+  "task_statuses": {
+    "026": {
+      "path_status": "OK",
+      "score": 0.0,
+      "steps_taken": 500
+    },
+    "035": {
+      "path_status": "ERROR",
+      "score": null,
+      "error_cause": "evaluator-or-agent",
+      "steps_taken": 406
+    },
+    "038": {
+      "path_status": "OK",
+      "score": 0.0,
+      "steps_taken": 500
+    },
+    "041": {
+      "path_status": "OK",
+      "score": 0.0,
+      "steps_taken": 500
+    },
+    "067": {
+      "path_status": "OK",
+      "score": 0.0,
+      "steps_taken": 473
+    },
+    "079": {
+      "path_status": "OK",
+      "score": 0.049999999999999996,
+      "steps_taken": 500
+    },
+    "087": {
+      "path_status": "OK",
+      "score": 0.01,
+      "steps_taken": 499
+    },
+    "092": {
+      "path_status": "OK",
+      "score": 0.2,
+      "steps_taken": 500
+    },
+    "107": {
+      "path_status": "OK",
+      "score": 0.0,
+      "steps_taken": 500
+    }
+  }
+}

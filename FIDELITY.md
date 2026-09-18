@@ -9,11 +9,141 @@ against (`817519a3…`, `87d8a46b…`); each evidence file cites its own build i
 full-suite/focused receipts under `out/osworld-v2-evidence/full-suite/` cover the changed
 surface on that build. The September 8 MiniMax campaign used
 `osworld-v2-gnome:0d796343-1a70-4bd3-990e-8bb469b3dd20`; evidence for one build does not
-certify another build.
+certify another build. **Current build:
+`osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8`**, which carries its own 108-task
+ladder, the guest-browser secure-context probe, the long-typing control and a nine-task priced
+agent run — see "September 18 final-build ladder and live verification" below. Every claim in
+this ledger names the build it was measured on.
 Release pin: `osworld-v2-2026.08.08`. OSWorld-V2 checkout: `d578d2d4e0dc82b43e270fdaa7fa89d9708cd154`.
 
 This ledger separates what was verified to match a stated reference, what was recorded
 without a reference to match against, and what is excluded or unexercised outright.
+
+## September 17 parity-build ladder, and the disposition of task 030
+
+The guest template was rebuilt as `osworld-v2-gnome:c78db75e-7d61-4dea-a20b-25188f7aecdf` and
+re-run through the full no-model ladder at 80 concurrent workers:
+[summary](out/osworld-v2-evidence/full-suite/validate-108-parity-20260917.summary.json).
+108 unique sandboxes, `external_model_calls: 0`, checkout `d578d2d`: **106 `PATH_PASS`, one
+`MODEL_BOUNDARY_PASS` (035, the judge boundary reached and refused as designed), and one
+`PATH_FAIL` (030)**. The previous ladder on `0d796343…`
+([summary](out/osworld-v2-evidence/full-suite/validate-108-bridge-20260914.summary.json))
+recorded 107 `PATH_PASS` and zero failures, so the committed file reads as a regression. It is
+committed red and stays red; this is its disposition, not a correction of it.
+
+That ladder is evidence for `c78db75e…` and for no other build. The template has since been
+rebuilt as `osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8`, which drops the
+`/execute` timeout patch and slims the baked first-run configs to their decisive keys. That
+build carries the application-launcher smoke
+([receipt](out/osworld-v2-evidence/template/app-smoke-00124a57-267c-45e7-93d1-ca0ff196e4b8.json))
+and now its own ladder, run on the integrated branch — see the next section.
+
+## September 18 final-build ladder and live verification
+
+`osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8` was taken through the full no-model
+ladder at 80 concurrent workers on checkout `d578d2d`:
+[summary](out/osworld-v2-evidence/full-suite/validate-108-final-20260918.summary.json).
+108 unique sandboxes, all unique, `external_model_calls: 0`, host proxy owned for the
+campaign: **104 `PATH_PASS`, one `MODEL_BOUNDARY_PASS` (035, the judge boundary reached and
+refused as designed), and three `PATH_FAIL` (008, 009, 030)**. The gate reports **FAIL** on
+that receipt and the summary is committed red.
+
+Those three are one signature, not three defects. Each records `stage: reset`, `cause:
+reset-or-observation`, `evaluator_ran: false`, `score: null`, with a second-generation guest
+(post strict-reset) answering `502` to every accessibility-tree request; 008 and 009 also drew
+`500` from the CDP `/json/version` endpoint. All three started inside the first three seconds
+of the 80-worker launch wave. The 5xx responses are in the gitignored worker logs
+(`out/osworld-v2-raw/live-osworld-live-20260918T000607Z/ladder/no-model-raw/workers/task_{008,009,030}.log`).
+The launch timings are not: neither those logs nor the coordinator's own log
+(`out/osworld-v2-raw/live-osworld-live-20260918T000607Z/ladder/coordinator-stdout.log`) carries
+a timestamp — the coordinator log only prints `launched task NNN pid=…` lines in order. The
+timings come from the gitignored aggregate receipt
+(`out/osworld-v2-raw/live-osworld-live-20260918T000607Z/ladder/no-model.json`), whose per-record
+`started_at` values — `2026-09-18T01:04:38.836599+00:00` (008), `01:04:40.084920` (009), and
+`01:04:41.363405` (030), against the run's first launch at `01:04:38.429432` — place all three
+in that window. The committed summary carries no per-task `started_at`, so the raw receipt is
+the only source for the timings.
+This is the reset-time ingress 5xx burst already recorded for
+030 on `c78db75e…` and for 043 on `0d796343…`. A follow-up wave re-ran exactly those three on
+fresh sandboxes at concurrency 3 and all three passed:
+[summary](out/osworld-v2-evidence/full-suite/validate-108-final-followup-20260918.summary.json).
+Read together, all 108 tasks reached the harness's passing boundaries on this build — the same
+disposition the September 11 ladder gave 043 and 082. It does not close the flake: a transient
+post-reset guest-readiness fault under first-wave concurrency remains open, and its rate on
+this run (3 of 108) was worse than on the two prior ladders (1 and 0).
+
+Two live controls ran against the same build and the same fleet campaign. The guest-browser
+secure-context probe
+([evidence](out/osworld-v2-evidence/fleet/browser-probe-00124a57-267c-45e7-93d1-ca0ff196e4b8.json),
+`maintainer/browser_probe.py`) drove the guest's own Chrome 153 over CDP across TeamChat,
+CloudCRM, MailHub, StreamView, `studio.streamview` and the task-041 GitLab alias. The
+long-typing control
+([result](out/osworld-v2-evidence/controls/typing-control-00124a57-267c-45e7-93d1-ca0ff196e4b8.json))
+is covered in the controller-patch section below.
+
+Nine application and fleet tasks then ran with the upstream M3 agent at 500 steps, concurrency
+9, Haiku 4.5 on Bedrock Mantle configured as judge, and the same model configured as user
+simulator with no provider or transport recorded in the receipt:
+[summary](out/osworld-v2-evidence/live/agent-nine-20260918.summary.json). The summary carries
+no judge or simulator configuration fields — `maintainer/receipt_summary.py` keeps none — so
+that configuration is checkable only in the gitignored raw receipt
+(`out/osworld-v2-raw/live-osworld-live-20260918T000607Z/inference/agent-nine.json`, its
+`evaluator` and `user_simulator` blocks), and so is the gate verdict below
+(`summary.invalid_task_ids` in the same file). Nine unique
+sandboxes, all unique, `retried_task_ids: []`, `implicit_retries: false`. Eight of nine
+receipts are `path_status: OK` with an evaluator that ran; the ninth (035) is `ERROR` and the
+gate reports **FAIL**, as it should. Scores, recorded verbatim and not asserted: 092 `0.2`,
+079 `0.05`, 087 `0.01`, and `0.0` for 026, 038, 041, 067 and 107 — mean partial `0.0325`,
+binary accuracy `0.0`. That is a benchmark result on nine deliberately hard tasks, not a
+verdict on the port.
+
+035's `ERROR` is the agent, not the infrastructure: at step ~406 it typed `killall -9 python3`
+into a guest terminal (its gitignored trajectory,
+`out/osworld-v2-raw/live-osworld-live-20260918T000607Z/inference/agent-raw/workers/task_035/runtime.log`
+line 4105, records the action verbatim), killing the guest's own OSWorld control server, after
+which every `/execute` and screenshot returned `502` and the harness failed closed with no
+evaluator call. Upstream-unmodified agent behaviour; no prompt, timing or scoring change was
+made to avoid it, and the receipt is recorded rather than retried.
+
+The run's own token counts give two different cost figures, and a customer reconciling against
+the cited summary will get the smaller one. All nine records together are 4,382 agent calls,
+24,855,448 input and 628,610 output tokens, which at Fireworks MiniMax-M3 list price ($0.30 per
+million input, $1.20 per million output) is **$8.21** — the cost of the whole run, mean **$0.91
+per task** across the nine. The summary's `model_usage` is not that: `runner/aggregate_agent.py`
+sums attested records only, so the committed summary reports the eight attested receipts —
+3,975 calls, 23,005,009 input, 575,693 output, **$7.59** — and 035's own 407 calls
+(1,850,439 input, 52,917 output, $0.62) are absent from it because its receipt did not pass the
+gate. Both are list-price figures derived from the receipts, not billed amounts
+(`out/osworld-v2-raw/spend-ledger.json`). No receipt, summary or config in this repo records
+the rates; they are the provider's published list prices, stated here so the arithmetic can be
+checked against the token counts rather than taken on trust.
+
+Judge and simulator calls were **zero** — none of these nine evaluators invoked a model. The
+judge configuration itself was proven live by the coordinator's preflight probe
+(`out/osworld-v2-raw/live-osworld-live-20260918T000607Z/inference/coordinator-stdout.log`
+line 3, `live model check ok: text + image judge, 1 simulator configuration(s)`), so that `$0`
+is an absence of calls, not an absence of capability.
+
+Task 030's record is `stage: reset`, `evaluator_ran: false`, `score: null` — the reset never
+completed, so nothing was scored and no evaluator ran. Its gitignored worker log
+(`out/osworld-v2-raw/parity-ladder/no-model-raw/workers/task_030.log`) contains twelve failed
+accessibility-tree fetches: nine `Failed to get accessibility tree. Status code: 502`
+responses in three groups of three, each group followed by the controller's bounded-retry
+exhaustion line (`get_accessibility_tree` retries `retry_times = 3`), after which the harness
+failed closed at 117.2 s. Five sibling workers in the same wave logged the same getter failing
+and recovered inside or after one retry round — 004 (four occurrences, one exhausted round),
+008 (one), 014 (two), 027 (one), 091 (one) — all with status 500 rather than 502; only 030
+exhausted the budget repeatedly. An isolated re-run of 030 alone at `PARALLEL_CONCURRENCY=1`
+on the same build reached `stage: complete` with `PATH_PASS`, `evaluator_ran: true` and no 502
+at all; that re-run is recorded separately and was deliberately **not** folded into the
+committed summary. Task 030's own `related_apps` are `vscode` and `terminal` — neither is an
+application this template change added or reconfigured.
+
+On that evidence the failure is attributable to transient guest-ingress unreachability under
+80-way concurrency rather than to the template change. The mechanism is not proven: nothing
+here observed the ingress layer itself, and the correlation (repeated 502s on one worker,
+recovery in isolation, an untouched application set) is what the attribution rests on. The
+task is not a closed item.
 
 ## September 14 judge and 36-task full-inference verification
 
@@ -69,14 +199,44 @@ The [runtime controls](out/osworld-v2-evidence/sample-36/runtime-controls-202609
 record that failure mode and preserve it separately from inference success. No action timing,
 agent prompt, task, or scoring-function changes were made to improve these results.
 
-The same controls and actual setup logs establish unresolved fidelity gaps: missing or
-incompatible MuseScore/WPS/Blender applications; a FreeCAD package hold blocking native KiCad
-installation; HTTP fleet origins disabling notifications and clipboard APIs; task 026's stale
-active asset URL; and task 041's hardcoded GitLab URL. Successful native score reporting does
-not certify those starting conditions. Task 069 reached only phase 1 before its native gate
-stopped progression. Native media controls exercise XCF extraction, video decoding, MuseScore
-XML scoring, and REAPER scoring; the focused REAPER fixtures exclude safety-baseline setup.
-They do not establish GUI file compatibility or audio-rendering parity.
+The same controls and actual setup logs established four fidelity gaps, every one of which was
+re-tested on the September 18 final-build run above and is now closed as a *setup* condition —
+which is not the same as a score. The evidence for each is gitignored, under the campaign
+directory `out/osworld-v2-raw/live-osworld-live-20260918T000607Z/`: the per-task setup logs are
+`inference/agent-raw/workers/task_<id>.log` and the trajectories are
+`inference/agent-raw/workers/task_<id>/runtime.log`.
+
+- **Applications.** The five tasks whose applications were missing or incompatible (067
+  `musescore`, 079 and 087 `wpp`, 092 `blender`, 107 `kicad` failing with APT code 100 behind a
+  FreeCAD package hold) show no launcher or install failures in the worker logs on build
+  `00124a57…`: zero occurrences of `command not found`, zero of `Failed to launch application`,
+  and for 107 zero `apt-get` activity, with the agent opening KiCad in its first steps. That
+  closes launcher presence and setup success, and nothing more. The original 067 finding
+  (`docs/pr-1-verification.md:114`) has a second half — installed `musescore3` is 3.2.3 and
+  rejects the input created by MuseScore
+  4.6.5, producing no export — and that half is untested and still open: `musescore3` is still
+  3.2.3 on this build (recorded under "Unpinnable applications" below), nothing in this wave
+  opened or exported the pinned score, and 067 scored `0.0`. It does not establish MuseScore
+  file compatibility.
+- **HTTP fleet origins.** Now HTTPS under a per-campaign CA, and verified from inside the
+  guest's own Chrome rather than inferred — see the browser probe below.
+- **Task 026's stale active asset URL.** The state the run actually loaded
+  (`026-seeded-state-thisrun.json`) carried only
+  `https://files.127.0.0.1.nip.io/task_026/AI-Assisted_Healthcare.zip`, with no
+  `huggingface.co` reference anywhere; the in-guest fetch (`026-asset-in-guest.json`) returned
+  `200`, 3,176,733 bytes and the pinned sha256, and the `HEAD` reported the matching
+  `Content-Length`.
+- **Task 041's hardcoded GitLab URL.** The run's first Chrome tab
+  (`inference/agent-raw/workers/task_041/step_1_*.png`) is our own deployment's
+  "Sign in · GitLab" through the alias, with no certificate interstitial.
+
+Successful native score reporting still does not certify those starting conditions, and a
+closed setup gap is not a task pass: eight of the nine tasks were scored and every one of those
+eight scored at or near zero, while the ninth (035) produced no score at all. Task 069 reached
+only phase 1 before its native gate stopped progression. Native media controls exercise XCF
+extraction, video decoding, MuseScore XML scoring, and REAPER scoring; the focused REAPER
+fixtures exclude safety-baseline setup. They do not establish GUI file compatibility or
+audio-rendering parity.
 
 [Cleanup verification](out/osworld-v2-evidence/sample-36/cleanup-20260914.json) found zero
 remaining campaign sandboxes across API-listed states and all 146 checked local ports free;
@@ -202,16 +362,23 @@ full native-result parity or a passing 24-task sample.
   `xlang-ai/osworld-server@a3cc3f0c64e463f020d1a44780307e9b46cbcab1`, with hark's null-safe
   AT-SPI serializer guards re-applied, plus the exact-process-path open-file fallback and
   near-silent ffmpeg recording flags. The unlicensed source is generated only by
-  `template/fetch_server.sh`; the repository carries two reviewable patches against the pin,
+  `template/fetch_server.sh`; the repository carries two reviewable patches against the pin
+  (`patches/osworld-server-atspi-guards.patch`, `patches/osworld-server-runtime-reliability.patch`),
   not a copy of upstream source. V2 carries the identical AT-SPI defect — `role`, `name`,
   action description, key binding, stripped role-name — at the same call sites as V1.
   Corroborated live: accessibility observations returned substantial, non-empty content
   with no serialization crash across every one of the 20 validated sandboxes
   (`out/osworld-v2-evidence/validate-run1.json`, `validate-run2.json`,
   `accessibility_characters` present and nonzero on every record).
-- **Provider contract**: `E2BVMManager`/`E2BProvider` registered via three idempotent,
-  grep-guarded source patches (factory registration, cloud-provider classification, strict
-  reset) — patch anchors and logic committed at `runner/setup.sh`.
+- **Provider contract**: `E2BVMManager`/`E2BProvider` registered by `runner/setup.sh`, whose
+  whole footprint in the pinned checkout is eight idempotent, anchor-asserted string patches
+  (a)–(h) across five tracked files — `desktop_env/providers/__init__.py` (factory
+  registration), `desktop_env/desktop_env.py` (cloud-provider classification, strict reset),
+  `scripts/python/run_multienv_m3.py` (`--provider_name e2b`), `mm_agents/m3/parser.py` and
+  `desktop_env/controllers/python.py` (the disclosed execution patches below) — plus the
+  vendored provider files (`provider.py`, `manager.py`, `bridge.py`, `e2b_policy.py`). Patch
+  anchors and logic are committed at `runner/setup.sh`; `setup.sh --verify` proves exactly
+  this set before a run and `--restore` removes it.
   Verified working, not just applied: the environment-path validation ladder created 20
   unique sandboxes through this exact provider registration, all `PATH_PASS`
   (`out/osworld-v2-evidence/validate-run1.json`, `validate-run2.json`). Destroy-and-
@@ -299,14 +466,47 @@ full native-result parity or a passing 24-task sample.
 - **Fonts, seeded profiles, application preferences/accounts**: not reproduced or certified
   against any reference image, same caveat as the V1 conversion — no file-by-file reference
   inventory exists to check against (V2's reference is a gated qcow2/AMI, never inspected).
+- **Symbol and Wingdings are absent from the guest; only WPS's warning about them is
+  suppressed**: a fresh `wpp` raises a "System Check" window reading "Some formula symbols
+  might not be displayed correctly due to missing fonts Symbol, Wingdings...". The baked
+  `wps-office.conf` carries the key WPS itself wrote when that window was dismissed
+  (`common\system_check\no_necessary_symbol_fonts=false`), so the window no longer appears —
+  but the fonts are still not installed, and a document using them renders with a substitute
+  face. Tasks 049/060/077/079/087/090/096 drive `wpp`, so substituted glyphs could change
+  rendered output and therefore a score. The open fonts the template does install alongside WPS
+  (Carlito, Caladea) do not supply either face.
 - **Service fleet topology**: mocked websites and GitLab are self-hosted-in-sandbox per
   campaign (fresh fleet per campaign), not a team-hosted shared deployment — a deliberate
   choice (turns GitLab's shared-root-token problem into per-run isolation; deferred
   alternative noted, not implemented). Each site's state is cookie-scoped via its own
   `/api/state`; the September 14 audit found no cross-task cookie collisions across 22
-  standard website sessions. This does not establish full functional equivalence: the
-  HTTP guest origins disable notifications and the clipboard API used by some tasks.
-  The topology also differs from an official hosted deployment.
+  standard website sessions. Since the September 15 fleet wave the origins are **HTTPS**,
+  terminated by the guest proxy on 443/8090 under a CA minted per campaign and installed into
+  both the guest's system store and Chrome's own NSS database, so the guest sees secure
+  contexts rather than the HTTP origins that previously disabled notifications and the
+  clipboard API. On build `00124a57-267c-45e7-93d1-ca0ff196e4b8`, the
+  [live controls](out/osworld-v2-evidence/pr5-bedrock-sample/controls.json) pass all
+  56 browser-probe checks. TeamChat, CloudCRM, MailHub, StreamView and
+  `studio.streamview` are tested on the task port **8090**; task 041's hardcoded
+  GitLab alias is tested on 443. The probe verifies secure contexts, browser APIs,
+  notification grants, clipboard round-trip, cross-site cookie isolation, and
+  secure subresource requests. A 2 MiB StreamView upload is retrieved byte-for-byte,
+  and a 2 MiB chunked Git push from the guest matches the blob recorded by GitLab.
+  Temporary upload state and the GitLab project are removed afterward.
+
+  These checks cover the probed pages and two write paths, not every application
+  interaction. The upload is a transport payload, not a video-playback test. The topology still
+  differs from an official hosted deployment. The GitLab page issues
+  `https://gitlab.127.0.0.1.nip.io:80/-/collect_events` and gets
+  `net::ERR_SSL_PROTOCOL_ERROR` — an `https` scheme against the port the guest proxy serves in
+  plain HTTP, traced to `gitlab.external_url` (`http://`) disagreeing with `gitlab.url`
+  (`https://…:8090`) in the campaign runtime file. CDP confirms it as a failed handshake and
+  **not** a mixed-content block (`blockedReason: null`). It is Snowplow telemetry, the page
+  renders and signs in, and no task in the 108 asserts on GitLab analytics — so it is disclosed
+  and left unfixed here, not repaired quietly. Finally, these applications fetch live public
+  CDNs (`picsum.photos`, `fonts.googleapis.com`, `fonts.gstatic.com`, `img.youtube.com`), all
+  over HTTPS, so their pages depend on public egress at run time and would degrade on a
+  network-restricted host for reasons unrelated to any agent action.
   `out/osworld-v2-evidence/services-websites.json`, `services-gitlab.json`.
 - **Ingress addressing mode**: per-port fanout + host+guest Host-mapping proxies, not
   single-port Caddy Host-header passthrough. Directly probed and ruled out: E2B ingress
@@ -317,6 +517,91 @@ full native-result parity or a passing 24-task sample.
   127.0.0.1:80 was denied on the build host) plus a native-root guest-side proxy on :80/:8090.
   Port 8080 remains exclusively assigned to VLC.
 
+### Local patches to upstream execution (disclosed; applied by runner/setup.sh, proven by --verify)
+
+These change agent-action execution relative to the pinned upstream code and are therefore
+recorded as deviations from the reference runtime, not as fidelity fixes. Each is one anchored
+string replacement in `runner/setup.sh` (`assert count == 1` against the pin, idempotence
+guard); `runner/setup.sh --restore` removes them and `runner/setup.sh --verify` proves the
+exact patched state before every run.
+
+| Patch | Upstream behaviour | Local behaviour | Evidence |
+|---|---|---|---|
+| (e) `mm_agents/m3/parser.py` key table | `super` → `command`; PyAutoGUI's X11 backend has no such key and silently drops the press | `super` → `win` (the X11 Super key) | `docs/sample-run-results.md` task 103 (confirmed misexecuted action) |
+| (f) `mm_agents/m3/parser.py` terminal marker | `[INFEASIBLE]` anywhere in the response — reasoning included — returns `FAIL` and ends the rollout | the marker counts only outside `<mm:think>…</mm:think>`; a marker in reasoning no longer overrides a tool call in the same response | `docs/sample-run-results.md` task 067 (marker in reasoning overrode an actual Ctrl+C tool call) |
+| (g) `desktop_env/controllers/python.py` action deadline | the client gives up at 90 s and returns `None` while the guest keeps executing to its own 120 s deadline, so typing continues under the next action | the client waits up to 130 s, so the guest's verdict for its 120 s kill arrives before the client gives up | `docs/sample-run-results.md` tasks 093, 059, 079, 082; the 2026-09-14 isolated typing control above (`None` at 90.12 s, completion at 102.61 s) |
+| (h) `desktop_env/controllers/python.py` guest-timeout retry | a non-200 is retried up to `retry_times`, so the guest's timeout 500 would replay a partially applied action | a 500 whose body carries subprocess's `timed out after` text breaks out of the retry loop and falls through to upstream's own `return None` — the same value upstream returns on a client-side `ReadTimeout`, with no replay | same tasks as (g); `tests/test_checkout_verification.py` pins the patched text and the anchor's uniqueness in the pin |
+| (i) `mm_agents/m3/agent.py` inference errors | exhausted errors return an empty action list, which becomes `ASK_USER` | save the API failure log and propagate the exception so the task receipt fails | `tests/test_checkout_verification.py` |
+| (j) `desktop_env/controllers/website.py` URL scheme | a failed HTTPS probe permanently caches HTTP | honor `OSWORLD_WEBSITE_SCHEME=https` for the TLS-only campaign fleet | `tests/test_checkout_verification.py` |
+| (k) `mm_agents/m3/parser.py` typing | each character incurs PyAutoGUI's 0.1-second pause, exceeding the 120-second guest deadline for long inputs | one ordered `pyautogui.write(text, interval=0.001)` call, with one final pause | `tests/test_checkout_verification.py` |
+| (l) `mm_agents/m3/agent.py` empty actions | empty or unparseable model output becomes `ASK_USER`, even when no question was intended | preserve the API log and fail the task; only an explicit parsed `CALL_USER` becomes a simulator question | `tests/test_checkout_verification.py`; task 019 in the Bedrock sample |
+| (m) `mm_agents/m3/agent.py` adaptive thinking | a fixed thinking budget is included with adaptive mode, which Bedrock Sonnet 5 rejects | omit `budget_tokens` for adaptive mode; preserve it for enabled mode | `tests/test_checkout_verification.py`; live Bedrock request validation |
+
+(h) deliberately keeps `None` rather than inventing a success-shaped result: upstream evaluator
+getters read `env.controller.execute_python_command(...)["output"]`, so a 200 carrying empty
+output would convert an infrastructure failure into a silent zero score. No evaluator code path
+changes.
+
+The M3 prompt still forbids asking for clarification and omits the parser-supported
+`call_user` action (task 095). `MAX_STEPS`, every agent and evaluator prompt, and every
+scoring function remain upstream's. Patch (k) changes typing speed; other PyAutoGUI calls
+retain the guest's 0.1-second pause.
+
+With (f), an `[INFEASIBLE]` emitted only inside the reasoning block does not terminate
+the rollout. If no executable action accompanies it, (l) retries the response within
+the configured limit and then fails the task. The worst-case span of a non-timeout retry inside
+`execute_python_command` grew with the longer per-request deadline (three attempts at up to
+130 s each instead of 90 s), because (h) short-circuits only the guest's own timeout 500.
+
+`maintainer/typing_control.py` is the isolated control that exercises (g) and (h) together
+against one live guest build — one 3,000-keypress action, the returned value and its wall
+time, two screenshots 15 s apart, and the guest's own `POST /execute` count. It has now been
+run once, on `osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8`:
+[result](out/osworld-v2-evidence/controls/typing-control-00124a57-267c-45e7-93d1-ca0ff196e4b8.json).
+The 66,016-character action returned `None` after **120.39 s**, the two screenshots taken 5 s
+and 20 s after that return are byte-identical (both in the text-area crop and in the full
+frame), and exactly **one** `POST /execute` reached the guest. All three acceptance criteria
+hold: the guest killed the action at its own 120 s deadline, block (h) did not replay the
+timeout `500`, and typing had stopped by the time the client moved on. Compare the unpatched
+control above, which returned `None` at 90.12 s while typing continued to 102.61 s. This is
+one control on one build, not a claim about every action a campaign issues.
+
+Patch (k) also has a successful live typing control: one 6,090-character command
+completed in 10.47 seconds and produced a 5,700-character file whose SHA-256 exactly
+matched the expected text, including quotes, backslashes and newlines. See the
+[control receipt](out/osworld-v2-evidence/pr5-bedrock-sample/controls.json).
+
+Upstream issue drafts for (e), (f), and the 90 s-client/120 s-guest deadline mismatch are
+prepared under `out/osworld-v2-evidence/upstream-issues/`; they have not been filed.
+
+## Bedrock sample on the current build
+
+Tasks 008, 019, 026, 041, 092 and 095 ran on
+`osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8` with Bedrock Sonnet 5,
+the M3 agent, adaptive thinking, 4,096 output tokens, six concurrent workers and
+a 100-action limit. All six completed setup, inference and evaluation without
+a task-level error: [sample receipt](out/osworld-v2-evidence/pr5-bedrock-sample/sample.json).
+Task 092 scored 0.1; the other five scored 0. Task 095 declared failure after
+23 actions; the other tasks exhausted the limit. No task retry was used.
+
+This verifies bounded execution, not benchmark performance or scoring parity.
+Sonnet repeatedly supplied out-of-bounds pointer positions in four tasks despite
+the M3 prompt's normalized-coordinate rule:
+[pointer diagnostics](out/osworld-v2-evidence/pr5-bedrock-sample/pointer-diagnostics.json).
+This agent/model pairing is not validated for a larger performance run.
+The sample did not reach an LLM judge or user-simulator call; their live coverage
+comes from the explicit task-loop controls described above.
+
+The [inference accounting](out/osworld-v2-evidence/pr5-bedrock-sample/inference-spend.json)
+covers all diagnostic attempts, controls and sample requests: $55.25 estimated
+measured usage, plus $40.37 retained reservations for responses without usage,
+or $95.62 accounted against the shared $160 cutoff and requested $200 limit.
+The estimate uses published prices with a 10% allowance, not an AWS invoice.
+Both service fleets and all campaign guests were stopped after verification.
+Earlier Haiku attempts are preserved as
+[diagnostics](out/osworld-v2-evidence/pr5-bedrock-sample/diagnostic-attempts.json),
+including intentional interruptions and malformed-action failures.
+
 ## Not-certified / excluded
 
 - **VNC: absent entirely.** Headless, same as the V1 conversion; the provider's IP/port
@@ -326,13 +611,13 @@ full native-result parity or a passing 24-task sample.
 - **Screen recording: opt-in, off by default as upstream; verified.** `ENABLE_RECORDING=1`
   passes upstream's `--enable_recording` through; the September 11 task 093 rollout produced
   the guest's `recording.mp4` alongside its trajectory (see that section).
-- **Judge, simulator, and multiphase coverage remains incomplete.** The September 8
-  campaign returned responses for six of six judge calls: five on task 079 (score zero),
-  and one on task 035 (invalid JSON, no score). A returned response does not establish
-  evaluator success. No simulator calls occurred; task 026 never reached `ASK_USER`.
-  The earlier task 069 run stopped in phase one, so later-phase execution remains
-  unverified. These gaps require focused integration diagnostics and a matched reference
-  before full parity can be claimed.
+- **Judge and simulator wiring is verified; scoring parity and multiphase coverage remain incomplete.**
+  The [Bedrock controls](out/osworld-v2-evidence/pr5-bedrock-sample/controls.json)
+  exercise task 035's real spreadsheet evaluator and task 095's real user simulator
+  through the upstream task loop. Each makes one successful, measured Haiku 4.5 call.
+  They are scripted controls, not agent-performance results. The earlier task 069
+  run stopped in phase one, so later-phase execution remains unverified. A matched
+  reference run is still required before claiming scoring parity.
 - **Pause/resume: not used.** Deliberate no-pause-by-default stance (median task length
   ~1.6 h, tail to ~3 h — a guest clock jump under pause risks breaking scheduled dynamic
   events and drops CDP WebSockets). The validation campaigns did not invoke pause;

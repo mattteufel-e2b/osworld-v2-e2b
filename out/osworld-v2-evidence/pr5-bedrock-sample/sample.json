@@ -1,0 +1,224 @@
+{
+  "kind": "agent-run-summary",
+  "source_receipt": "sample-sonnet.json",
+  "template": "osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8",
+  "osworld_commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154",
+  "release": "osworld-v2-2026.08.08",
+  "campaign_id": "osworld-v2-pr5-bedrock-20260918",
+  "finished_at": "2026-09-18T22:35:12.897350+00:00",
+  "unique_sandboxes": 6,
+  "all_recorded_sandboxes_unique": true,
+  "eval_model_call_attempts": 0,
+  "host_proxy_owned_for_campaign": true,
+  "attested_records": 6,
+  "scored_tasks": 6,
+  "mean_score": 0.016666666666666666,
+  "binary_accuracy": 0.0,
+  "retried_task_ids": [],
+  "implicit_retries": false,
+  "model_usage": {
+    "agent": {
+      "calls": 528,
+      "input_tokens": 20995091,
+      "output_tokens": 86719,
+      "unmeasured_calls": 0
+    },
+    "judge": {
+      "calls": 0,
+      "input_tokens": null,
+      "output_tokens": null,
+      "unmeasured_calls": 0
+    },
+    "simulator": {
+      "calls": 0,
+      "input_tokens": null,
+      "output_tokens": null,
+      "unmeasured_calls": 0
+    }
+  },
+  "task_count": 6,
+  "task_statuses": {
+    "008": {
+      "path_status": "OK",
+      "score": 0.0,
+      "steps_taken": 100,
+      "evaluator_ran": true,
+      "error_type": null,
+      "wall_clock_s": 1392.8,
+      "model_usage": {
+        "agent": {
+          "calls": 100,
+          "input_tokens": 3996443,
+          "output_tokens": 13014,
+          "unmeasured_calls": 0
+        },
+        "judge": {
+          "calls": 0,
+          "input_tokens": null,
+          "output_tokens": null,
+          "unmeasured_calls": 0
+        },
+        "simulator": {
+          "calls": 0,
+          "input_tokens": null,
+          "output_tokens": null,
+          "unmeasured_calls": 0
+        }
+      }
+    },
+    "019": {
+      "path_status": "OK",
+      "score": 0.0,
+      "steps_taken": 100,
+      "evaluator_ran": true,
+      "error_type": null,
+      "wall_clock_s": 1306.9,
+      "model_usage": {
+        "agent": {
+          "calls": 100,
+          "input_tokens": 4017798,
+          "output_tokens": 15255,
+          "unmeasured_calls": 0
+        },
+        "judge": {
+          "calls": 0,
+          "input_tokens": null,
+          "output_tokens": null,
+          "unmeasured_calls": 0
+        },
+        "simulator": {
+          "calls": 0,
+          "input_tokens": null,
+          "output_tokens": null,
+          "unmeasured_calls": 0
+        }
+      }
+    },
+    "026": {
+      "path_status": "OK",
+      "score": 0.0,
+      "steps_taken": 100,
+      "evaluator_ran": true,
+      "error_type": null,
+      "wall_clock_s": 1439.8,
+      "model_usage": {
+        "agent": {
+          "calls": 101,
+          "input_tokens": 4031841,
+          "output_tokens": 15364,
+          "unmeasured_calls": 0
+        },
+        "judge": {
+          "calls": 0,
+          "input_tokens": null,
+          "output_tokens": null,
+          "unmeasured_calls": 0
+        },
+        "simulator": {
+          "calls": 0,
+          "input_tokens": null,
+          "output_tokens": null,
+          "unmeasured_calls": 0
+        }
+      }
+    },
+    "041": {
+      "path_status": "OK",
+      "score": 0.0,
+      "steps_taken": 100,
+      "evaluator_ran": true,
+      "error_type": null,
+      "wall_clock_s": 1503.9,
+      "model_usage": {
+        "agent": {
+          "calls": 100,
+          "input_tokens": 3985313,
+          "output_tokens": 16165,
+          "unmeasured_calls": 0
+        },
+        "judge": {
+          "calls": 0,
+          "input_tokens": null,
+          "output_tokens": null,
+          "unmeasured_calls": 0
+        },
+        "simulator": {
+          "calls": 0,
+          "input_tokens": null,
+          "output_tokens": null,
+          "unmeasured_calls": 0
+        }
+      }
+    },
+    "092": {
+      "path_status": "OK",
+      "score": 0.1,
+      "steps_taken": 100,
+      "evaluator_ran": true,
+      "error_type": null,
+      "wall_clock_s": 1621.5,
+      "model_usage": {
+        "agent": {
+          "calls": 104,
+          "input_tokens": 4150253,
+          "output_tokens": 22968,
+          "unmeasured_calls": 0
+        },
+        "judge": {
+          "calls": 0,
+          "input_tokens": null,
+          "output_tokens": null,
+          "unmeasured_calls": 0
+        },
+        "simulator": {
+          "calls": 0,
+          "input_tokens": null,
+          "output_tokens": null,
+          "unmeasured_calls": 0
+        }
+      }
+    },
+    "095": {
+      "path_status": "OK",
+      "score": 0.0,
+      "steps_taken": 23,
+      "evaluator_ran": true,
+      "error_type": null,
+      "wall_clock_s": 378.6,
+      "model_usage": {
+        "agent": {
+          "calls": 23,
+          "input_tokens": 813443,
+          "output_tokens": 3953,
+          "unmeasured_calls": 0
+        },
+        "judge": {
+          "calls": 0,
+          "input_tokens": null,
+          "output_tokens": null,
+          "unmeasured_calls": 0
+        },
+        "simulator": {
+          "calls": 0,
+          "input_tokens": null,
+          "output_tokens": null,
+          "unmeasured_calls": 0
+        }
+      }
+    }
+  },
+  "configuration": {
+    "agent_kind": "m3",
+    "agent_model": "anthropic.claude-sonnet-5",
+    "thinking_mode": "adaptive",
+    "effective_thinking_budget": null,
+    "judge_model": "anthropic.claude-haiku-4-5",
+    "simulator_model": "anthropic.claude-haiku-4-5",
+    "max_steps": 100,
+    "max_tokens": 4096,
+    "max_trajectory_length": 3,
+    "parallel_concurrency": 6,
+    "task_retry_attempts": 0,
+    "m3_response_retries": 2
+  }
+}

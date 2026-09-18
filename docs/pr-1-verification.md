@@ -158,6 +158,8 @@ The campaign logged 350 native command-failure messages across 25 tasks and cont
 
 Follow-up: reproduce the same control on the reference runtime and determine an upstream-compatible resolution. Do not silently change typing speed, timeouts, retries, or prompts and then claim equivalent benchmark behavior. None of those were changed for this campaign.
 
+Resolved since, and disclosed rather than silent: the controller deadline and guest-timeout retry patches (g) and (h), with the M3 parser patches (e) and (f), are recorded in [FIDELITY.md](../FIDELITY.md#local-patches-to-upstream-execution-disclosed-applied-by-runnersetupsh-proven-by---verify). They were not in effect for this campaign.
+
 ### Native termination, control-server survival, and phase coverage
 
 Tasks 031, 095, and 107 terminated because the upstream M3 parser treats `[INFEASIBLE]` anywhere in a response, including thinking preceding an ordinary proposed action, as FAIL. Task 095 never asked the simulator for the files its task deliberately withholds. These observations explain termination but do not establish an E2B conversion defect.

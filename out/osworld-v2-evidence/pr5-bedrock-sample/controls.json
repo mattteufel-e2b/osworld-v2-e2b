@@ -1,0 +1,133 @@
+{
+  "browser": {
+    "acceptance": {
+      "all_origins_probed": true,
+      "cdp_domains_enabled": true,
+      "cloudcrm.all_subresources_https": true,
+      "cloudcrm.clipboard_object": true,
+      "cloudcrm.loaded": true,
+      "cloudcrm.no_mixed_content": true,
+      "cloudcrm.secure": true,
+      "cloudcrm.security_state_secure": true,
+      "cloudcrm.title_not_interstitial": true,
+      "cloudcrm.url_origin_matches": true,
+      "cookie_isolation_teamchat_to_cloudcrm": true,
+      "gitlab-041.all_subresources_https": true,
+      "gitlab-041.clipboard_object": true,
+      "gitlab-041.loaded": true,
+      "gitlab-041.no_mixed_content": true,
+      "gitlab-041.secure": true,
+      "gitlab-041.security_state_secure": true,
+      "gitlab-041.title_not_interstitial": true,
+      "gitlab-041.url_origin_matches": true,
+      "gitlab.push_roundtrip": true,
+      "gitlab_041_title_contains_gitlab": true,
+      "mailhub.all_subresources_https": true,
+      "mailhub.clipboard_object": true,
+      "mailhub.loaded": true,
+      "mailhub.no_mixed_content": true,
+      "mailhub.secure": true,
+      "mailhub.security_state_secure": true,
+      "mailhub.title_not_interstitial": true,
+      "mailhub.url_origin_matches": true,
+      "streamview.all_subresources_https": true,
+      "streamview.clipboard_object": true,
+      "streamview.loaded": true,
+      "streamview.no_mixed_content": true,
+      "streamview.secure": true,
+      "streamview.security_state_secure": true,
+      "streamview.title_not_interstitial": true,
+      "streamview.upload_roundtrip": true,
+      "streamview.url_origin_matches": true,
+      "studio-streamview.all_subresources_https": true,
+      "studio-streamview.clipboard_object": true,
+      "studio-streamview.loaded": true,
+      "studio-streamview.no_mixed_content": true,
+      "studio-streamview.secure": true,
+      "studio-streamview.security_state_secure": true,
+      "studio-streamview.title_not_interstitial": true,
+      "studio-streamview.url_origin_matches": true,
+      "teamchat.all_subresources_https": true,
+      "teamchat.clipboard_object": true,
+      "teamchat.clipboard_roundtrip_probe": true,
+      "teamchat.loaded": true,
+      "teamchat.no_mixed_content": true,
+      "teamchat.notifications_granted": true,
+      "teamchat.secure": true,
+      "teamchat.security_state_secure": true,
+      "teamchat.title_not_interstitial": true,
+      "teamchat.url_origin_matches": true
+    },
+    "finished_at": "2026-09-18T21:41:59.520819+00:00",
+    "passed": true
+  },
+  "campaign_id": "osworld-v2-pr5-bedrock-20260918",
+  "cleanup": {
+    "campaign_sandboxes_remaining": 0,
+    "guest_sandboxes_remaining_before_fleet_stop": 0,
+    "service_sandboxes_stopped": 2
+  },
+  "judge": {
+    "kind": "scripted DONE control through unmodified task035 evaluator, not an agent performance result",
+    "model": "anthropic.claude-haiku-4-5",
+    "model_usage": {
+      "agent": {
+        "calls": 0,
+        "input_tokens": null,
+        "output_tokens": null,
+        "unmeasured_calls": 0
+      },
+      "judge": {
+        "calls": 1,
+        "input_tokens": 599,
+        "output_tokens": 163,
+        "unmeasured_calls": 0
+      },
+      "simulator": {
+        "calls": 0,
+        "input_tokens": null,
+        "output_tokens": null,
+        "unmeasured_calls": 0
+      }
+    },
+    "path_status": "OK",
+    "score": 0.0,
+    "task_id": "035"
+  },
+  "simulator": {
+    "kind": "scripted ASK_USER then DONE task-loop canary, not an agent performance result",
+    "model": "anthropic.claude-haiku-4-5",
+    "model_usage": {
+      "agent": {
+        "calls": 0,
+        "input_tokens": null,
+        "output_tokens": null,
+        "unmeasured_calls": 0
+      },
+      "judge": {
+        "calls": 0,
+        "input_tokens": null,
+        "output_tokens": null,
+        "unmeasured_calls": 0
+      },
+      "simulator": {
+        "calls": 1,
+        "input_tokens": 748,
+        "output_tokens": 47,
+        "unmeasured_calls": 0
+      }
+    },
+    "path_status": "OK",
+    "task_id": "095"
+  },
+  "template": "osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8",
+  "typing": {
+    "action_returned": true,
+    "action_wall_s": 10.47,
+    "actual_sha256": "dd004c1222e43208c940b942b3c5b5bc960b9db2dbb7ea22798dd21fe06294fe",
+    "expected_sha256": "dd004c1222e43208c940b942b3c5b5bc960b9db2dbb7ea22798dd21fe06294fe",
+    "passed": true,
+    "text_chars": 5700,
+    "typed_command_chars": 6090
+  }
+}

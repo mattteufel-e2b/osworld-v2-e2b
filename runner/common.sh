@@ -43,15 +43,32 @@ resolve_e2b_api_key() {
 
 # Fleet + asset wiring consumed by the bridge (in-guest Host-mapping proxy) and
 # by the rollout (website suffix, GitLab, gated assets). Reads the runtime file
-# the service launchers wrote; preflight has already required it.
+# the service launchers wrote; preflight has already required it, including
+# the `tls` section's campaign CA/leaf material.
+#
+# Each value read below is either a fixed-shape URL/suffix (host:port) or an
+# absolute path built from SERVICES_DIR plus a hardcoded filename (ca.crt,
+# leaf.crt, leaf.key, bundle.crt) -- none embeds a space by construction, so
+# `read -r` word-splitting on the six fields is safe as long as SERVICES_DIR
+# itself has no whitespace in it, same pre-existing assumption the two
+# original fields (WEBSITE_HOST_SUFFIX, GITLAB_URL) already relied on.
 export_fleet_wiring() {
-    read -r WEBSITE_HOST_SUFFIX GITLAB_URL < <(python3 - "$SERVICES_DIR/.runtime.json" <<'PY'
+    read -r WEBSITE_HOST_SUFFIX GITLAB_URL OSWORLD_CA_CERT OSWORLD_CA_BUNDLE HOSTMAP_TLS_CERT HOSTMAP_TLS_KEY < <(python3 - "$SERVICES_DIR/.runtime.json" <<'PY'
 import json, sys
 rt = json.load(open(sys.argv[1]))
-print(rt["websites"]["public_host_suffix"], rt["gitlab"]["url"])
+tls = rt["tls"]
+print(rt["websites"]["public_host_suffix"], rt["gitlab"]["url"], tls["ca_cert"], tls["bundle"], tls["leaf_cert"], tls["leaf_key"])
 PY
 )
-    export WEBSITE_HOST_SUFFIX GITLAB_URL
+    export WEBSITE_HOST_SUFFIX GITLAB_URL OSWORLD_CA_CERT HOSTMAP_TLS_CERT HOSTMAP_TLS_KEY
+    # Upstream's website scheme probe and python-gitlab use requests; the SDKs
+    # use httpx. Both get certifi's roots plus the campaign CA via these two
+    # standard library env vars, so public HTTPS keeps working alongside trust
+    # for the campaign-signed fleet origins.
+    REQUESTS_CA_BUNDLE="$OSWORLD_CA_BUNDLE"; SSL_CERT_FILE="$OSWORLD_CA_BUNDLE"
+    export REQUESTS_CA_BUNDLE SSL_CERT_FILE
+    # :8090 is TLS-only; a transient scheme-probe timeout must not select HTTP.
+    export OSWORLD_WEBSITE_SCHEME=https
     export GITLAB_PRIVATE_TOKEN="$(cat "$SERVICES_DIR/.gitlab-token")"
     export OSWORLD_FILE_BASE_URL="$TASKS_DIR/assets"
     export HOSTMAP_PROXY_SCRIPT="$SERVICES_DIR/hostmap_proxy.py"
@@ -65,8 +82,12 @@ wait_for_hostmap_proxy() {
     local pid="$1" cookie="$2" logfile="$3" _
     for _ in $(seq 1 30); do
         if ! kill -0 "$pid" 2>/dev/null; then break; fi
-        if curl -fsS --connect-timeout 2 --max-time 5 -H 'Host: mailhub.127.0.0.1.nip.io' \
-            "http://127.0.0.1:8090/api/state?cookie=$cookie" >/dev/null 2>&1; then
+        # --resolve makes curl present the site name as SNI and Host so the
+        # leaf certificate's SAN matches; connecting to the bare IP would fail
+        # certificate verification even though the socket still reaches 8090.
+        if curl -fsS --connect-timeout 2 --max-time 5 --cacert "$OSWORLD_CA_CERT" \
+            --resolve 'mailhub.127.0.0.1.nip.io:8090:127.0.0.1' \
+            "https://mailhub.127.0.0.1.nip.io:8090/api/state?cookie=$cookie" >/dev/null 2>&1; then
             return 0
         fi
         sleep 2

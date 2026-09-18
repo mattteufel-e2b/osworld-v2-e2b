@@ -33,12 +33,15 @@ RUNNER_FILES = {
 }
 MAINTAINER_FILES = {
     "README.md",
+    "app_smoke.py",  # fresh-guest application launcher smoke -> committed evidence
+    "browser_probe.py",  # hand-run guest-Chrome secure-context probe over the HTTPS fleet
     "harness.py",
     "no_model.py",
     "profile_resources.sh",
     "readiness.py",
     "receipt_summary.py",  # full ladder receipt -> committed summary evidence
     "run_path_task.sh",
+    "typing_control.py",  # hand-run long-typing control for setup.sh patches (g)+(h)
     "validate.sh",
     "validate_parallel.sh",
 }

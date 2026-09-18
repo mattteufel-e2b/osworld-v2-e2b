@@ -71,6 +71,10 @@ Each per-task receipt records `model_usage` per role (`agent`, `judge`, `simulat
 carries `calls`, `input_tokens`, `output_tokens`, and `unmeasured_calls`. The campaign receipt
 sums those per-task roles under `summary.model_usage`.
 
+Agent usage is measured for the `m3` kind, whose SDK client the tracker wraps. The `prompt` kind
+sends requests with `requests` and reports `agent.calls = 0` with `input_tokens`/`output_tokens`
+`null`; judge and simulator usage is measured regardless of agent kind.
+
 Before creating rollout guests, the coordinator checks a text answer, reads random digits from
 an image, and checks the selected tasks' LLM simulator configurations through upstream's own
 clients. The text-answer check sends upstream's own binary system prompt and accepts any verdict

@@ -15,6 +15,9 @@ optional `REQUIRE_NO_MODEL_COVERAGE=1` gate in `runner/run_agent_parallel.sh` co
 | `no_model.py`, `readiness.py` | Evaluator stubs and bounded observation retries used by the harness |
 | `profile_resources.sh` | Ladder rung 7: publish measured CPU/RAM/disk from evidence |
 | `receipt_summary.py` | Reduce a no-model aggregate receipt to the committable summary (also summarizes an agent campaign receipt from `runner/aggregate_agent.py`) |
+| `app_smoke.py` | Open each parity application on a fresh guest of one build on its pinned task input, and record windows plus a screenshot per application (`GUEST_TEMPLATE=...`); the screenshots are the evidence and a human reads them |
+| `typing_control.py` | Isolated long-typing control for the disclosed controller patches (g)+(h): one 3,000-keypress action against one live guest, run by hand against a candidate build |
+| `browser_probe.py` | Guest-browser secure-context probe over the campaign's HTTPS fleet origins: drives one guest's own Chrome over CDP across TeamChat, CloudCRM, MailHub, StreamView, `studio.streamview` and the task-041 GitLab alias, and records `isSecureContext`, `navigator.clipboard`, notification grants, the clipboard round-trip, cookie isolation, every mixed-content block, and the full per-origin request list that proves every subresource was fetched over HTTPS (needs a live fleet campaign; `GUEST_TEMPLATE=...` plus `export_fleet_wiring`) |
 
 Each harness process owns its E2B guest through the provider's in-process bridge; there is
 no separate relay to start or clean up. Shared path and environment gates live in
@@ -56,6 +59,17 @@ sentinel or attempted an evaluator-model call that an upstream metric converted 
 
 The validation coordinators leave the fleets running so later rungs can reuse the campaign;
 stop it with `uv run --env-file .env.local --locked python services/stop.py --campaign-id "$OSWORLD_CAMPAIGN_ID"` when you are done with it.
+
+Before a large inference campaign, run `browser_probe.py` against the candidate guest and
+live fleet with the host proxy running (see its usage header). It checks the task origins
+on port 8090, a 2 MiB StreamView upload and download, and a chunked Git push from the guest.
+The upload checks transport and persistence, not video playback. The probe removes its
+temporary website state and GitLab project.
+
+Also inspect a small full-agent run's receipts for successful judge and simulator calls
+through the task loop. `check_models.py` verifies client connectivity; zero calls in an
+agent receipt do not establish coverage. M3's prompt omits `call_user`, so simulator
+coverage needs an explicit task-loop canary; a normal M3 rollout may never exercise it.
 
 To gate a full-model run on that coverage instead of running it ungated, set
 `REQUIRE_NO_MODEL_COVERAGE=1` and point `NO_MODEL_RECEIPT` at the receipt above — this is the
