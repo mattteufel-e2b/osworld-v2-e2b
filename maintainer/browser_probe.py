@@ -122,7 +122,7 @@ import secrets
 import shlex
 import sys
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import aiohttp
@@ -983,6 +983,9 @@ def _gitlab_push(controller) -> bool:
                     "name": "guest-push-probe",
                     "scopes": ["write_repository"],
                     "access_level": 40,
+                    "expires_at": (datetime.now(UTC) + timedelta(days=1))
+                    .date()
+                    .isoformat(),
                 },
             ).json()["token"]
             url = (

@@ -1,4 +1,5 @@
 import ast
+from datetime import UTC, date, datetime
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -69,6 +70,8 @@ def test_git_push_verifies_blob_and_cleans_project(probe, monkeypatch, push_fail
     script = controller.run_bash_script.call_args.args[0]
     assert "project-token" in script
     assert "host-admin-secret" not in script
+    token_request = session.request.call_args_list[1].kwargs["json"]
+    assert date.fromisoformat(token_request["expires_at"]) > datetime.now(UTC).date()
     assert session.request.call_args.args == (
         "DELETE",
         "https://gitlab.test:8090/api/v4/projects/7",
