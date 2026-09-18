@@ -408,8 +408,16 @@ unpatched parser; and the worst-case span of a non-timeout retry inside
 
 `maintainer/typing_control.py` is the isolated control that exercises (g) and (h) together
 against one live guest build — one 3,000-keypress action, the returned value and its wall
-time, two screenshots 15 s apart, and the guest's own `POST /execute` count. It has not been
-run yet: it needs a candidate build id, so no result is claimed here.
+time, two screenshots 15 s apart, and the guest's own `POST /execute` count. It has now been
+run once, on `osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8`:
+[result](out/osworld-v2-evidence/controls/typing-control-00124a57-267c-45e7-93d1-ca0ff196e4b8.json).
+The 66,016-character action returned `None` after **120.39 s**, the two screenshots taken 5 s
+and 20 s after that return are byte-identical (both in the text-area crop and in the full
+frame), and exactly **one** `POST /execute` reached the guest. All three acceptance criteria
+hold: the guest killed the action at its own 120 s deadline, block (h) did not replay the
+timeout `500`, and typing had stopped by the time the client moved on. Compare the unpatched
+control above, which returned `None` at 90.12 s while typing continued to 102.61 s. This is
+one control on one build, not a claim about every action a campaign issues.
 
 Upstream issue drafts for (e), (f), and the 90 s-client/120 s-guest deadline mismatch are
 prepared under `out/osworld-v2-evidence/upstream-issues/`; they have not been filed.

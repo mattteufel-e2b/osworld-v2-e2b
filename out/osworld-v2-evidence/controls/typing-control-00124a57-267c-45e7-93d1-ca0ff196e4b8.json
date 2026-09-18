@@ -1,0 +1,63 @@
+{
+  "acceptance": {
+    "returned_none": true,
+    "screenshots_match": true,
+    "single_execute": true
+  },
+  "action_characters": 66016,
+  "bridge": {
+    "campaign_id": "osworld-live-20260918T000607Z",
+    "generation": 1,
+    "heartbeat_interval_seconds": 300,
+    "ready": true,
+    "restricted_ingress": true,
+    "sandbox_id": "ig7syz7skzm564g6mbb56",
+    "sandbox_timeout_seconds": 3600,
+    "snapshots": {},
+    "source": "template",
+    "template": "osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8"
+  },
+  "build_id": "00124a57-267c-45e7-93d1-ca0ff196e4b8",
+  "campaign_id": "osworld-live-20260918T000607Z",
+  "editor": "/usr/bin/gnome-text-editor",
+  "elapsed_seconds": 120.39,
+  "execute_requests": {
+    "after": 3,
+    "before": 2,
+    "delta": 1
+  },
+  "finished_at": "2026-09-18T00:40:48.869321+00:00",
+  "host": {
+    "platform": "macOS-26.5.2-arm64-arm-64bit",
+    "python": "3.12.13"
+  },
+  "passed": true,
+  "presses": 3000,
+  "purpose": "isolated long-typing control for the disclosed controller patches (g)+(h); not a benchmark score",
+  "returned": null,
+  "returned_type": "NoneType",
+  "schema_version": 1,
+  "screenshots": {
+    "delays_seconds": [
+      5.0,
+      15.0
+    ],
+    "full_frame_sha256": [
+      "3825aa4b079609a8c59dca852753f75b01d04e9a3cb744591019829bf0f784d5",
+      "3825aa4b079609a8c59dca852753f75b01d04e9a3cb744591019829bf0f784d5"
+    ],
+    "full_frames_identical": true,
+    "text_area": [
+      0,
+      140,
+      1920,
+      980
+    ],
+    "text_area_sha256": [
+      "f348be15b6d8dba7d257d875240101fa0c5bda9af99af08ea496a0ae8ebb8fc1",
+      "f348be15b6d8dba7d257d875240101fa0c5bda9af99af08ea496a0ae8ebb8fc1"
+    ]
+  },
+  "started_at": "2026-09-18T00:36:03.453744+00:00",
+  "template": "osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8"
+}
