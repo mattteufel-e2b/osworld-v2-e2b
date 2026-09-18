@@ -32,12 +32,24 @@ from pathlib import Path
 import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import campaign_tls  # noqa: E402
 import fleetlib as fl  # noqa: E402
 
 REPO_URL = "https://github.com/Task-Web/OSWorld-web"
 REPO_DIR = "/root/OSWorld-web"
 CADDY_SCHEME = "http://"
 FANOUT_BASE_PORT = 13001
+
+ASSETS_DIR = fl.REPO_ROOT / "tasks" / "assets"
+FILES_SITE = "files"
+# relative asset path -> (sha256 of the pinned gated snapshot, dead URL inside
+# the active task's dynamic state)
+TASK_ASSETS = {
+    "task_026/AI-Assisted_Healthcare.zip": (
+        "c9d83c187b7f6d055108d9838d0f65fb64401fe0755274d190b9af816802e951",
+        "https://huggingface.co/datasets/xlangai/osworld_v2_file_cache/resolve/main/task_098/AI-Assisted_Healthcare.zip",
+    ),
+}
 
 RECEIPT = fl.REPO_ROOT / "out" / "osworld-v2-raw" / "services" / "websites.json"
 
@@ -116,6 +128,7 @@ def enumerate_sites(sbx) -> dict[str, int]:
         raise RuntimeError(
             f"no caddy hostnames parsed from web-compose labels:\n{res.stdout[:500]}"
         )
+    subs.add(FILES_SITE)
     ordered = sorted(subs)
     ports = {sub: FANOUT_BASE_PORT + i for i, sub in enumerate(ordered)}
     fl.log(
@@ -134,6 +147,24 @@ def write_fanout(sbx, ports: dict[str, int]) -> None:
         "client_max_body_size 16m;",
     ]
     for sub, port in sorted(ports.items(), key=lambda kv: kv[1]):
+        if sub == FILES_SITE:
+            # Static, read-only asset server: no upstream, no control plane --
+            # just the pinned task assets staged onto the read-only ./assets
+            # bind mount. Content-Disposition forces a download instead of an
+            # inline render (some task assets are archives browsers would try
+            # to preview).
+            blocks.append(
+                f"server {{\n"
+                f"  listen {port};\n"
+                f"  root /srv/assets;\n"
+                f"  autoindex off;\n"
+                f"  add_header Content-Disposition attachment;\n"
+                f"  location / {{\n"
+                f"    try_files $uri =404;\n"
+                f"  }}\n"
+                f"}}"
+            )
+            continue
         blocks.append(
             f"server {{\n"
             f"  listen {port};\n"
@@ -154,6 +185,9 @@ def write_fanout(sbx, ports: dict[str, int]) -> None:
     sbx.files.write(f"{REPO_DIR}/fanout.conf", "\n".join(blocks) + "\n")
 
     port_lines = "\n".join(f'      - "{p}:{p}"' for p in sorted(ports.values()))
+    volume_lines = ["      - ./fanout.conf:/etc/nginx/conf.d/fanout.conf:ro"]
+    if FILES_SITE in ports:
+        volume_lines.append("      - ./assets:/srv/assets:ro")
     compose = (
         "services:\n"
         "  fleet_fanout:\n"
@@ -163,12 +197,37 @@ def write_fanout(sbx, ports: dict[str, int]) -> None:
         "    networks:\n"
         "      - web\n"
         "    volumes:\n"
-        "      - ./fanout.conf:/etc/nginx/conf.d/fanout.conf:ro\n"
+        f"{chr(10).join(volume_lines)}\n"
         "    ports:\n"
         f"{port_lines}\n"
     )
     sbx.files.write(f"{REPO_DIR}/docker-compose.fanout.yml", compose)
     fl.log("wrote fanout.conf + docker-compose.fanout.yml")
+
+
+def stage_task_assets(sbx, suffix: str) -> dict[str, str]:
+    """Upload pinned task assets to the fleet's read-only assets volume and
+    return {dead_url: served_url} for the hostmap proxy's asset_url_map.
+
+    Verifies each local asset against its pinned sha256 before uploading --
+    a drifted or truncated asset must never be silently served to a task."""
+    import hashlib
+
+    mapping: dict[str, str] = {}
+    for relative, (expected, dead_url) in TASK_ASSETS.items():
+        local = ASSETS_DIR / relative
+        data = local.read_bytes()
+        actual = hashlib.sha256(data).hexdigest()
+        if actual != expected:
+            raise RuntimeError(
+                f"asset hash mismatch for {relative}: {actual} != pinned {expected}"
+            )
+        # Multi-megabyte binary upload; bound it like the neighbouring
+        # compose command so a stalled transfer cannot hang the launcher.
+        sbx.files.write(f"{REPO_DIR}/assets/{relative}", data, request_timeout=180)
+        mapping[dead_url] = f"https://{FILES_SITE}.{suffix}/{relative}"
+    fl.log(f"staged {len(mapping)} pinned task assets on the files site")
+    return mapping
 
 
 def compose_up(sbx) -> float:
@@ -219,14 +278,41 @@ def recreate_fanout(sbx) -> None:
     fl.log("recreated fleet_fanout with current request-body policy")
 
 
+def _files_site_ready(sbx, port: int) -> bool:
+    """The files site is static -- it has no /api/state control plane, so
+    readiness is a HEAD on each pinned asset returning 200 with the exact
+    byte length we staged (proves nginx is up AND the read-only bind mount
+    actually sees the staged file, not just an empty directory)."""
+    for relative in TASK_ASSETS:
+        expected_len = (ASSETS_DIR / relative).stat().st_size
+        head = (
+            fl.poll_cmd(
+                sbx,
+                f"curl -s -I 'http://localhost:{port}/{relative}'",
+            )
+            or ""
+        )
+        status_line = head.splitlines()[0] if head else ""
+        if " 200" not in status_line:
+            return False
+        match = re.search(r"(?im)^content-length:\s*(\d+)\s*$", head)
+        if not match or int(match.group(1)) != expected_len:
+            return False
+    return True
+
+
 def wait_ready(sbx, ports: dict[str, int]) -> dict:
     """Poll each control-plane site's /api/state through its published port
-    (from inside the sandbox). Returns {site: seconds_to_ready}."""
+    (from inside the sandbox); the static files site is polled separately
+    with a HEAD request instead, since it has no /api/state. Returns
+    {site: seconds_to_ready}."""
     timings: dict[str, float] = {}
     t0 = time.time()
     pending = [s for s in CONTROL_PLANE_SITES if s in ports]
+    files_pending = FILES_SITE in ports
+    total = len(CONTROL_PLANE_SITES) + (1 if FILES_SITE in ports else 0)
     deadline = time.time() + 900
-    while pending and time.time() < deadline:
+    while (pending or files_pending) and time.time() < deadline:
         for site in list(pending):
             port = ports[site]
             code = fl.poll_cmd(
@@ -237,13 +323,18 @@ def wait_ready(sbx, ports: dict[str, int]) -> dict:
             if (code or "").strip() == "200":
                 timings[site] = round(time.time() - t0, 1)
                 pending.remove(site)
-                fl.log(
-                    f"ready: {site} ({timings[site]}s)  [{len(timings)}/{len(CONTROL_PLANE_SITES)}]"
-                )
-        if pending:
+                fl.log(f"ready: {site} ({timings[site]}s)  [{len(timings)}/{total}]")
+        if files_pending and _files_site_ready(sbx, ports[FILES_SITE]):
+            timings[FILES_SITE] = round(time.time() - t0, 1)
+            files_pending = False
+            fl.log(
+                f"ready: {FILES_SITE} ({timings[FILES_SITE]}s)  [{len(timings)}/{total}]"
+            )
+        if pending or files_pending:
             time.sleep(6)
-    if pending:
-        raise TimeoutError(f"sites did not report /api/state ready: {pending}")
+    if pending or files_pending:
+        missing = pending + ([FILES_SITE] if files_pending else [])
+        raise TimeoutError(f"sites did not report ready: {missing}")
     return timings
 
 
@@ -297,11 +388,19 @@ def v2_checkout() -> Path:
     return Path(os.environ.get("OSWORLD_ROOT") or (fl.REPO_ROOT / "OSWorld-V2"))
 
 
-def verify_via_v2_builder(public_suffix: str, site: str = "mailhub") -> dict:
+def verify_via_v2_builder(
+    public_suffix: str, site: str = "mailhub", *, ca_bundle: str | None = None
+) -> dict:
     """Import the pinned checkout's desktop_env.controllers.website, let IT
     construct the URL from WEBSITE_HOST_SUFFIX (exactly as the harness will), and
     request /api/state. Runs in a subprocess so website.py's dep set + env are
-    isolated. This is the real host-URL proof the reviewer asked for."""
+    isolated. This is the real host-URL proof the reviewer asked for.
+
+    `ca_bundle` (the campaign bundle from campaign_tls.ensure_campaign_tls) is
+    passed to the subprocess as REQUESTS_CA_BUNDLE so build_website_url's own
+    HTTPS probe (desktop_env.controllers.website._select_website_scheme)
+    trusts our self-signed leaf and picks https:// rather than falling back
+    to http://."""
     import subprocess
 
     snippet = (
@@ -341,6 +440,7 @@ def verify_via_v2_builder(public_suffix: str, site: str = "mailhub") -> dict:
         text=True,
         cwd=str(fl.REPO_ROOT),
         timeout=180,
+        env={**os.environ, "REQUESTS_CA_BUNDLE": ca_bundle} if ca_bundle else None,
     )
     try:
         return json.loads(res.stdout.strip().splitlines()[-1])
@@ -376,6 +476,7 @@ def main() -> int:
         clone_repo(sbx, commit)
         ports = enumerate_sites(sbx)
         write_fanout(sbx, ports)
+        asset_url_map = stage_task_assets(sbx, fl.HOST_SUFFIX)
         build_secs = compose_up(sbx)
         recreate_fanout(sbx)
         timings = wait_ready(sbx, ports)
@@ -392,6 +493,12 @@ def main() -> int:
             unauthenticated_status=host_evidence["unauthenticated_probe"]["status"],
         )
 
+        # Every fleet origin (this launcher's sites plus the sibling GitLab
+        # host, whichever launcher runs second) shares one campaign leaf cert.
+        hosts = [f"{sub}.{fl.HOST_SUFFIX}" for sub in ports] + [
+            f"gitlab.{fl.HOST_SUFFIX}"
+        ]
+        tls = campaign_tls.ensure_campaign_tls(campaign, hosts)
         proxy_status = fl.restart_host_proxy()
         if not proxy_status.get("running"):
             raise RuntimeError("host proxy failed to start")
@@ -414,6 +521,7 @@ def main() -> int:
                 "caddy_ingress_host": sbx.get_host(80),
                 "mode": "per-port-fanout",
                 "sites": site_map,
+                "asset_url_map": asset_url_map,
             },
         )
         published = True
@@ -424,7 +532,9 @@ def main() -> int:
         if proxy_path_check.get("status") != 200:
             raise RuntimeError("host proxy website path check failed")
         fl.log(f"host proxy path check: {proxy_path_check}")
-        v2_builder_check = verify_via_v2_builder(public_suffix, "mailhub")
+        v2_builder_check = verify_via_v2_builder(
+            public_suffix, "mailhub", ca_bundle=tls["bundle"]
+        )
         require_v2_builder_success(v2_builder_check)
         fl.log(f"V2 build_website_url check: {v2_builder_check}")
 

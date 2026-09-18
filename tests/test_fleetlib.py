@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
+import json
 import os
 import stat
 import sys
@@ -9,7 +11,7 @@ from contextlib import ExitStack
 import unittest
 from types import SimpleNamespace
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 V2_ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location(
@@ -71,9 +73,28 @@ PROTECTED_EGRESS_CIDRS = [
 ]
 
 
+class RecordingFiles:
+    """Records every sbx.files.write() call by destination path.
+
+    Named `written` (not `writes`, the name tests/test_bridge.py already uses
+    for its own unrelated fake) to keep this module internally consistent.
+    """
+
+    def __init__(self):
+        self.written: dict[str, object] = {}
+        self.write_kwargs: dict[str, dict] = {}
+
+    def write(self, path, content, **kwargs):
+        self.written[path] = content
+        self.write_kwargs[path] = kwargs
+
+
 class FakeFleetSandbox:
     sandbox_id = "fleet-sandbox"
     traffic_access_token = "fleet-token"
+
+    def __init__(self):
+        self.files = RecordingFiles()
 
     @classmethod
     def create(cls, template, **kwargs):
@@ -84,6 +105,18 @@ class FakeFleetSandbox:
 
     def kill(self):
         pass
+
+
+# A stand-in for campaign_tls.ensure_campaign_tls's return value, used to keep
+# the full launcher-main() tests hermetic (no real openssl / TLS_DIR writes).
+FAKE_TLS = {
+    "campaign_id": "test-campaign",
+    "hosts": ["mailhub.127.0.0.1.nip.io", "gitlab.127.0.0.1.nip.io"],
+    "ca_cert": "/fake/campaign-tls/ca.crt",
+    "leaf_cert": "/fake/campaign-tls/leaf.crt",
+    "leaf_key": "/fake/campaign-tls/leaf.key",
+    "bundle": "/fake/campaign-tls/bundle.crt",
+}
 
 
 class FleetRuntimePolicyTests(unittest.TestCase):
@@ -182,6 +215,7 @@ class FleetRuntimePolicyTests(unittest.TestCase):
                     return_value={"mailhub": 13001},
                 ),
                 patch.object(websites, "write_fanout"),
+                patch.object(websites, "stage_task_assets", return_value={}),
                 patch.object(websites, "compose_up", return_value=0.0),
                 patch.object(websites, "recreate_fanout"),
                 patch.object(websites, "wait_ready", return_value={"mailhub": 0.1}),
@@ -192,6 +226,11 @@ class FleetRuntimePolicyTests(unittest.TestCase):
                         "per_port_probe": {"status": 200},
                         "unauthenticated_probe": {"status": 403},
                     },
+                ),
+                patch.object(
+                    websites.campaign_tls,
+                    "ensure_campaign_tls",
+                    return_value=FAKE_TLS,
                 ),
                 patch.object(
                     websites.fl,
@@ -278,10 +317,14 @@ class FleetRuntimePolicyTests(unittest.TestCase):
             patch.object(websites, "clone_repo"),
             patch.object(websites, "enumerate_sites", return_value={"mailhub": 13001}),
             patch.object(websites, "write_fanout"),
+            patch.object(websites, "stage_task_assets", return_value={}),
             patch.object(websites, "compose_up", return_value=0.0),
             patch.object(websites, "recreate_fanout"),
             patch.object(websites, "wait_ready", **wait_ready),
             patch.object(websites, "probe_host_ingress", return_value=ingress),
+            patch.object(
+                websites.campaign_tls, "ensure_campaign_tls", return_value=FAKE_TLS
+            ),
             patch.object(
                 websites.fl,
                 "restart_host_proxy",
@@ -334,9 +377,9 @@ class FleetRuntimePolicyTests(unittest.TestCase):
             },
         )()
 
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
             receipt = Path(directory) / "services-websites.json"
-            with (
+            for item in (
                 patch.object(websites, "RECEIPT", receipt),
                 patch.object(websites, "websites_pin", return_value="a" * 40),
                 patch.object(websites.fl, "load_e2b_key"),
@@ -353,6 +396,7 @@ class FleetRuntimePolicyTests(unittest.TestCase):
                     websites, "enumerate_sites", return_value={"mailhub": 13001}
                 ),
                 patch.object(websites, "write_fanout"),
+                patch.object(websites, "stage_task_assets", return_value={}),
                 patch.object(websites, "compose_up", return_value=0.0),
                 patch.object(websites, "recreate_fanout"),
                 patch.object(websites, "wait_ready", return_value={"mailhub": 0.1}),
@@ -363,6 +407,11 @@ class FleetRuntimePolicyTests(unittest.TestCase):
                         "per_port_probe": {"status": 200},
                         "unauthenticated_probe": {"status": 403},
                     },
+                ),
+                patch.object(
+                    websites.campaign_tls,
+                    "ensure_campaign_tls",
+                    return_value=FAKE_TLS,
                 ),
                 patch.object(
                     websites.fl,
@@ -376,14 +425,19 @@ class FleetRuntimePolicyTests(unittest.TestCase):
                     websites, "verify_via_v2_builder", return_value={"status": 500}
                 ),
                 patch.object(websites.fl, "write_runtime_section"),
-                patch.object(websites.fl, "delete_runtime_section") as delete_runtime,
-                self.assertRaisesRegex(RuntimeError, "V2 website routing check failed"),
+            ):
+                stack.enter_context(item)
+            delete_runtime = stack.enter_context(
+                patch.object(websites.fl, "delete_runtime_section")
+            )
+            with self.assertRaisesRegex(
+                RuntimeError, "V2 website routing check failed"
             ):
                 websites.main()
 
             self.assertFalse(receipt.exists())
             delete_runtime.assert_called_once_with("websites", "website-sandbox")
-            self.assertEqual(kill_calls, ["website-sandbox"])
+        self.assertEqual(kill_calls, ["website-sandbox"])
 
     def test_gitlab_main_requires_all_paths_and_cleans_up_new_sandbox_on_failure(self):
         gitlab = load_gitlab_launcher()
@@ -779,6 +833,512 @@ class FleetRuntimePolicyTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 websites.main()
         reuse_or_create.assert_not_called()  # no sandbox spend before the check
+
+    # --- Task 3: HTTPS fleet origins, the files site, and the 041 alias ----
+
+    def test_fanout_serves_the_files_site_from_a_read_only_assets_volume(self):
+        launcher = load_websites_launcher()
+        sbx = FakeFleetSandbox()
+
+        launcher.write_fanout(sbx, {"mailhub": 13001, "files": 13030})
+
+        conf = sbx.files.written[f"{launcher.REPO_DIR}/fanout.conf"]
+        compose = sbx.files.written[f"{launcher.REPO_DIR}/docker-compose.fanout.yml"]
+        self.assertIn("listen 13030;", conf)
+        self.assertIn("root /srv/assets;", conf)
+        self.assertIn("add_header Content-Disposition attachment;", conf)
+        self.assertIn("- ./assets:/srv/assets:ro", compose)
+
+    def test_fanout_omits_the_assets_volume_when_there_is_no_files_site(self):
+        launcher = load_websites_launcher()
+        sbx = FakeFleetSandbox()
+
+        launcher.write_fanout(sbx, {"mailhub": 13001})
+
+        compose = sbx.files.written[f"{launcher.REPO_DIR}/docker-compose.fanout.yml"]
+        conf = sbx.files.written[f"{launcher.REPO_DIR}/fanout.conf"]
+        self.assertNotIn("- ./assets:/srv/assets:ro", compose)
+        self.assertNotIn("root /srv/assets;", conf)
+
+    def test_enumerate_sites_assigns_the_files_site_a_deterministic_port(self):
+        launcher = load_websites_launcher()
+
+        class Commands:
+            def run(self, _cmd, **_kwargs):
+                return type(
+                    "Result",
+                    (),
+                    {
+                        "exit_code": 0,
+                        "stdout": 'caddy: "${CADDY_SCHEME}mailhub.${HOST_SUFFIX}"\n',
+                        "stderr": "",
+                    },
+                )()
+
+        sandbox = type("Sandbox", (), {"commands": Commands()})()
+        first = launcher.enumerate_sites(sandbox)
+        second = launcher.enumerate_sites(sandbox)
+
+        self.assertIn(launcher.FILES_SITE, first)
+        self.assertEqual(first, second)  # deterministic across calls
+
+    def test_stage_task_assets_pins_the_026_archive_hash(self):
+        launcher = load_websites_launcher()
+        sbx = FakeFleetSandbox()
+        with tempfile.TemporaryDirectory() as directory:
+            assets_dir = Path(directory)
+            fixture = assets_dir / "task_026" / "AI-Assisted_Healthcare.zip"
+            fixture.parent.mkdir(parents=True)
+            fixture_bytes = b"fixture archive bytes standing in for the real asset"
+            fixture.write_bytes(fixture_bytes)
+            digest = hashlib.sha256(fixture_bytes).hexdigest()
+
+            with (
+                patch.object(
+                    launcher,
+                    "TASK_ASSETS",
+                    {
+                        "task_026/AI-Assisted_Healthcare.zip": (
+                            digest,
+                            "https://huggingface.co/dead.zip",
+                        )
+                    },
+                ),
+                patch.object(launcher, "ASSETS_DIR", assets_dir),
+            ):
+                mapping = launcher.stage_task_assets(sbx, "127.0.0.1.nip.io")
+
+        self.assertEqual(
+            mapping,
+            {
+                "https://huggingface.co/dead.zip": (
+                    "https://files.127.0.0.1.nip.io/task_026/AI-Assisted_Healthcare.zip"
+                )
+            },
+        )
+        staged_path = f"{launcher.REPO_DIR}/assets/task_026/AI-Assisted_Healthcare.zip"
+        self.assertIn(staged_path, sbx.files.written)
+        self.assertEqual(sbx.files.written[staged_path], fixture_bytes)
+        # Bounded like the neighbouring compose command: a stalled multi-MB
+        # upload must not hang the launcher indefinitely.
+        self.assertEqual(sbx.files.write_kwargs[staged_path]["request_timeout"], 180)
+
+    def test_stage_task_assets_refuses_a_drifted_archive(self):
+        launcher = load_websites_launcher()
+        sbx = FakeFleetSandbox()
+        with tempfile.TemporaryDirectory() as directory:
+            assets_dir = Path(directory)
+            fixture = assets_dir / "task_026" / "AI-Assisted_Healthcare.zip"
+            fixture.parent.mkdir(parents=True)
+            fixture.write_bytes(b"these are not the bytes the pin expects")
+
+            with (
+                patch.object(
+                    launcher,
+                    "TASK_ASSETS",
+                    {
+                        "task_026/AI-Assisted_Healthcare.zip": (
+                            "0" * 64,
+                            "https://huggingface.co/dead.zip",
+                        )
+                    },
+                ),
+                patch.object(launcher, "ASSETS_DIR", assets_dir),
+                self.assertRaisesRegex(RuntimeError, "asset hash"),
+            ):
+                launcher.stage_task_assets(sbx, "127.0.0.1.nip.io")
+
+        self.assertEqual(sbx.files.written, {})  # never staged a drifted archive
+
+    def test_wait_ready_checks_the_files_site_with_a_head_request_not_api_state(self):
+        launcher = load_websites_launcher()
+        calls = []
+
+        def poll(_sbx, cmd, **_kwargs):
+            calls.append(cmd)
+            if "13001" in cmd:
+                self.assertIn("/api/state", cmd)
+                return "200"
+            self.assertIn("13030", cmd)
+            self.assertNotIn("/api/state", cmd)
+            # -X HEAD only overrides the method string; curl still waits for
+            # a body sized by Content-Length against HTTP/1.1 keep-alive
+            # nginx and hangs until timeout. -I (--head) is the only flag
+            # that tells curl not to expect a body at all.
+            self.assertIn("-I", cmd.split())
+            self.assertNotIn("-X", cmd)
+            self.assertNotIn("HEAD", cmd)
+            return "HTTP/1.1 200 OK\r\nContent-Length: 7\r\n\r\n"
+
+        with tempfile.TemporaryDirectory() as directory:
+            assets_dir = Path(directory)
+            asset = assets_dir / "task_026" / "AI-Assisted_Healthcare.zip"
+            asset.parent.mkdir(parents=True)
+            asset.write_bytes(b"1234567")  # 7 bytes, matches the fake Content-Length
+
+            with (
+                patch.object(
+                    launcher,
+                    "TASK_ASSETS",
+                    {"task_026/AI-Assisted_Healthcare.zip": ("x" * 64, "https://dead")},
+                ),
+                patch.object(launcher, "ASSETS_DIR", assets_dir),
+                patch.object(launcher.fl, "poll_cmd", side_effect=poll),
+                patch.object(launcher.time, "sleep"),
+            ):
+                timings = launcher.wait_ready(
+                    object(), {"mailhub": 13001, "files": 13030}
+                )
+
+        self.assertEqual(set(timings), {"mailhub", "files"})
+        self.assertTrue(calls)  # both sites were actually polled
+
+    def test_verify_via_v2_builder_trusts_the_campaign_bundle(self):
+        websites = load_websites_launcher()
+        captured = {}
+
+        def fake_run(_cmd, **kwargs):
+            captured.update(kwargs)
+            return type(
+                "CompletedProcess",
+                (),
+                {
+                    "stdout": (
+                        '{"constructed_url": "https://mailhub.127.0.0.1.nip.io:8090", '
+                        '"status": 200}\n'
+                    ),
+                    "stderr": "",
+                },
+            )()
+
+        with patch("subprocess.run", side_effect=fake_run):
+            result = websites.verify_via_v2_builder(
+                "127.0.0.1.nip.io:8090", "mailhub", ca_bundle="/fake/bundle.crt"
+            )
+
+        self.assertEqual(captured["env"]["REQUESTS_CA_BUNDLE"], "/fake/bundle.crt")
+        self.assertTrue(result["constructed_url"].startswith("https://"))
+        self.assertEqual(result["status"], 200)
+
+    def test_verify_via_v2_builder_omits_env_override_without_a_bundle(self):
+        websites = load_websites_launcher()
+        captured = {}
+
+        def fake_run(_cmd, **kwargs):
+            captured.update(kwargs)
+            return type(
+                "CompletedProcess",
+                (),
+                {
+                    "stdout": '{"constructed_url": "http://x", "status": 200}\n',
+                    "stderr": "",
+                },
+            )()
+
+        with patch("subprocess.run", side_effect=fake_run):
+            websites.verify_via_v2_builder("127.0.0.1.nip.io:8090")
+
+        self.assertIsNone(captured["env"])
+
+    def test_websites_main_publishes_the_asset_url_map(self):
+        websites = load_websites_launcher()
+        sandbox = type(
+            "Sandbox",
+            (),
+            {
+                "sandbox_id": "website-sandbox",
+                "traffic_access_token": "runtime-only-token",
+                "get_host": lambda _self, port: f"{port}-website.example.test",
+                "kill": lambda _self: None,
+            },
+        )()
+        asset_map = {
+            "https://huggingface.co/dead.zip": (
+                "https://files.127.0.0.1.nip.io/task_026/AI-Assisted_Healthcare.zip"
+            )
+        }
+
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            runtime_file = Path(directory) / ".runtime.json"
+            for item in (
+                patch.object(fleetlib, "RUNTIME_FILE", runtime_file),
+                patch.object(websites, "RECEIPT", Path(directory) / "receipt.json"),
+                patch.object(websites, "websites_pin", return_value="a" * 40),
+                patch.object(websites.fl, "load_e2b_key"),
+                patch.object(
+                    websites.fl, "ensure_fleet_template", return_value=IMMUTABLE_FLEET
+                ),
+                patch.object(
+                    websites.fl, "reuse_or_create", return_value=(sandbox, True)
+                ),
+                patch.object(websites.fl, "ensure_docker", return_value=0.0),
+                patch.object(websites.fl, "ensure_swap"),
+                patch.object(websites, "clone_repo"),
+                patch.object(
+                    websites,
+                    "enumerate_sites",
+                    return_value={"mailhub": 13001, "files": 13030},
+                ),
+                patch.object(websites, "write_fanout"),
+                patch.object(websites, "compose_up", return_value=0.0),
+                patch.object(websites, "recreate_fanout"),
+                patch.object(
+                    websites,
+                    "wait_ready",
+                    return_value={"mailhub": 0.1, "files": 0.2},
+                ),
+                patch.object(
+                    websites,
+                    "probe_host_ingress",
+                    return_value={
+                        "per_port_probe": {"status": 200},
+                        "unauthenticated_probe": {"status": 403},
+                    },
+                ),
+                patch.object(
+                    websites.fl,
+                    "restart_host_proxy",
+                    return_value={"running": True, "port": 8090},
+                ),
+                patch.object(
+                    websites.fl, "verify_host_proxy_path", return_value={"status": 200}
+                ),
+                patch.object(websites.fl, "stop_host_proxy"),
+            ):
+                stack.enter_context(item)
+            stage_assets = stack.enter_context(
+                patch.object(websites, "stage_task_assets", return_value=asset_map)
+            )
+            ensure_tls = stack.enter_context(
+                patch.object(
+                    websites.campaign_tls, "ensure_campaign_tls", return_value=FAKE_TLS
+                )
+            )
+            v2check = stack.enter_context(
+                patch.object(
+                    websites,
+                    "verify_via_v2_builder",
+                    return_value={
+                        "status": 200,
+                        "constructed_url": "https://mailhub.127.0.0.1.nip.io:8090",
+                    },
+                )
+            )
+
+            websites.main()
+            runtime = json.loads(runtime_file.read_text())
+
+        ensure_tls.assert_called_once_with(
+            "test-campaign",
+            [
+                "mailhub.127.0.0.1.nip.io",
+                "files.127.0.0.1.nip.io",
+                "gitlab.127.0.0.1.nip.io",
+            ],
+        )
+        stage_assets.assert_called_once_with(sandbox, websites.fl.HOST_SUFFIX)
+        self.assertEqual(v2check.call_args.kwargs["ca_bundle"], FAKE_TLS["bundle"])
+        self.assertEqual(runtime["websites"]["asset_url_map"], asset_map)
+
+    def test_tls_env_is_empty_until_a_leaf_has_been_issued(self):
+        for runtime in ({}, {"tls": {"campaign_id": "c"}}):
+            with self.subTest(runtime=runtime):
+                with patch.object(fleetlib, "read_runtime", return_value=runtime):
+                    self.assertEqual(fleetlib.tls_env(), {})
+
+    def test_tls_env_reports_the_leaf_material_and_derives_ports(self):
+        leaf = {"tls": {"leaf_cert": "/c", "leaf_key": "/k"}}
+        with (
+            patch.object(fleetlib, "read_runtime", return_value=leaf),
+            patch.dict(os.environ, {"HOSTMAP_PORT": "80,8090"}),
+        ):
+            env = fleetlib.tls_env()
+
+        self.assertEqual(
+            env,
+            {
+                "HOSTMAP_TLS_PORTS": "80,8090",
+                "HOSTMAP_TLS_CERT": "/c",
+                "HOSTMAP_TLS_KEY": "/k",
+            },
+        )
+
+        # With no HOSTMAP_PORT set, the port defaults exactly like
+        # restart_host_proxy's own default, so the two never drift apart.
+        no_port = {k: v for k, v in os.environ.items() if k != "HOSTMAP_PORT"}
+        with (
+            patch.object(fleetlib, "read_runtime", return_value=leaf),
+            patch.dict(os.environ, no_port, clear=True),
+        ):
+            self.assertEqual(fleetlib.tls_env()["HOSTMAP_TLS_PORTS"], "8090")
+
+    def test_restart_host_proxy_passes_tls_material_when_present(self):
+        with tempfile.TemporaryDirectory() as directory:
+            services_dir = Path(directory)
+            pidfile = services_dir / ".hostmap_proxy.pid"
+            with (
+                patch.object(fleetlib, "SERVICES_DIR", services_dir),
+                patch.object(fleetlib, "PROXY_PIDFILE", pidfile),
+                patch.object(fleetlib.subprocess, "Popen") as popen,
+                patch.object(
+                    fleetlib,
+                    "tls_env",
+                    return_value={
+                        "HOSTMAP_TLS_PORTS": "8090",
+                        "HOSTMAP_TLS_CERT": "/c",
+                        "HOSTMAP_TLS_KEY": "/k",
+                    },
+                ),
+                patch.object(fleetlib.time, "sleep"),
+                patch("socket.create_connection"),
+                patch.dict(os.environ, {"HOSTMAP_PORT": "8090"}),
+            ):
+                popen.return_value.poll.return_value = None
+                status = fleetlib.restart_host_proxy()
+
+        self.assertTrue(status["running"])
+        env = popen.call_args.kwargs["env"]
+        self.assertEqual(env["HOSTMAP_TLS_PORTS"], "8090")
+        self.assertEqual(env["HOSTMAP_TLS_CERT"], "/c")
+        self.assertEqual(env["HOSTMAP_TLS_KEY"], "/k")
+
+    def test_restart_host_proxy_carries_no_tls_keys_before_tls_exists(self):
+        with tempfile.TemporaryDirectory() as directory:
+            services_dir = Path(directory)
+            pidfile = services_dir / ".hostmap_proxy.pid"
+            with (
+                patch.object(fleetlib, "SERVICES_DIR", services_dir),
+                patch.object(fleetlib, "PROXY_PIDFILE", pidfile),
+                patch.object(fleetlib.subprocess, "Popen") as popen,
+                patch.object(fleetlib, "tls_env", return_value={}),
+                patch.object(fleetlib.time, "sleep"),
+                patch("socket.create_connection"),
+                patch.dict(os.environ, {"HOSTMAP_PORT": "8090"}),
+            ):
+                popen.return_value.poll.return_value = None
+                fleetlib.restart_host_proxy()
+
+        env = popen.call_args.kwargs["env"]
+        self.assertNotIn("HOSTMAP_TLS_PORTS", env)
+        self.assertNotIn("HOSTMAP_TLS_CERT", env)
+        self.assertNotIn("HOSTMAP_TLS_KEY", env)
+
+    def test_verify_host_proxy_path_uses_https_and_the_campaign_ca_when_tls_exists(
+        self,
+    ):
+        response = MagicMock()
+        response.status = 200
+        response.read.return_value = b"ok"
+        with (
+            patch.object(
+                fleetlib, "tls_env", return_value={"HOSTMAP_TLS_PORTS": "8090"}
+            ),
+            patch.object(
+                fleetlib,
+                "read_runtime",
+                return_value={"tls": {"ca_cert": "/fake/ca.crt"}},
+            ),
+            patch("ssl.create_default_context", return_value="fake-context") as ctx,
+            patch("urllib.request.urlopen") as urlopen,
+        ):
+            urlopen.return_value.__enter__.return_value = response
+            result = fleetlib.verify_host_proxy_path(
+                "mailhub.127.0.0.1.nip.io", "/api/state", 8090
+            )
+
+        ctx.assert_called_once_with(cafile="/fake/ca.crt")
+        self.assertTrue(result["url"].startswith("https://"))
+        self.assertEqual(urlopen.call_args.kwargs["context"], "fake-context")
+        self.assertEqual(result["status"], 200)
+
+    def test_verify_host_proxy_path_stays_plain_http_without_tls(self):
+        response = MagicMock()
+        response.status = 200
+        response.read.return_value = b"ok"
+        with (
+            patch.object(fleetlib, "tls_env", return_value={}),
+            patch("urllib.request.urlopen") as urlopen,
+        ):
+            urlopen.return_value.__enter__.return_value = response
+            result = fleetlib.verify_host_proxy_path(
+                "mailhub.127.0.0.1.nip.io", "/api/state", 8090
+            )
+
+        self.assertTrue(result["url"].startswith("http://"))
+        self.assertIsNone(urlopen.call_args.kwargs["context"])
+
+    def test_gitlab_launcher_publishes_https_url_and_the_041_alias(self):
+        gitlab = load_gitlab_launcher()
+        sandbox = type(
+            "Sandbox",
+            (),
+            {
+                "sandbox_id": "gitlab-sandbox",
+                "traffic_access_token": "runtime-only-token",
+                "get_host": lambda _self, port: f"{port}-gitlab.example.test",
+                "kill": lambda _self: None,
+            },
+        )()
+        fake_tls = {**FAKE_TLS, "hosts": ["gitlab.127.0.0.1.nip.io"]}
+        response = MagicMock()
+        response.status = 200
+        response.read.return_value = b"{}"
+
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            runtime_file = Path(directory) / ".runtime.json"
+            for item in (
+                patch.object(fleetlib, "RUNTIME_FILE", runtime_file),
+                patch.object(gitlab, "TOKEN_FILE", Path(directory) / ".gitlab-token"),
+                patch.object(gitlab, "RECEIPT", Path(directory) / "gitlab.json"),
+                patch.object(gitlab, "gitlab_pin", return_value="a" * 40),
+                patch.object(gitlab.fl, "load_e2b_key"),
+                patch.object(
+                    gitlab.fl, "ensure_fleet_template", return_value=IMMUTABLE_FLEET
+                ),
+                patch.object(
+                    gitlab.fl, "reuse_or_create", return_value=(sandbox, True)
+                ),
+                patch.object(gitlab.fl, "ensure_docker"),
+                patch.object(gitlab.fl, "ensure_swap"),
+                patch.object(gitlab, "clone_repo"),
+                patch.object(gitlab, "write_fanout"),
+                patch.object(gitlab, "compose_up"),
+                patch.object(gitlab, "wait_api_ready", return_value=0.1),
+                patch.object(
+                    gitlab.requests,
+                    "get",
+                    side_effect=[
+                        type("Response", (), {"status_code": 200})(),
+                        type("Response", (), {"status_code": 403})(),
+                    ],
+                ),
+                patch.object(
+                    gitlab.fl,
+                    "restart_host_proxy",
+                    return_value={"running": True, "port": 8090},
+                ),
+                patch.object(gitlab.fl, "stop_host_proxy"),
+                patch("ssl.create_default_context", return_value="fake-context"),
+            ):
+                stack.enter_context(item)
+            ensure_tls = stack.enter_context(
+                patch.object(
+                    gitlab.campaign_tls, "ensure_campaign_tls", return_value=fake_tls
+                )
+            )
+            urlopen = stack.enter_context(patch("urllib.request.urlopen"))
+            urlopen.return_value.__enter__.return_value = response
+
+            gitlab.main()
+            runtime = json.loads(runtime_file.read_text())
+
+        ensure_tls.assert_called_once_with(
+            "test-campaign", [f"gitlab.{gitlab.fl.HOST_SUFFIX}"]
+        )
+        self.assertTrue(
+            runtime["gitlab"]["url"].startswith("https://gitlab.127.0.0.1.nip.io:")
+        )
+        self.assertEqual(runtime["gitlab"]["aliases"], ["54.174.16.65.sslip.io"])
 
 
 if __name__ == "__main__":

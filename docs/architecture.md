@@ -24,7 +24,7 @@ flowchart LR
         RUNNER --> EVAL
         RUNNER -- "http://127.0.0.1:<server>/screenshot, /execute, /file, /setup/upload ..." --> BRIDGE
         RUNNER -- "CDP ws://127.0.0.1:<cdp>" --> BRIDGE
-        EVAL -- "http://site.127.0.0.1.nip.io:8090/api/..." --> HPROXY
+        EVAL -- "https://site.127.0.0.1.nip.io:8090/api/..." --> HPROXY
     end
 
     subgraph E2B["E2B (Firecracker sandboxes, all created with secure envd + egress policy + campaign metadata)"]
@@ -34,7 +34,7 @@ flowchart LR
             DESK["GNOME on Xvfb 1920×1080<br/>Chrome (CDP :9222), LibreOffice, GIMP, VLC :8080, ..."]
             GPROXY["hostmap_proxy.py (installed by the bridge)<br/>:80 and :8090 inside guest"]
             SERVER --- DESK
-            DESK -- "Chrome loads http://teamchat.127.0.0.1.nip.io:8090<br/>(nip.io → 127.0.0.1 inside guest)" --> GPROXY
+            DESK -- "Chrome loads https://teamchat.127.0.0.1.nip.io:8090<br/>(nip.io → 127.0.0.1 inside guest)" --> GPROXY
         end
         subgraph WEB["Websites fleet sandbox — one per campaign (osworld-v2-fleet-base template + Docker)"]
             FANOUT["nginx fanout<br/>one sandbox port per site (13001, 13002, ...)"]
@@ -118,7 +118,7 @@ sequenceDiagram
     B->>E: sandbox.files.write(...)
     R->>B: POST /execute (launch LibreOffice / open Chrome)
     B->>G: proxied to :5000/execute
-    R->>B: CDP ws://127.0.0.1:{cdp} → open tab http://teamchat.127.0.0.1.nip.io:8090/...
+    R->>B: CDP ws://127.0.0.1:{cdp} → open tab https://teamchat.127.0.0.1.nip.io:8090/...
     B->>G: WebSocket to https://9222-{sbx}.e2b.app
     G->>P: Chrome resolves nip.io → 127.0.0.1, hits guest proxy
     P->>F: https://13001-{web-sbx}.e2b.app + e2b-traffic-access-token
@@ -147,7 +147,7 @@ sequenceDiagram
     Note over R: env.evaluate() — upstream metrics run on the host
     R->>B: POST /file (pull the saved document), /accessibility, etc.
     B->>G: proxied
-    R->>P: GET http://teamchat.127.0.0.1.nip.io:8090/api/state
+    R->>P: GET https://teamchat.127.0.0.1.nip.io:8090/api/state
     P->>F: fetch site state through fleet ingress
     opt task uses an LLM judge
         R->>J: judge call with rubric (upstream llm_metrics)

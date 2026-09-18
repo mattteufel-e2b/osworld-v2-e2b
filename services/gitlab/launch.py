@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import secrets
 import shlex
+import ssl
 import sys
 import time
 from datetime import UTC, datetime
@@ -34,6 +35,7 @@ from pathlib import Path
 import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import campaign_tls  # noqa: E402
 import fleetlib as fl  # noqa: E402
 
 REPO_URL = "https://github.com/Task-Web/gitlab"
@@ -228,11 +230,17 @@ def main() -> int:
             unauthenticated_status=unauthenticated.status_code,
         )
 
+        # Extends the campaign leaf if the websites launcher already created
+        # the CA, or creates the CA itself if GitLab launches first -- either
+        # launch order is supported.
+        tls = campaign_tls.ensure_campaign_tls(
+            campaign, [f"{GITLAB_SUBDOMAIN}.{fl.HOST_SUFFIX}"]
+        )
         proxy_status = fl.restart_host_proxy()
         if not proxy_status.get("running"):
             raise RuntimeError("host proxy failed to start")
         public_port = proxy_status["port"]
-        public_url = f"http://{GITLAB_SUBDOMAIN}.{fl.HOST_SUFFIX}:{public_port}"
+        public_url = f"https://{GITLAB_SUBDOMAIN}.{fl.HOST_SUFFIX}:{public_port}"
 
         # The proxy reads its route and traffic credential from the runtime file,
         # so publish provisionally, exercise the exact harness URL, and roll back
@@ -249,6 +257,9 @@ def main() -> int:
                 "port": GITLAB_PORT,
                 "url": public_url,
                 "external_url": gitlab_url(),
+                # Task 041 hardcodes this public GitLab host; the hostmap
+                # proxy routes it here as an alias of our real GitLab host.
+                "aliases": [campaign_tls.TASK_041_GITLAB_ALIAS],
                 "private_token": token,
                 "token_file": str(TOKEN_FILE),
             },
@@ -256,13 +267,16 @@ def main() -> int:
         published = True
 
         # Exact harness URL: GET {GITLAB_URL}/api/v4/user with only the
-        # PRIVATE-TOKEN — the proxy injects the sandbox traffic token.
+        # PRIVATE-TOKEN — the proxy injects the sandbox traffic token. Trusts
+        # the campaign CA since the host proxy's leaf is signed by it, not by
+        # a public CA.
         import urllib.request
 
+        ssl_context = ssl.create_default_context(cafile=tls["ca_cert"])
         url = f"{public_url}/api/v4/user"
         try:
             req = urllib.request.Request(url, headers={"PRIVATE-TOKEN": token})
-            with urllib.request.urlopen(req, timeout=30) as r:
+            with urllib.request.urlopen(req, timeout=30, context=ssl_context) as r:
                 proxy_path_check = {
                     "url": url,
                     "status": r.status,

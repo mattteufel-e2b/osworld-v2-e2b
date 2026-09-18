@@ -90,13 +90,14 @@ The coordinator also starts the host hostmap proxy for you; on this path start i
 or task setup and evaluators on the host cannot reach `*.127.0.0.1.nip.io:8090`.
 
 ```bash
-export WEBSITE_HOST_SUFFIX=127.0.0.1.nip.io:8090 GITLAB_URL=http://gitlab.127.0.0.1.nip.io:8090
-export GITLAB_PRIVATE_TOKEN="$(cat services/.gitlab-token)"
-export HOSTMAP_PROXY_SCRIPT="$PWD/services/hostmap_proxy.py" OSWORLD_FLEET_RULES="$PWD/services/.runtime.json"
-export OSWORLD_FILE_BASE_URL="$PWD/tasks/assets"
+# The same helper the coordinator uses: it only defines variables and functions, and
+# exports the whole fleet wiring -- site suffix, GitLab URL and token, asset base, and the
+# campaign CA/leaf paths (docs/runtime.md#fleet-origins-and-trust) -- from the runtime file
+# the launchers already wrote, so this shell's HTTPS clients and the proxy both trust it.
+source runner/common.sh && export_fleet_wiring
 cp tasks/task_*.py OSWorld-V2/evaluation_examples/task_class/
 
-HOSTMAP_PORT=8090 FLEET_RUNTIME_FILE="$PWD/services/.runtime.json" \
+HOSTMAP_PORT=8090 HOSTMAP_TLS_PORTS=8090 FLEET_RUNTIME_FILE="$OSWORLD_FLEET_RULES" \
     uv run --python 3.12 --with e2b==2.34.0 python services/hostmap_proxy.py &
 
 cd OSWorld-V2
