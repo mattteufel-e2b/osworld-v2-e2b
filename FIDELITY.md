@@ -9,7 +9,11 @@ against (`817519a3…`, `87d8a46b…`); each evidence file cites its own build i
 full-suite/focused receipts under `out/osworld-v2-evidence/full-suite/` cover the changed
 surface on that build. The September 8 MiniMax campaign used
 `osworld-v2-gnome:0d796343-1a70-4bd3-990e-8bb469b3dd20`; evidence for one build does not
-certify another build.
+certify another build. **Current build:
+`osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8`**, which carries its own 108-task
+ladder, the guest-browser secure-context probe, the long-typing control and a nine-task priced
+agent run — see "September 18 final-build ladder and live verification" below. Every claim in
+this ledger names the build it was measured on.
 Release pin: `osworld-v2-2026.08.08`. OSWorld-V2 checkout: `d578d2d4e0dc82b43e270fdaa7fa89d9708cd154`.
 
 This ledger separates what was verified to match a stated reference, what was recorded
@@ -32,8 +36,63 @@ rebuilt as `osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8`, which drops 
 `/execute` timeout patch and slims the baked first-run configs to their decisive keys. That
 build carries the application-launcher smoke
 ([receipt](out/osworld-v2-evidence/template/app-smoke-00124a57-267c-45e7-93d1-ca0ff196e4b8.json))
-and no ladder: the 108-task run against it happens on the integrated branch, and until it does,
-nothing here certifies the new build at suite level.
+and now its own ladder, run on the integrated branch — see the next section.
+
+## September 18 final-build ladder and live verification
+
+`osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8` was taken through the full no-model
+ladder at 80 concurrent workers on checkout `d578d2d`:
+[summary](out/osworld-v2-evidence/full-suite/validate-108-final-20260918.summary.json).
+108 unique sandboxes, all unique, `external_model_calls: 0`, host proxy owned for the
+campaign: **104 `PATH_PASS`, one `MODEL_BOUNDARY_PASS` (035, the judge boundary reached and
+refused as designed), and three `PATH_FAIL` (008, 009, 030)**. The gate reports **FAIL** on
+that receipt and the summary is committed red.
+
+Those three are one signature, not three defects. Each records `stage: reset`, `cause:
+reset-or-observation`, `evaluator_ran: false`, `score: null`, with a second-generation guest
+(post strict-reset) answering `502` to every accessibility-tree request; 008 and 009 also drew
+`500` from the CDP `/json/version` endpoint. All three started inside the first three seconds
+of the 80-worker launch wave. This is the reset-time ingress 5xx burst already recorded for
+030 on `c78db75e…` and for 043 on `0d796343…`. A follow-up wave re-ran exactly those three on
+fresh sandboxes at concurrency 3 and all three passed:
+[summary](out/osworld-v2-evidence/full-suite/validate-108-final-followup-20260918.summary.json).
+Read together, all 108 tasks reached the harness's passing boundaries on this build — the same
+disposition the September 11 ladder gave 043 and 082. It does not close the flake: a transient
+post-reset guest-readiness fault under first-wave concurrency remains open, and its rate on
+this run (3 of 108) was worse than on the two prior ladders (1 and 0).
+
+Two live controls ran against the same build and the same fleet campaign. The guest-browser
+secure-context probe
+([evidence](out/osworld-v2-evidence/fleet/browser-probe-00124a57-267c-45e7-93d1-ca0ff196e4b8.json),
+`maintainer/browser_probe.py`) drove the guest's own Chrome 153 over CDP across TeamChat,
+CloudCRM, MailHub, StreamView, `studio.streamview` and the task-041 GitLab alias. The
+long-typing control
+([result](out/osworld-v2-evidence/controls/typing-control-00124a57-267c-45e7-93d1-ca0ff196e4b8.json))
+is covered in the controller-patch section below.
+
+Nine application and fleet tasks then ran with the upstream M3 agent at 500 steps, concurrency
+9, Haiku 4.5 on Bedrock Mantle configured as judge and user simulator:
+[summary](out/osworld-v2-evidence/live/agent-nine-20260918.summary.json). Nine unique
+sandboxes, all unique, `retried_task_ids: []`, `implicit_retries: false`. Eight of nine
+receipts are `path_status: OK` with an evaluator that ran; the ninth (035) is `ERROR` and the
+gate reports **FAIL**, as it should. Scores, recorded verbatim and not asserted: 092 `0.2`,
+079 `0.05`, 087 `0.01`, and `0.0` for 026, 038, 041, 067 and 107 — mean partial `0.0325`,
+binary accuracy `0.0`. That is a benchmark result on nine deliberately hard tasks, not a
+verdict on the port.
+
+035's `ERROR` is the agent, not the infrastructure: at step ~406 it typed `killall -9 python3`
+into a guest terminal, killing the guest's own OSWorld control server, after which every
+`/execute` and screenshot returned `502` and the harness failed closed with no evaluator call.
+Upstream-unmodified agent behaviour; no prompt, timing or scoring change was made to avoid it,
+and the receipt is recorded rather than retried.
+
+The run's own token counts give a measured cost of **$8.21** at list price across the nine
+tasks (agent 3,975 calls, 23,005,009 input and 575,693 output tokens at Fireworks MiniMax-M3
+rates; mean $0.91 per 500-step task), with **zero** judge and zero simulator calls — none of
+these nine evaluators invoked a model. The judge configuration itself was proven live by the
+coordinator's preflight probe, so that `$0` is an absence of calls, not an absence of
+capability. These are list-price figures derived from the receipts, not billed amounts
+(`out/osworld-v2-raw/spend-ledger.json`).
 
 Task 030's record is `stage: reset`, `evaluator_ran: false`, `score: null` — the reset never
 completed, so nothing was scored and no evaluator ran. Its gitignored worker log
@@ -110,11 +169,26 @@ The [runtime controls](out/osworld-v2-evidence/sample-36/runtime-controls-202609
 record that failure mode and preserve it separately from inference success. No action timing,
 agent prompt, task, or scoring-function changes were made to improve these results.
 
-The same controls and actual setup logs establish unresolved fidelity gaps: missing or
-incompatible MuseScore/WPS/Blender applications; a FreeCAD package hold blocking native KiCad
-installation; HTTP fleet origins disabling notifications and clipboard APIs; task 026's stale
-active asset URL; and task 041's hardcoded GitLab URL. Successful native score reporting does
-not certify those starting conditions. Task 069 reached only phase 1 before its native gate
+The same controls and actual setup logs established five fidelity gaps, every one of which was
+re-tested on the September 18 final-build run above and is now closed as a *setup* condition —
+which is not the same as a score:
+
+- **Applications.** The five tasks whose applications were missing or incompatible (067
+  `musescore`, 079 and 087 `wpp`, 092 `blender`, 107 `kicad` failing with APT code 100 behind a
+  FreeCAD package hold) set up with completely empty worker logs on build `00124a57…`: no
+  `command not found`, no `Failed to launch application`, and for 107 no `apt-get` activity at
+  all, with the agent opening KiCad in its first steps.
+- **HTTP fleet origins.** Now HTTPS under a per-campaign CA, and verified from inside the
+  guest's own Chrome rather than inferred — see the browser probe below.
+- **Task 026's stale active asset URL.** The state the run actually loaded carried only
+  `https://files.127.0.0.1.nip.io/task_026/AI-Assisted_Healthcare.zip`, with no
+  `huggingface.co` reference anywhere; the in-guest fetch returned `200`, 3,176,733 bytes and
+  the pinned sha256, and the `HEAD` reported the matching `Content-Length`.
+- **Task 041's hardcoded GitLab URL.** The run's first Chrome tab is our own deployment's
+  "Sign in · GitLab" through the alias, with no certificate interstitial.
+
+Successful native score reporting still does not certify those starting conditions, and a
+closed setup gap is not a task pass: eight of the nine tasks scored at or near zero. Task 069 reached only phase 1 before its native gate
 stopped progression. Native media controls exercise XCF extraction, video decoding, MuseScore
 XML scoring, and REAPER scoring; the focused REAPER fixtures exclude safety-baseline setup.
 They do not establish GUI file compatibility or audio-rendering parity.
@@ -361,9 +435,36 @@ full native-result parity or a passing 24-task sample.
   choice (turns GitLab's shared-root-token problem into per-run isolation; deferred
   alternative noted, not implemented). Each site's state is cookie-scoped via its own
   `/api/state`; the September 14 audit found no cross-task cookie collisions across 22
-  standard website sessions. This does not establish full functional equivalence: the
-  HTTP guest origins disable notifications and the clipboard API used by some tasks.
-  The topology also differs from an official hosted deployment.
+  standard website sessions. Since the September 15 fleet wave the origins are **HTTPS**,
+  terminated by the guest proxy on 443/8090 under a CA minted per campaign and installed into
+  both the guest's system store and Chrome's own NSS database, so the guest sees secure
+  contexts rather than the HTTP origins that previously disabled notifications and the
+  clipboard API. Verified from inside the guest's own Chrome 153 on build `00124a57…`
+  ([evidence](out/osworld-v2-evidence/fleet/browser-probe-00124a57-267c-45e7-93d1-ca0ff196e4b8.json)):
+  on all six of TeamChat, CloudCRM, MailHub, StreamView, `studio.streamview` and the task-041
+  GitLab alias, `isSecureContext` is `true`, `navigator.clipboard` is an object,
+  `crypto.randomUUID` is a function, Chrome's own visible security state is `secure` over
+  TLS 1.3, and the page title is the application's, not a certificate interstitial. TeamChat's
+  notification permission moves `default` → `granted`, a clipboard write/read round-trips, and
+  a cookie set on TeamChat is invisible on CloudCRM. All 129 subresource requests across the six
+  pages were HTTPS, with zero mixed-content blocks — the one non-`https:` URL in the run is a
+  benign `data:` URI on the GitLab page.
+
+  What that does **not** establish, stated plainly. Only landing pages were loaded, so nothing
+  here rules out a cross-host `http:` reference behind in-app navigation or interaction; in
+  particular StreamView's landing page makes no request to `studio.streamview` at all, so the
+  deferred cross-host rewrite question is unresolved rather than answered. The topology still
+  differs from an official hosted deployment. The GitLab page issues
+  `https://gitlab.127.0.0.1.nip.io:80/-/collect_events` and gets
+  `net::ERR_SSL_PROTOCOL_ERROR` — an `https` scheme against the port the guest proxy serves in
+  plain HTTP, traced to `gitlab.external_url` (`http://`) disagreeing with `gitlab.url`
+  (`https://…:8090`) in the campaign runtime file. CDP confirms it as a failed handshake and
+  **not** a mixed-content block (`blockedReason: null`). It is Snowplow telemetry, the page
+  renders and signs in, and no task in the 108 asserts on GitLab analytics — so it is disclosed
+  and left unfixed here, not repaired quietly. Finally, these applications fetch live public
+  CDNs (`picsum.photos`, `fonts.googleapis.com`, `fonts.gstatic.com`, `img.youtube.com`), all
+  over HTTPS, so their pages depend on public egress at run time and would degrade on a
+  network-restricted host for reasons unrelated to any agent action.
   `out/osworld-v2-evidence/services-websites.json`, `services-gitlab.json`.
 - **Ingress addressing mode**: per-port fanout + host+guest Host-mapping proxies, not
   single-port Caddy Host-header passthrough. Directly probed and ruled out: E2B ingress
