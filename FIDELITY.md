@@ -484,41 +484,18 @@ full native-result parity or a passing 24-task sample.
   terminated by the guest proxy on 443/8090 under a CA minted per campaign and installed into
   both the guest's system store and Chrome's own NSS database, so the guest sees secure
   contexts rather than the HTTP origins that previously disabled notifications and the
-  clipboard API. Verified from inside the guest's own Chrome 153 on build `00124a57…`
-  ([evidence](out/osworld-v2-evidence/fleet/browser-probe-00124a57-267c-45e7-93d1-ca0ff196e4b8.json)),
-  on the **portless `:443`** half of that pair only — that receipt navigated
-  `https://<site>.127.0.0.1.nip.io` with no port, and every recorded `location.href` is
-  portless. On all six of TeamChat, CloudCRM, MailHub, StreamView, `studio.streamview` and the
-  task-041 GitLab alias, `isSecureContext` is `true`, `navigator.clipboard` is an object,
-  `crypto.randomUUID` is a function, Chrome's own visible security state is `secure` over
-  TLS 1.3, and the page title is the application's, not a certificate interstitial. TeamChat's
-  notification permission moves `default` → `granted`, a clipboard write/read round-trips, and
-  a cookie set on TeamChat is invisible on CloudCRM. 128 of the 129 recorded requests were
-  HTTPS; the only other is a `data:` URI on the GitLab page. Zero mixed-content blocks.
+  clipboard API. On build `00124a57-267c-45e7-93d1-ca0ff196e4b8`, the
+  [live controls](out/osworld-v2-evidence/pr5-bedrock-sample/controls.json) pass all
+  56 browser-probe checks. TeamChat, CloudCRM, MailHub, StreamView and
+  `studio.streamview` are tested on the task port **8090**; task 041's hardcoded
+  GitLab alias is tested on 443. The probe verifies secure contexts, browser APIs,
+  notification grants, clipboard round-trip, cross-site cookie isolation, and
+  secure subresource requests. A 2 MiB StreamView upload is retrieved byte-for-byte,
+  and a 2 MiB chunked Git push from the guest matches the blob recorded by GitLab.
+  Temporary upload state and the GitLab project are removed afterward.
 
-  Tasks are not handed those origins. Upstream's URL builder hands them
-  `https://<site>.127.0.0.1.nip.io:8090`, and `https://host` and `https://host:8090` are
-  distinct browser origins for cookies and permissions, so the probe's result does not carry
-  across on its own. One run-time corroboration does cover `:8090`: task 035's setup granted
-  the notification permission against `https://teamchat.127.0.0.1.nip.io:8090`, the origin its
-  own URL builder produced, and that grant succeeded. That is the same task, the same origin
-  and the same port on which `docs/pr-1-verification.md:125` recorded "all ten task-035
-  attempts to grant notifications failed" over `http://`. It is a before/after on one
-  operation, not a measurement of `isSecureContext` on `:8090`, which nothing in this wave
-  read. `tasks/task_035.py:58` allows ten attempts and logs `Failed to grant
-  notification permission after retries` only on exhaustion, and that line is absent from
-  `out/osworld-v2-raw/live-osworld-live-20260918T000607Z/inference/agent-raw/workers/task_035.log`,
-  which records four CDP-readiness failures (`Unexpected status 500`) and then nothing, so the
-  fifth attempt took. A permission grant on one origin is much narrower than the probe's full
-  set of checks on six.
-
-  What that does **not** establish, stated plainly. The `:8090` origins the tasks actually use
-  were never taken through the probe's checks: `isSecureContext`, the clipboard round-trip, the
-  visible security state, cookie isolation and the all-requests-HTTPS tally are results for
-  `:443` and for no other port. Only landing pages were loaded, so nothing here rules out a
-  cross-host `http:` reference behind in-app navigation or interaction; in particular
-  StreamView's landing page makes no request to `studio.streamview` at all, so the
-  deferred cross-host rewrite question is unresolved rather than answered. The topology still
+  These checks cover the probed pages and two write paths, not every application
+  interaction. The upload is a transport payload, not a video-playback test. The topology still
   differs from an official hosted deployment. The GitLab page issues
   `https://gitlab.127.0.0.1.nip.io:80/-/collect_events` and gets
   `net::ERR_SSL_PROTOCOL_ERROR` — an `https` scheme against the port the guest proxy serves in
@@ -558,6 +535,7 @@ exact patched state before every run.
 | (j) `desktop_env/controllers/website.py` URL scheme | a failed HTTPS probe permanently caches HTTP | honor `OSWORLD_WEBSITE_SCHEME=https` for the TLS-only campaign fleet | `tests/test_checkout_verification.py` |
 | (k) `mm_agents/m3/parser.py` typing | each character incurs PyAutoGUI's 0.1-second pause, exceeding the 120-second guest deadline for long inputs | one ordered `pyautogui.write(text, interval=0.001)` call, with one final pause | `tests/test_checkout_verification.py` |
 | (l) `mm_agents/m3/agent.py` empty actions | empty or unparseable model output becomes `ASK_USER`, even when no question was intended | preserve the API log and fail the task; only an explicit parsed `CALL_USER` becomes a simulator question | `tests/test_checkout_verification.py`; task 019 in the Bedrock sample |
+| (m) `mm_agents/m3/agent.py` adaptive thinking | a fixed thinking budget is included with adaptive mode, which Bedrock Sonnet 5 rejects | omit `budget_tokens` for adaptive mode; preserve it for enabled mode | `tests/test_checkout_verification.py`; live Bedrock request validation |
 
 (h) deliberately keeps `None` rather than inventing a success-shaped result: upstream evaluator
 getters read `env.controller.execute_python_command(...)["output"]`, so a 200 carrying empty
@@ -589,6 +567,11 @@ timeout `500`, and typing had stopped by the time the client moved on. Compare t
 control above, which returned `None` at 90.12 s while typing continued to 102.61 s. This is
 one control on one build, not a claim about every action a campaign issues.
 
+Patch (k) also has a successful live typing control: one 6,090-character command
+completed in 10.47 seconds and produced a 5,700-character file whose SHA-256 exactly
+matched the expected text, including quotes, backslashes and newlines. See the
+[control receipt](out/osworld-v2-evidence/pr5-bedrock-sample/controls.json).
+
 Upstream issue drafts for (e), (f), and the 90 s-client/120 s-guest deadline mismatch are
 prepared under `out/osworld-v2-evidence/upstream-issues/`; they have not been filed.
 
@@ -601,13 +584,13 @@ prepared under `out/osworld-v2-evidence/upstream-issues/`; they have not been fi
 - **Screen recording: opt-in, off by default as upstream; verified.** `ENABLE_RECORDING=1`
   passes upstream's `--enable_recording` through; the September 11 task 093 rollout produced
   the guest's `recording.mp4` alongside its trajectory (see that section).
-- **Judge, simulator, and multiphase coverage remains incomplete.** The September 8
-  campaign returned responses for six of six judge calls: five on task 079 (score zero),
-  and one on task 035 (invalid JSON, no score). A returned response does not establish
-  evaluator success. No simulator calls occurred; task 026 never reached `ASK_USER`.
-  The earlier task 069 run stopped in phase one, so later-phase execution remains
-  unverified. These gaps require focused integration diagnostics and a matched reference
-  before full parity can be claimed.
+- **Judge and simulator wiring is verified; scoring parity and multiphase coverage remain incomplete.**
+  The [Bedrock controls](out/osworld-v2-evidence/pr5-bedrock-sample/controls.json)
+  exercise task 035's real spreadsheet evaluator and task 095's real user simulator
+  through the upstream task loop. Each makes one successful, measured Haiku 4.5 call.
+  They are scripted controls, not agent-performance results. The earlier task 069
+  run stopped in phase one, so later-phase execution remains unverified. A matched
+  reference run is still required before claiming scoring parity.
 - **Pause/resume: not used.** Deliberate no-pause-by-default stance (median task length
   ~1.6 h, tail to ~3 h — a guest clock jump under pause risks breaking scheduled dynamic
   events and drops CDP WebSockets). The validation campaigns did not invoke pause;

@@ -445,3 +445,39 @@ def test_setup_stops_retrying_after_the_guest_reports_its_own_timeout(tmp_path):
     )  # untouched
     _apply_patches(dest)  # idempotent
     assert patched == (dest / "desktop_env" / "controllers" / "python.py").read_text()
+
+
+@pytest.mark.parametrize("mode", ["adaptive", "enabled"])
+def test_m3_adaptive_thinking_omits_fixed_budget(patched_checkout, mode):
+    source = ast.parse((patched_checkout / "mm_agents/m3/agent.py").read_text())
+    cls = next(
+        n for n in source.body if isinstance(n, ast.ClassDef) and n.name == "M3Agent"
+    )
+    method = next(
+        n
+        for n in cls.body
+        if isinstance(n, ast.FunctionDef) and n.name == "_build_request_body"
+    )
+    namespace = {"List": list, "Dict": dict, "Any": object}
+    exec(
+        compile(ast.Module(body=[method], type_ignores=[]), "agent.py", "exec"),
+        namespace,
+    )
+    agent = SimpleNamespace(
+        model="test",
+        max_tokens=4096,
+        thinking_mode=mode,
+        thinking_budget=1024,
+        temperature=0.6,
+        top_p=0.9,
+        stop_sequences=None,
+        _translate_messages=lambda _: ("", []),
+    )
+    body = namespace["_build_request_body"](agent, [])
+    assert body["thinking"] == (
+        {"type": "adaptive"}
+        if mode == "adaptive"
+        else {"type": "enabled", "budget_tokens": 1024}
+    )
+    assert body["temperature"] == 1
+    assert "top_p" not in body
