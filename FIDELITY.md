@@ -557,6 +557,7 @@ exact patched state before every run.
 | (i) `mm_agents/m3/agent.py` inference errors | exhausted errors return an empty action list, which becomes `ASK_USER` | save the API failure log and propagate the exception so the task receipt fails | `tests/test_checkout_verification.py` |
 | (j) `desktop_env/controllers/website.py` URL scheme | a failed HTTPS probe permanently caches HTTP | honor `OSWORLD_WEBSITE_SCHEME=https` for the TLS-only campaign fleet | `tests/test_checkout_verification.py` |
 | (k) `mm_agents/m3/parser.py` typing | each character incurs PyAutoGUI's 0.1-second pause, exceeding the 120-second guest deadline for long inputs | one ordered `pyautogui.write(text, interval=0.001)` call, with one final pause | `tests/test_checkout_verification.py` |
+| (l) `mm_agents/m3/agent.py` empty actions | empty or unparseable model output becomes `ASK_USER`, even when no question was intended | preserve the API log and fail the task; only an explicit parsed `CALL_USER` becomes a simulator question | `tests/test_checkout_verification.py`; task 019 in the Bedrock sample |
 
 (h) deliberately keeps `None` rather than inventing a success-shaped result: upstream evaluator
 getters read `env.controller.execute_python_command(...)["output"]`, so a 200 carrying empty

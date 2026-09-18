@@ -228,7 +228,28 @@ def test_fleet_scheme_does_not_downgrade_on_transient_probe_failure(
     assert namespace["_select_website_scheme"]("unconfigured.test") == "http://"
 
 
-def test_m3_exhausted_transport_error_propagates(patched_checkout):
+@pytest.mark.parametrize(
+    "response, error_type, recover",
+    [
+        (None, ConnectionError, False),
+        ("", ValueError, False),
+        (
+            '<tool_call>\n{"name":"computer","arguments":{"action":"done"}}\n</tool_function>',
+            ValueError,
+            False,
+        ),
+        (
+            '<tool_call>\n{"name":"computer","arguments":{"action":"call_user"}}\n</tool_call>',
+            None,
+            False,
+        ),
+        ("", None, True),
+        ("<tool_call>malformed", None, True),
+    ],
+)
+def test_m3_failures_do_not_become_user_questions(
+    patched_checkout, response, error_type, recover
+):
     source = ast.parse((patched_checkout / "mm_agents/m3/agent.py").read_text())
     cls = next(
         n for n in source.body if isinstance(n, ast.ClassDef) and n.name == "M3Agent"
@@ -236,6 +257,8 @@ def test_m3_exhausted_transport_error_propagates(patched_checkout):
     predict = next(
         n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "predict"
     )
+    parser_namespace = {}
+    exec((patched_checkout / "mm_agents/m3/parser.py").read_text(), parser_namespace)
     namespace = {
         "Dict": dict,
         "List": list,
@@ -245,14 +268,26 @@ def test_m3_exhausted_transport_error_propagates(patched_checkout):
         "logger": logging.getLogger(__name__),
         "_encode_screenshot": lambda _: ("eA==", "image/png"),
         "wrap_for_history": lambda s: s,
+        "parse_m3_response": parser_namespace["parse_m3_response"],
     }
     exec(
         compile(ast.Module(body=[predict], type_ignores=[]), "agent.py", "exec"),
         namespace,
     )
 
+    calls = 0
+
     def failed(messages):
-        raise ConnectionError("exhausted transport retries")
+        nonlocal calls
+        calls += 1
+        if recover and calls > 1:
+            return (
+                '<tool_call>\n{"name":"computer","arguments":{"action":"done"}}\n</tool_call>',
+                {},
+            )
+        if response is None:
+            raise ConnectionError("exhausted transport retries")
+        return response, {}
 
     logs = []
     agent = SimpleNamespace(
@@ -264,14 +299,23 @@ def test_m3_exhausted_transport_error_propagates(patched_checkout):
         _build_messages=lambda *a: [],
         _build_request_body=lambda *a: {},
         _call_llm=failed,
-        max_llm_retries=0,
+        max_llm_retries=2,
+        coordinate_type="relative",
         _save_api_log=lambda *a, **kw: logs.append(kw),
         actions=[],
         thoughts=[],
     )
-    with pytest.raises(ConnectionError, match="exhausted transport retries"):
-        namespace["predict"](agent, "test", {"screenshot": b"x"})
-    assert logs[0]["retry_attempts"][0]["outcome"] == "exception"
+    if error_type:
+        with pytest.raises(error_type):
+            namespace["predict"](agent, "test", {"screenshot": b"x"})
+    else:
+        assert namespace["predict"](agent, "test", {"screenshot": b"x"})[1] == (
+            ["DONE"] if recover else []
+        )
+    assert calls == (3 if error_type else 2 if recover else 1)
+    assert logs
+    if response is None:
+        assert logs[0]["retry_attempts"][0]["outcome"] == "exception"
 
 
 def test_m3_long_typing_preserves_text_without_per_character_pauses(patched_checkout):
