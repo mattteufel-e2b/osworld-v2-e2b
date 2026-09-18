@@ -562,8 +562,15 @@ VENDOR_APPLICATIONS = [
         "/home/user/.config/FreeCAD/v1-1/user.cfg",
         # `FirstStart`, `FirstTime` and `ShowOnStartup` were each tried on a
         # live guest and none suppressed the in-window "Welcome to FreeCAD"
-        # block. Only the 2024-suffixed key does, so the suffix is the contract.
-        ['<FCBool Name="FirstStart2024" Value="0"/>'],
+        # block; only the 2024-suffixed key does. Migration2024Complete is what
+        # keeps it: without it FreeCAD's 2024 settings migration rewrites the
+        # Start group on startup and drops FirstStart2024 entirely, so the
+        # suppression is gone before it is read. Proved by an A/B on a scratch
+        # sandbox - same file with and without this one key.
+        [
+            '<FCBool Name="Migration2024Complete" Value="1"/>',
+            '<FCBool Name="FirstStart2024" Value="0"/>',
+        ],
     ),
     (
         "kicad",  # tasks 107/108; from task 107's own PPA, so no artifact to pin

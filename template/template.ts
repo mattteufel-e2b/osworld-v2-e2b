@@ -396,17 +396,27 @@ export const template = Template({ fileContextPath: filesDir })
   // Navigation Style / Theme / Done) over its Start page. It is painted inside
   // the application window rather than in a window of its own, so `wmctrl`
   // shows nothing unusual and only a screenshot catches it.
-  // freecad-user.cfg carries one decisive preference, isolated by diffing the
-  // user.cfg FreeCAD itself wrote before and after Done was clicked once on
-  // that guest (it flushes preferences on a clean window-manager quit only - a
-  // SIGTERM leaves no file at all):
-  //   BaseApp/Preferences/Mod/Start -> FirstStart2024 = 0
-  // Everything else in that capture was window geometry, dock state and
-  // per-workbench colours, so none of it is baked; FreeCAD writes its own
+  // freecad-user.cfg carries two preferences under
+  // BaseApp/Preferences/Mod/Start, and it needs both:
+  //   FirstStart2024 = 0          suppresses the block
+  //   Migration2024Complete = 1   stops FreeCAD deleting the key above
+  // The second one is not obvious and was proved by an A/B on a scratch
+  // sandbox of this image, same file with and without it. Without it, FreeCAD
+  // runs its 2024 settings migration on startup, and that migration REWRITES
+  // the Start group - the user.cfg it leaves behind has ShowOnStartup,
+  // ShowExamples, CloseStart, CustomFolder and Migration2024Complete in it and
+  // no FirstStart2024 at all. The key is gone before it is read, so the
+  // suppression silently does nothing and the Welcome block is drawn. With
+  // Migration2024Complete already set the migration does not run, the written
+  // cfg still carries FirstStart2024 = 0, and FreeCAD opens on its ordinary
+  // Start page (New File / Examples).
+  // The 2024 suffix on the first key matters too: `FirstStart`, `FirstTime`
+  // and `ShowOnStartup` were each set through FreeCAD's own parameter API on a
+  // live guest and none of them suppressed the block.
+  // Everything else in the original capture was window geometry, dock state
+  // and per-workbench colours, so none of it is baked; FreeCAD writes its own
   // defaults for all of it on first launch, as it does for system.cfg and
-  // FreeCAD.conf. The 2024 suffix matters: `FirstStart`, `FirstTime` and
-  // `ShowOnStartup` were each set through FreeCAD's own parameter API on that
-  // same guest and none of them suppressed the block.
+  // FreeCAD.conf.
   .makeDir('/home/user/.config/FreeCAD/v1-1')
   .copy('freecad-user.cfg', '/home/user/.config/FreeCAD/v1-1/user.cfg')
   // ---- REAPER first-run suppression (baked config) ------------------------

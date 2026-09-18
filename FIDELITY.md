@@ -27,6 +27,14 @@ re-run through the full no-model ladder at 80 concurrent workers:
 recorded 107 `PATH_PASS` and zero failures, so the committed file reads as a regression. It is
 committed red and stays red; this is its disposition, not a correction of it.
 
+That ladder is evidence for `c78db75e…` and for no other build. The template has since been
+rebuilt as `osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8`, which drops the
+`/execute` timeout patch and slims the baked first-run configs to their decisive keys. That
+build carries the application-launcher smoke
+([receipt](out/osworld-v2-evidence/template/app-smoke-00124a57-267c-45e7-93d1-ca0ff196e4b8.json))
+and no ladder: the 108-task run against it happens on the integrated branch, and until it does,
+nothing here certifies the new build at suite level.
+
 Task 030's record is `stage: reset`, `evaluator_ran: false`, `score: null` — the reset never
 completed, so nothing was scored and no evaluator ran. Its gitignored worker log
 (`out/osworld-v2-raw/parity-ladder/no-model-raw/workers/task_030.log`) contains twelve failed
