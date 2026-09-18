@@ -867,6 +867,7 @@ def test_template_bakes_vnc_units_disabled_and_nss_trust_tooling():
     assert nssdb_dir < final_chown
     assert nssdb_init < final_chown
 
+
 def test_host_proxy_is_started_with_tls_and_probed_over_https():
     common = (ROOT / "runner" / "common.sh").read_text()
     for script in (
