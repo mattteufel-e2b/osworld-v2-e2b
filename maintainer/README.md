@@ -17,6 +17,8 @@ optional `REQUIRE_NO_MODEL_COVERAGE=1` gate in `runner/run_agent_parallel.sh` co
 | `receipt_summary.py` | Reduce a no-model aggregate receipt to the committable summary (also summarizes an agent campaign receipt from `runner/aggregate_agent.py`) |
 | `app_smoke.py` | Open each parity application on a fresh guest of one build on its pinned task input, and record windows plus a screenshot per application (`GUEST_TEMPLATE=...`); the screenshots are the evidence and a human reads them |
 
+| `typing_control.py` | Isolated long-typing control for the disclosed controller patches (g)+(h): one 3,000-keypress action against one live guest, run by hand against a candidate build |
+
 Each harness process owns its E2B guest through the provider's in-process bridge; there is
 no separate relay to start or clean up. Shared path and environment gates live in
 `runner/common.sh`.

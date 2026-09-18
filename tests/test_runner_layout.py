@@ -40,6 +40,7 @@ MAINTAINER_FILES = {
     "readiness.py",
     "receipt_summary.py",  # full ladder receipt -> committed summary evidence
     "run_path_task.sh",
+    "typing_control.py",  # hand-run long-typing control for setup.sh patches (g)+(h)
     "validate.sh",
     "validate_parallel.sh",
 }

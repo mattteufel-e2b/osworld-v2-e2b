@@ -3,8 +3,8 @@
 # (examples/osworld-v2/upstream.lock.json) and wire in the E2B provider
 # (provider/provider.py + provider/manager.py + provider/bridge.py, the
 # in-process bridge) so OSWorld-V2's own run.py works with --provider_name e2b.
-# Idempotent: re-running is safe and each of the four string patches is
-# grep-guarded, reporting "already applied" on the second run.
+# Idempotent: re-running is safe and each string patch (a)-(h) is grep-guarded,
+# reporting "already applied" on the second run.
 #
 # Checkout states (the checkout is gitignored, so its state lives on disk only):
 #   * "applied"  — setup.sh's patches present (register+classify e2b provider,
@@ -53,6 +53,8 @@ PATCHED_TRACKED=(
     desktop_env/desktop_env.py
     desktop_env/providers/__init__.py
     scripts/python/run_multienv_m3.py
+    mm_agents/m3/parser.py
+    desktop_env/controllers/python.py
 )
 VENDORED=(
     "desktop_env/providers/e2b/provider.py:$PROVIDER_DIR/provider.py"
@@ -180,6 +182,99 @@ if m3.exists():
         m3.write_text(src.replace(m3_anchor, m3_patched, 1))
         print("(d) run_multienv_m3.py: patched (accepts --provider_name e2b)")
 
+# (e) M3 parser: `super` is the X11 Super key ("win"), not macOS "command" ----
+# The active `key` branch shadows the module's own _NORMALIZE_KEY table; on
+# Linux PyAutoGUI has no "command" key and silently drops the press (sample
+# 2026-09-15, task 103). Narrow: one entry, neighbours unchanged.
+parser = dest / "mm_agents/m3/parser.py"
+if parser.exists():
+    src = parser.read_text()
+    key_anchor = '                "super_l": "win",\n                "super": "command",\n'
+    key_patched = '                "super_l": "win",\n                "super": "win",\n'
+    if key_patched in src:
+        print("(e) m3/parser.py super key: already applied")
+    else:
+        count = src.count(key_anchor)
+        assert count == 1, f"m3/parser.py key_conversion super entry found {count}x, need exactly 1 (OSWorld-V2 moved?)"
+        parser.write_text(src.replace(key_anchor, key_patched, 1))
+        print("(e) m3/parser.py: patched (super -> win on Linux)")
+
+# (f) M3 parser: the [INFEASIBLE] terminal marker counts only outside the
+# model's thinking block. M3Agent._call_llm prepends thinking as
+# <mm:think>...</mm:think>; a marker mentioned while reasoning overrode an
+# actual tool call in the same response (sample 2026-09-15, task 067).
+if parser.exists():
+    src = parser.read_text()
+    inf_anchor = '    if "[INFEASIBLE]" in response:\n        return "[INFEASIBLE]", ["FAIL"]\n'
+    inf_patched = (
+        '    if "[INFEASIBLE]" in _M3_THINK_BLOCK.sub("", response):\n'
+        '        return "[INFEASIBLE]", ["FAIL"]\n'
+    )
+    if inf_patched in src:
+        print("(f) m3/parser.py infeasible marker: already applied")
+    else:
+        count = src.count(inf_anchor)
+        assert count == 1, f"m3/parser.py [INFEASIBLE] check found {count}x, need exactly 1 (OSWorld-V2 moved?)"
+        src = src.replace(inf_anchor, inf_patched, 1)
+        # Module constant next to the existing `import re` (unique line).
+        import_anchor = "import re\n"
+        count = src.count(import_anchor)
+        assert count == 1, f"m3/parser.py `import re` found {count}x, need exactly 1"
+        src = src.replace(import_anchor, import_anchor + '_M3_THINK_BLOCK = re.compile(r"<mm:think>.*?</mm:think>", re.S)\n', 1)
+        parser.write_text(src)
+        print("(f) m3/parser.py: patched ([INFEASIBLE] ignored inside <mm:think>)")
+
+# (g) controller: wait for the guest's verdict on an agent action -----------
+# The guest kills an action at its own 120 s deadline and answers 500 with
+# subprocess's TimeoutExpired text. Upstream's 90 s client timeout returned None
+# before that verdict arrived, so typing continued for up to 30 s under the next
+# action (sample 2026-09-15, tasks 093/059/079/082). Only the /execute action
+# path changes; setup and script timeouts are untouched.
+controller = dest / "desktop_env/controllers/python.py"
+if controller.exists():
+    src = controller.read_text()
+    deadline_anchor = "data=payload, timeout=90)"
+    deadline_patched = "data=payload, timeout=130)"
+    if deadline_patched in src:
+        print("(g) controllers/python.py action deadline: already applied")
+    else:
+        count = src.count(deadline_anchor)
+        assert count == 1, f"controllers/python.py execute_python_command timeout found {count}x, need exactly 1 (OSWorld-V2 moved?)"
+        controller.write_text(src.replace(deadline_anchor, deadline_patched, 1))
+        print("(g) controllers/python.py: patched (action deadline 130 s covers the guest's 120 s kill)")
+
+# (h) controller: the guest's own timeout verdict is final, never retried ----
+# With (g) the client waits 130 s, so the guest's 500 for a 120 s kill now
+# reaches the client instead of a client-side ReadTimeout arriving first.
+# Retrying would replay a partially applied action, so `break` falls through to
+# upstream's own `return None` -- the same outcome upstream produces on a
+# client-side ReadTimeout, with no replay. Evaluator code paths are unchanged:
+# callers still see None, never a 200 carrying empty output.
+if controller.exists():
+    src = controller.read_text()
+    retry_anchor = (
+        "                else:\n"
+        '                    logger.error("Failed to execute command. Status code: %d", response.status_code)\n'
+        '                    logger.info("Retrying to execute command.")\n'
+    )
+    retry_patched = (
+        "                else:\n"
+        '                    logger.error("Failed to execute command. Status code: %d", response.status_code)\n'
+        '                    if response.status_code == 500 and "timed out after" in response.text:\n'
+        "                        # The guest killed the action at its own deadline (upstream's\n"
+        "                        # TimeoutExpired message). Retrying would replay a partially\n"
+        "                        # applied action, so give up exactly as a client timeout does.\n"
+        "                        break\n"
+        '                    logger.info("Retrying to execute command.")\n'
+    )
+    if retry_patched in src:
+        print("(h) controllers/python.py guest-timeout retry: already applied")
+    else:
+        count = src.count(retry_anchor)
+        assert count == 1, f"controllers/python.py execute_python_command non-200 branch found {count}x, need exactly 1 (OSWorld-V2 moved?)"
+        controller.write_text(src.replace(retry_anchor, retry_patched, 1))
+        print("(h) controllers/python.py: patched (no retry after the guest's own timeout)")
+
 EOF
 }
 
@@ -271,8 +366,9 @@ touch "$DEST/desktop_env/providers/e2b/__init__.py"
 # The bridge imports e2b_policy from the checkout root (run.py's cwd).
 cp "$POLICY_FILE" "$DEST/e2b_policy.py"
 
-# ---- string patches: register + classify the provider, force strict reset,
-#      accept --provider_name e2b in the M3 multi-env runner ------------------
+# ---- string patches (a)-(h): register + classify the provider, force strict
+#      reset, accept --provider_name e2b in the M3 multi-env runner, and the
+#      disclosed M3-parser / controller execution patches -------------------
 apply_adapter_patches "$DEST"
 
 echo

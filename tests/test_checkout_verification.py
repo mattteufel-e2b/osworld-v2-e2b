@@ -68,21 +68,7 @@ def test_verify_checkout_rejects_drift_without_modifying_it(tmp_path):
     assert subprocess.run(verify, capture_output=True).returncode != 0
 
 
-def test_setup_patches_the_m3_runner_provider_choices(tmp_path):
-    dest = tmp_path / "OSWorld-V2"
-    (dest / "scripts" / "python").mkdir(parents=True)
-    (dest / "desktop_env" / "providers").mkdir(parents=True)
-    (dest / "desktop_env" / "providers" / "__init__.py").write_text(
-        '    else:\n        raise NotImplementedError(f"{provider_name} not implemented!")'
-    )
-    (dest / "desktop_env" / "desktop_env.py").write_text(
-        'if self.provider_name in {"docker", "aws", "gcp", "azure", "aliyun", "volcengine"}:\n'
-        "if self.is_environment_used:\n"
-    )
-    (dest / "scripts" / "python" / "run_multienv_m3.py").write_text(
-        '        "--provider_name", type=str, default="aws", '
-        'choices=["aws", "virtualbox", "vmware", "docker", "azure"], help="Provider name"\n'
-    )
+def _apply_patches(dest: Path) -> None:
     script = (ROOT / "runner" / "setup.sh").read_text()
     body = script[
         script.index("apply_adapter_patches() {") : script.index(
@@ -96,15 +82,183 @@ def test_setup_patches_the_m3_runner_provider_choices(tmp_path):
         capture_output=True,
         text=True,
     )
+
+
+PINNED_PARSER_HEAD = "import re\n"
+PINNED_KEY_TABLE = (
+    "            key_conversion = {\n"
+    '                "page_down": "pagedown",\n'
+    '                "page_up": "pageup",\n'
+    '                "super_l": "win",\n'
+    '                "super": "command",\n'
+    '                "escape": "esc",\n'
+    "            }\n"
+)
+PINNED_INFEASIBLE = (
+    '    if "[INFEASIBLE]" in response:\n        return "[INFEASIBLE]", ["FAIL"]\n'
+)
+PINNED_NON_200_BRANCH = (
+    "                else:\n"
+    '                    logger.error("Failed to execute command. Status code: %d", response.status_code)\n'
+    '                    logger.info("Retrying to execute command.")\n'
+)
+PINNED_CONTROLLER = (
+    "                response = requests.post(self.http_server + \"/execute\", headers={'Content-Type': 'application/json'},\n"
+    "                                         data=payload, timeout=90)\n"
+    "                if response.status_code == 200:\n"
+    "                    return response.json()\n"
+    + PINNED_NON_200_BRANCH
+    + "    def run_python_script(self, script: str, timeout=90) -> Optional[Dict[str, Any]]:\n"
+)
+
+
+# The anchor strings blocks (e)-(h) replace, mirrored from runner/setup.sh. Each
+# must occur exactly once in the pinned upstream file -- see
+# test_setup_anchors_are_unique_in_the_pinned_upstream_files.
+PIN_ANCHORS = {
+    "mm_agents/m3/parser.py": (
+        '                "super_l": "win",\n                "super": "command",\n',
+        PINNED_INFEASIBLE,
+        "import re\n",
+    ),
+    "desktop_env/controllers/python.py": (
+        "data=payload, timeout=90)",
+        PINNED_NON_200_BRANCH,
+    ),
+}
+
+
+def test_setup_anchors_are_unique_in_the_pinned_upstream_files():
+    """A pin bump that moves an anchor must fail here, not at run time."""
+    source = ROOT / "OSWorld-V2"
+    if not (source / ".git").exists():
+        pytest.skip("pinned upstream checkout not installed")
+    for relative, anchors in PIN_ANCHORS.items():
+        pristine = subprocess.check_output(
+            ["git", "-C", str(source), "show", f"{PIN}:{relative}"], text=True
+        )
+        for anchor in anchors:
+            assert pristine.count(anchor) == 1, (relative, anchor)
+
+
+def _seed_minimal_checkout(dest: Path, parser_text: str, controller_text: str) -> None:
+    (dest / "scripts" / "python").mkdir(parents=True)
+    (dest / "desktop_env" / "providers").mkdir(parents=True)
+    (dest / "desktop_env" / "controllers").mkdir(parents=True)
+    (dest / "mm_agents" / "m3").mkdir(parents=True)
+    (dest / "desktop_env" / "providers" / "__init__.py").write_text(
+        '    else:\n        raise NotImplementedError(f"{provider_name} not implemented!")'
+    )
+    (dest / "desktop_env" / "desktop_env.py").write_text(
+        'if self.provider_name in {"docker", "aws", "gcp", "azure", "aliyun", "volcengine"}:\n'
+        "if self.is_environment_used:\n"
+    )
+    (dest / "scripts" / "python" / "run_multienv_m3.py").write_text(
+        'choices=["aws", "virtualbox", "vmware", "docker", "azure"]\n'
+    )
+    (dest / "mm_agents" / "m3" / "parser.py").write_text(parser_text)
+    (dest / "desktop_env" / "controllers" / "python.py").write_text(controller_text)
+
+
+def test_setup_patches_the_m3_runner_provider_choices(tmp_path):
+    dest = tmp_path / "OSWorld-V2"
+    _seed_minimal_checkout(
+        dest,
+        PINNED_PARSER_HEAD + PINNED_KEY_TABLE + PINNED_INFEASIBLE,
+        PINNED_CONTROLLER,
+    )
+    _apply_patches(dest)
     patched = (dest / "scripts" / "python" / "run_multienv_m3.py").read_text()
     assert (
         'choices=["aws", "virtualbox", "vmware", "docker", "azure", "e2b"]' in patched
     )
     # idempotent
-    subprocess.run(
-        ["bash", "-c", body + f'\napply_adapter_patches "{dest}"'],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+    _apply_patches(dest)
     assert patched == (dest / "scripts" / "python" / "run_multienv_m3.py").read_text()
+
+
+def test_setup_maps_m3_super_key_to_x11_win(tmp_path):
+    dest = tmp_path / "OSWorld-V2"
+    _seed_minimal_checkout(
+        dest,
+        PINNED_PARSER_HEAD + PINNED_KEY_TABLE + PINNED_INFEASIBLE,
+        PINNED_CONTROLLER,
+    )
+    _apply_patches(dest)
+    patched = (dest / "mm_agents" / "m3" / "parser.py").read_text()
+    assert '"super": "win",' in patched
+    assert '"super": "command"' not in patched
+    assert '"super_l": "win",' in patched  # neighbours untouched
+    _apply_patches(dest)  # idempotent
+    assert patched == (dest / "mm_agents" / "m3" / "parser.py").read_text()
+
+
+def test_setup_ignores_infeasible_marker_inside_the_thinking_block(tmp_path):
+    dest = tmp_path / "OSWorld-V2"
+    _seed_minimal_checkout(
+        dest,
+        PINNED_PARSER_HEAD + PINNED_KEY_TABLE + PINNED_INFEASIBLE,
+        PINNED_CONTROLLER,
+    )
+    _apply_patches(dest)
+    patched = (dest / "mm_agents" / "m3" / "parser.py").read_text()
+    assert 'if "[INFEASIBLE]" in _M3_THINK_BLOCK.sub("", response):' in patched
+    assert '_M3_THINK_BLOCK = re.compile(r"<mm:think>.*?</mm:think>", re.S)' in patched
+    _apply_patches(dest)
+    assert patched == (dest / "mm_agents" / "m3" / "parser.py").read_text()
+
+
+def test_patched_infeasible_check_semantics():
+    # Pure-Python check of the exact expression the patch installs.
+    import re
+
+    think = re.compile(r"<mm:think>.*?</mm:think>", re.S)
+    inside = (
+        "<mm:think>maybe [INFEASIBLE]?\nno, try ctrl+c</mm:think>\n"
+        '<tool_call>{"action":"key","text":"ctrl+c"}</tool_call>'
+    )
+    outside = "<mm:think>reasoning</mm:think>\n[INFEASIBLE]"
+    assert "[INFEASIBLE]" not in think.sub("", inside)
+    assert "[INFEASIBLE]" in think.sub("", outside)
+
+
+def test_setup_extends_the_action_deadline_past_the_guest_kill(tmp_path):
+    dest = tmp_path / "OSWorld-V2"
+    _seed_minimal_checkout(
+        dest,
+        PINNED_PARSER_HEAD + PINNED_KEY_TABLE + PINNED_INFEASIBLE,
+        PINNED_CONTROLLER,
+    )
+    _apply_patches(dest)
+    patched = (dest / "desktop_env" / "controllers" / "python.py").read_text()
+    assert "data=payload, timeout=130)" in patched
+    assert (
+        "def run_python_script(self, script: str, timeout=90)" in patched
+    )  # untouched
+    _apply_patches(dest)
+    assert patched == (dest / "desktop_env" / "controllers" / "python.py").read_text()
+
+
+def test_setup_stops_retrying_after_the_guest_reports_its_own_timeout(tmp_path):
+    dest = tmp_path / "OSWorld-V2"
+    _seed_minimal_checkout(
+        dest,
+        PINNED_PARSER_HEAD + PINNED_KEY_TABLE + PINNED_INFEASIBLE,
+        PINNED_CONTROLLER,
+    )
+    _apply_patches(dest)
+    patched = (dest / "desktop_env" / "controllers" / "python.py").read_text()
+    guard = 'if response.status_code == 500 and "timed out after" in response.text:'
+    assert guard in patched
+    # The guard gives up (break) instead of falling through to the retry.
+    after_guard = patched.index(guard)
+    assert patched.index("break", after_guard) < patched.index(
+        'logger.info("Retrying to execute command.")', after_guard
+    )
+    # A non-timeout non-200 still retries: the retry log line survives.
+    assert 'logger.info("Retrying to execute command.")' in patched
+    assert (
+        "def run_python_script(self, script: str, timeout=90)" in patched
+    )  # untouched
+    _apply_patches(dest)  # idempotent
+    assert patched == (dest / "desktop_env" / "controllers" / "python.py").read_text()

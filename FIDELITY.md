@@ -243,16 +243,23 @@ full native-result parity or a passing 24-task sample.
   `xlang-ai/osworld-server@a3cc3f0c64e463f020d1a44780307e9b46cbcab1`, with hark's null-safe
   AT-SPI serializer guards re-applied, plus the exact-process-path open-file fallback and
   near-silent ffmpeg recording flags. The unlicensed source is generated only by
-  `template/fetch_server.sh`; the repository carries two reviewable patches against the pin,
+  `template/fetch_server.sh`; the repository carries two reviewable patches against the pin
+  (`patches/osworld-server-atspi-guards.patch`, `patches/osworld-server-runtime-reliability.patch`),
   not a copy of upstream source. V2 carries the identical AT-SPI defect — `role`, `name`,
   action description, key binding, stripped role-name — at the same call sites as V1.
   Corroborated live: accessibility observations returned substantial, non-empty content
   with no serialization crash across every one of the 20 validated sandboxes
   (`out/osworld-v2-evidence/validate-run1.json`, `validate-run2.json`,
   `accessibility_characters` present and nonzero on every record).
-- **Provider contract**: `E2BVMManager`/`E2BProvider` registered via three idempotent,
-  grep-guarded source patches (factory registration, cloud-provider classification, strict
-  reset) — patch anchors and logic committed at `runner/setup.sh`.
+- **Provider contract**: `E2BVMManager`/`E2BProvider` registered by `runner/setup.sh`, whose
+  whole footprint in the pinned checkout is eight idempotent, anchor-asserted string patches
+  (a)–(h) across five tracked files — `desktop_env/providers/__init__.py` (factory
+  registration), `desktop_env/desktop_env.py` (cloud-provider classification, strict reset),
+  `scripts/python/run_multienv_m3.py` (`--provider_name e2b`), `mm_agents/m3/parser.py` and
+  `desktop_env/controllers/python.py` (the disclosed execution patches below) — plus the
+  vendored provider files (`provider.py`, `manager.py`, `bridge.py`, `e2b_policy.py`). Patch
+  anchors and logic are committed at `runner/setup.sh`; `setup.sh --verify` proves exactly
+  this set before a run and `--restore` removes it.
   Verified working, not just applied: the environment-path validation ladder created 20
   unique sandboxes through this exact provider registration, all `PATH_PASS`
   (`out/osworld-v2-evidence/validate-run1.json`, `validate-run2.json`). Destroy-and-
@@ -366,6 +373,46 @@ full native-result parity or a passing 24-task sample.
   `400 Invalid host`). `WEBSITE_HOST_SUFFIX=127.0.0.1.nip.io:8090` via the host proxy (binding
   127.0.0.1:80 was denied on the build host) plus a native-root guest-side proxy on :80/:8090.
   Port 8080 remains exclusively assigned to VLC.
+
+### Local patches to upstream execution (disclosed; applied by runner/setup.sh, proven by --verify)
+
+These change agent-action execution relative to the pinned upstream code and are therefore
+recorded as deviations from the reference runtime, not as fidelity fixes. Each is one anchored
+string replacement in `runner/setup.sh` (`assert count == 1` against the pin, idempotence
+guard); `runner/setup.sh --restore` removes them and `runner/setup.sh --verify` proves the
+exact patched state before every run.
+
+| Patch | Upstream behaviour | Local behaviour | Evidence |
+|---|---|---|---|
+| (e) `mm_agents/m3/parser.py` key table | `super` → `command`; PyAutoGUI's X11 backend has no such key and silently drops the press | `super` → `win` (the X11 Super key) | `docs/sample-run-results.md` task 103 (confirmed misexecuted action) |
+| (f) `mm_agents/m3/parser.py` terminal marker | `[INFEASIBLE]` anywhere in the response — reasoning included — returns `FAIL` and ends the rollout | the marker counts only outside `<mm:think>…</mm:think>`; a marker in reasoning no longer overrides a tool call in the same response | `docs/sample-run-results.md` task 067 (marker in reasoning overrode an actual Ctrl+C tool call) |
+| (g) `desktop_env/controllers/python.py` action deadline | the client gives up at 90 s and returns `None` while the guest keeps executing to its own 120 s deadline, so typing continues under the next action | the client waits up to 130 s, so the guest's verdict for its 120 s kill arrives before the client gives up | `docs/sample-run-results.md` tasks 093, 059, 079, 082; the 2026-09-14 isolated typing control above (`None` at 90.12 s, completion at 102.61 s) |
+| (h) `desktop_env/controllers/python.py` guest-timeout retry | a non-200 is retried up to `retry_times`, so the guest's timeout 500 would replay a partially applied action | a 500 whose body carries subprocess's `timed out after` text breaks out of the retry loop and falls through to upstream's own `return None` — the same value upstream returns on a client-side `ReadTimeout`, with no replay | same tasks as (g); `tests/test_checkout_verification.py` pins the patched text and the anchor's uniqueness in the pin |
+
+(h) deliberately keeps `None` rather than inventing a success-shaped result: upstream evaluator
+getters read `env.controller.execute_python_command(...)["output"]`, so a 200 carrying empty
+output would convert an infrastructure failure into a silent zero score. No evaluator code path
+changes.
+
+Not patched, and still disclosed limitations: the M3 prompt forbids asking for clarification and
+omits the parser-supported `call_user` action (task 095); the guest's 0.1-second PyAutoGUI pause
+and every typing speed; `MAX_STEPS`; every agent and evaluator prompt; and every scoring function
+are upstream's, unchanged.
+
+Two behaviour changes these patches introduce, stated plainly: an `[INFEASIBLE]` emitted only
+inside the reasoning block with no accompanying tool call now continues the rollout instead of
+terminating it, so such runs consume more steps and more inference spend than they did on the
+unpatched parser; and the worst-case span of a non-timeout retry inside
+`execute_python_command` grew with the longer per-request deadline (three attempts at up to
+130 s each instead of 90 s), because (h) short-circuits only the guest's own timeout 500.
+
+`maintainer/typing_control.py` is the isolated control that exercises (g) and (h) together
+against one live guest build — one 3,000-keypress action, the returned value and its wall
+time, two screenshots 15 s apart, and the guest's own `POST /execute` count. It has not been
+run yet: it needs a candidate build id, so no result is claimed here.
+
+Upstream issue drafts for (e), (f), and the 90 s-client/120 s-guest deadline mismatch are
+prepared under `out/osworld-v2-evidence/upstream-issues/`; they have not been filed.
 
 ## Not-certified / excluded
 
