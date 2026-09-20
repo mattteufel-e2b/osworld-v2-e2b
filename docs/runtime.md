@@ -34,17 +34,16 @@ sandbox-metrics API; 15 sandboxes, no CPU/memory/disk saturation flags):
 | Fleet ×2 (websites, GitLab) | 4 | 8 GB (+8 GB swap at launch) | same entitlement | first compose build is the heavy phase (~524 s) |
 
 The guest disk entry is the image footprint, not a live-run peak: the build's own smoke sandbox
-on `osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8` reported 17,381,838,848 bytes used of
-114,834,632,704 usable on `/` before any task wrote anything (`rootUsedBytes` in that build's
+on `osworld-v2-gnome:cd4a1a63-eb56-418f-9ac3-60fbbf2b838e` reported 17,384,730,624 bytes used of
+114,839,875,584 usable on `/` before any task wrote anything (`rootUsedBytes` in that build's
 receipt, committed at
-`out/osworld-v2-evidence/template/template-build-00124a57-267c-45e7-93d1-ca0ff196e4b8.json`),
-so a running task only adds to it. The cell previously read ~7 GiB, a live-run peak
-measured on an earlier build that did not yet carry the applications below; the two figures are
-not directly comparable. That footprint covers the preinstalled application set recorded in the
+`out/osworld-v2-evidence/template/template-build-cd4a1a63-eb56-418f-9ac3-60fbbf2b838e.json`),
+so a running task only adds to it. That footprint covers the preinstalled application set recorded in the
 receipt's `applicationInventory` — Google Chrome 153.0.8010.47-1 and KiCad 10.0.6~ubuntu22.04.1
 (apt, `apt-mark hold`, version frozen by the build id rather than by a source pin), WPS Office
 11.1.0.11723.XA, Blender 4.5.14 LTS, x11vnc 0.9.16-8, novnc 1:1.0.0-5, websockify
-0.10.0+dfsg1-2build1 and libnss3-tools 2:3.98-0ubuntu0.22.04.4 — plus the sha256-pinned MuseScore
+0.10.0+dfsg1-2build1, libnss3-tools 2:3.98-0ubuntu0.22.04.4, and poppler-utils
+22.02.0-2ubuntu0.13 — plus the sha256-pinned MuseScore
 Studio 4.6.5 and FreeCAD 1.1.3 AppImages under `/opt`, whose versions are pinned in
 `template/template.ts` and whose extracted AppImage payloads the same smoke listed.
 
@@ -68,15 +67,34 @@ Don't trim below these even though measured peaks look low:
 - **Fleet swap is required once**: the websites fleet's first-boot compose build (23 images)
   OOM-wedges an 8 GB sandbox without it; launchers add it idempotently.
 
-Both parallel drivers default to and cap `PARALLEL_CONCURRENCY` at 80. Strict reset can
-briefly hold two guests per worker, so 80 workers peak near 160 guest sandboxes plus the two
-fleet sandboxes under a 200-concurrent-sandbox account ceiling; that ceiling, not port
-layout, is why the cap exists. Each worker is one `agent_runner.py` process whose provider
-binds OS-assigned loopback ports, so there is no port arithmetic and no fixed per-slot
-range. Optional retry waves use `AGENT_RETRY_CONCURRENCY` (default and cap of 4). Actual
-concurrency also depends on the selected tasks, available host resources, and your E2B
-account capacity. Each host worker also runs upstream's evaluator stack
-(easyocr/torch load only if an OCR metric runs).
+Both parallel drivers default to and cap `PARALLEL_CONCURRENCY` at 80. This is a
+coordinator policy, not the measured E2B account limit. Strict reset creates the replacement
+before deleting the old guest, so budget up to `2 × workers + 2` sandboxes with both fleets:
+162 at 80 workers, 198 at 98. A September 20 admission probe held **201 simultaneous
+sandboxes** successfully; it did not find the account's hard limit. The former 200-sandbox
+planning assumption is therefore not an enforced account ceiling.
+
+On `osworld-v2-gnome:be5ffc32-390c-4b67-99c7-c14b42861019`, 80 independent task-030 setup
+workers passed, and a separate 98-worker bridge probe passed three strict-reset cycles
+(392 guests). Final build `cd4a1a63…` passed task-030 setup and observations in 98/98
+processes with no 502s. Eighty-five workers needed retries after accessibility HTTP 500s;
+maximum accessibility readiness was 79 seconds. These are environment tests, not 80- or
+98-way full-inference benchmarks.
+The guest serializes Linux accessibility/terminal reads because concurrent AT-SPI traversal
+crashed the previous control server inside GLib. See the [evidence](../out/osworld-v2-evidence/concurrency/verification-20260920.json).
+
+Each worker binds OS-assigned loopback ports; no fixed port range limits worker count.
+Optional retry waves use `AGENT_RETRY_CONCURRENCY` (default and cap of four). Host memory,
+task-specific resource use, shared fleet load, and inference quotas also constrain useful
+concurrency. AWS publishes Opus 5 Mantle defaults of 20M input and 2M output tokens/minute;
+Mantle has no requests/minute quota, but capacity throttling can still occur. These are
+[published defaults](https://docs.aws.amazon.com/general/latest/gr/bedrock.html), not this
+account's verified quotas. [Quota accounting](https://docs.aws.amazon.com/bedrock/latest/userguide/quotas-mantle.html)
+reserves input plus maximum output on admission and excludes cached input reads. The bearer
+key's model-list response exposed no quota values; its free token-counting requests returned
+403. An 80-request simultaneous Opus 5 burst completed with 80 HTTP 200 responses
+in 2.58 seconds, using tiny text prompts, 32 output tokens, and disabled thinking. This
+does not validate 80 long-context agent sessions. No fixed model-concurrency limit was established.
 
 ## Layout
 

@@ -22,12 +22,17 @@ The shipped kinds are upstream's own agents from the pinned checkout:
   m3      ``mm_agents.m3.M3Agent`` (MiniMax-M3; Anthropic Messages transport).
           ``M3_THINKING_MODE`` / ``M3_THINKING_BUDGET`` / ``M3_MAX_LLM_RETRIES``
           are read by the upstream agent itself.
+  claude  ``mm_agents.anthropic.main.AnthropicAgent`` with native computer-use
+          actions over Anthropic Messages, including Bedrock Mantle endpoints.
+          A thin subclass raises upstream's failure sentinel as an exception.
 
 Generation defaults mirror upstream's ``run.py`` (prompt) and
 ``scripts/python/run_multienv_m3.py`` (m3); the runner's ``--max-tokens``,
 ``--temperature``, ``--top-p`` and ``--max-trajectory-length`` flags override
-them. Observation stays ``screenshot`` and actions ``pyautogui``: that is what
-the E2B guest exposes today. No secrets are logged.
+them. Claude uses adaptive max effort, at least 16000 output tokens and native
+``claude_computer_use`` action dictionaries. Its image-retention override maps
+to ``only_n_most_recent_images``; sampling overrides are rejected because Opus 5
+does not support them. All agents observe screenshots. No secrets are logged.
 """
 
 from __future__ import annotations
@@ -53,6 +58,13 @@ _GENERATION_DEFAULTS = {
         "top_p": None,
         "temperature": 0.6,
         "max_trajectory_length": 10,
+    },
+    "claude": {
+        "max_tokens": 16000,
+        "top_p": None,
+        "temperature": None,
+        "only_n_most_recent_images": 10,
+        "effort": "max",
     },
 }
 _INTERACTION = {"action_space": "pyautogui", "observation_type": "screenshot"}
@@ -145,10 +157,47 @@ def build_m3_agent(model: str, settings: dict, client_password: str):
     )
 
 
+def build_claude_agent(model: str, settings: dict, client_password: str):
+    # Workers run in separate processes. Upstream creates its own SDK client on
+    # each predict(); route that unchanged client via its supported env vars.
+    from mm_agents.anthropic.main import AnthropicAgent
+    from mm_agents.anthropic.utils import APIProvider, get_claude_runtime_profile
+
+    if client_password != "osworld-public-evaluation":
+        raise ValueError(
+            "claude requires the upstream desktop password 'osworld-public-evaluation'"
+        )
+    if get_claude_runtime_profile(model).thinking_mode != "adaptive":
+        raise ValueError(
+            f"claude model {model!r} has no adaptive-thinking profile in the pinned upstream agent"
+        )
+
+    class NativeClaudeAgent(AnthropicAgent):
+        def predict(self, *args, **kwargs):
+            response, actions = super().predict(*args, **kwargs)
+            if response is None:
+                raise RuntimeError("Claude prediction failed; see the raw agent logs")
+            return response, actions
+
+    os.environ["ANTHROPIC_BASE_URL"] = os.environ["MODEL_BASE_URL"]
+    os.environ["ANTHROPIC_AUTH_TOKEN"] = os.environ["MODEL_API_KEY"]
+    return NativeClaudeAgent(
+        model=model,
+        api_key=os.environ["MODEL_API_KEY"],
+        # Mantle accepts Anthropic Messages with bearer auth, not the SDK's
+        # SigV4/Bedrock Runtime transport selected by APIProvider.BEDROCK.
+        provider=APIProvider.ANTHROPIC,
+        platform="Ubuntu",
+        screen_size=(1920, 1080),
+        **settings,
+    )
+
+
 # AGENT_KIND -> builder(model, settings, client_password). Add yours here.
 AGENT_KINDS = {
     "prompt": build_prompt_agent,
     "m3": build_m3_agent,
+    "claude": build_claude_agent,
 }
 
 
@@ -159,6 +208,7 @@ def agent_settings(
     temperature: float | None = None,
     top_p: float | None = None,
     max_trajectory_length: int | None = None,
+    max_steps: int = 500,
 ) -> dict:
     """Resolve the generation settings for ``kind``: upstream defaults, with any
     explicitly given value overriding. The result is what the agent is built
@@ -168,6 +218,22 @@ def agent_settings(
             f"unknown AGENT_KIND {kind!r}; known kinds: {sorted(AGENT_KINDS)}"
         )
     settings = dict(_GENERATION_DEFAULTS.get(kind, {}))
+    if kind == "claude":
+        if temperature is not None or top_p is not None:
+            raise ValueError(
+                "claude uses model-default sampling; temperature/top_p overrides are unsupported"
+            )
+        settings["max_tokens"] = max(
+            16000, max_tokens if max_tokens is not None else 16000
+        )
+        if max_trajectory_length is not None:
+            settings["only_n_most_recent_images"] = max_trajectory_length
+        settings.update(
+            max_steps=max_steps,
+            action_space="claude_computer_use",
+            observation_type="screenshot",
+        )
+        return settings
     overrides = {
         "max_tokens": max_tokens,
         "temperature": temperature,

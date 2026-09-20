@@ -121,6 +121,7 @@ def test_fetch_server_applies_every_committed_patch_to_the_pinned_checkout():
     assert "lock.release" in build
     assert [patch.name for patch in patches] == [
         "osworld-server-atspi-guards.patch",
+        "osworld-server-atspi-serialization.patch",
         "osworld-server-runtime-reliability.patch",
     ]
     assert 'PATCH_DIR="$REPO_ROOT/patches"' in fetch
@@ -813,6 +814,20 @@ def test_template_build_smoke_covers_ipv4_and_ipv6_protected_ranges():
 
     for cidr in ("169.254.0.0/16", "::1/128", "fc00::/7", "fe80::/10", "ff00::/8"):
         assert cidr in build
+
+
+def test_slide_evaluators_have_pdf_renderer_installed_and_build_gated():
+    template = (ROOT / "template" / "template.ts").read_text()
+    build = (ROOT / "template" / "build.ts").read_text()
+
+    # Tasks 079/087 require this renderer for slide-based scoring.
+    assert re.search(r"apt-get install[^\n]*\bpoppler-utils\b", template)
+    launchers = build.split("const launchers = [", 1)[1].split("]", 1)[0]
+    assert "'pdftoppm'" in launchers
+    required_packages = re.search(r"for p in ([^;]+); do", build).group(1).split()
+    assert "poppler-utils" in required_packages
+    assert 'echo \\"MISSING_PACKAGE $p\\"' in build
+    assert "throw new Error(`application inventory smoke failed:" in build
 
 
 def test_guest_server_dependency_contract_excludes_broken_anyio_release():

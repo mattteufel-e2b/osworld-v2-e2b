@@ -1,0 +1,755 @@
+{
+  "release": "osworld-v2-2026.08.08",
+  "checkout_commit": "d578d2d4e0dc82b43e270fdaa7fa89d9708cd154",
+  "date": "2026-09-20",
+  "guest_patch_sha256": "179f80f629571f823ebc6775cea5942e9b8108ed5c8e4fc4eca60267139bd4c3",
+  "account_admission": {
+    "max_attempts": 201,
+    "template": "osworld-v2-gnome:be5ffc32-390c-4b67-99c7-c14b42861019",
+    "admitted": 201,
+    "observed_live": 201,
+    "cleanup_succeeded": 201,
+    "remaining_live": 0,
+    "wall_s": 13.23
+  },
+  "worker_policy": {
+    "default": 80,
+    "cap": 80,
+    "strict_reset_worst_case_with_fleets": "2 * workers + 2",
+    "platform_hard_limit_established": false
+  },
+  "before_task030": {
+    "raw_directory": "out/osworld-v2-raw/concurrency-20260920/task030-w80-1789935912",
+    "template": "osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8",
+    "task_id": "030",
+    "workers": 80,
+    "completed": 80,
+    "passed": 74,
+    "failed": 6,
+    "reset_max_s": 72.744,
+    "accessibility_max_s": 60.309,
+    "inference_calls": 0,
+    "scope": "actual upstream task setup + screenshot + bounded accessibility readiness; no evaluator"
+  },
+  "after_task030": {
+    "raw_directory": "out/osworld-v2-raw/concurrency-20260920/task030-w80-1789936173",
+    "template": "osworld-v2-gnome:be5ffc32-390c-4b67-99c7-c14b42861019",
+    "task_id": "030",
+    "workers": 80,
+    "completed": 80,
+    "passed": 80,
+    "failed": 0,
+    "reset_max_s": 70.774,
+    "accessibility_max_s": 27.808,
+    "inference_calls": 0,
+    "scope": "actual upstream task setup + screenshot + bounded accessibility readiness; no evaluator"
+  },
+  "before_bridge": {
+    "raw_directory": "out/osworld-v2-raw/concurrency-20260920/w98-1789935567",
+    "template": "osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8",
+    "workers": 98,
+    "reset_rounds": 2,
+    "unique_guest_ids": 294,
+    "stages": {
+      "create": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {},
+        "nonempty_trees": 0,
+        "failed_worker_indexes": [],
+        "median_s": 1.876,
+        "max_s": 9.526
+      },
+      "initial_observations": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {
+          "200": 294
+        },
+        "nonempty_trees": 98,
+        "failed_worker_indexes": [],
+        "median_s": 3.979,
+        "max_s": 28.164
+      },
+      "reset_0": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {},
+        "nonempty_trees": 0,
+        "failed_worker_indexes": [],
+        "median_s": 1.758,
+        "max_s": 10.586
+      },
+      "after_reset_0": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {
+          "200": 294
+        },
+        "nonempty_trees": 98,
+        "failed_worker_indexes": [],
+        "median_s": 3.981,
+        "max_s": 38.53
+      },
+      "launch_vscode_0": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {
+          "200": 98
+        },
+        "nonempty_trees": 0,
+        "failed_worker_indexes": [],
+        "median_s": 0.185,
+        "max_s": 0.941
+      },
+      "loaded_observations_0": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {
+          "200": 294
+        },
+        "nonempty_trees": 98,
+        "failed_worker_indexes": [],
+        "median_s": 2.62,
+        "max_s": 8.131
+      },
+      "gui_0": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {
+          "200": 98
+        },
+        "nonempty_trees": 0,
+        "failed_worker_indexes": [],
+        "median_s": 0.183,
+        "max_s": 1.033
+      },
+      "reset_1": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {},
+        "nonempty_trees": 0,
+        "failed_worker_indexes": [],
+        "median_s": 1.2,
+        "max_s": 8.796
+      },
+      "after_reset_1": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {
+          "200": 292,
+          "502": 2
+        },
+        "nonempty_trees": 96,
+        "failed_worker_indexes": [
+          47,
+          84
+        ],
+        "median_s": 3.17,
+        "max_s": 22.132
+      },
+      "launch_vscode_1": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {
+          "200": 96,
+          "502": 2
+        },
+        "nonempty_trees": 0,
+        "failed_worker_indexes": [
+          47,
+          84
+        ],
+        "median_s": 0.19,
+        "max_s": 1.195
+      },
+      "loaded_observations_1": {
+        "workers": 98,
+        "exceptions": 1,
+        "http_status_counts": {
+          "200": 285,
+          "502": 6
+        },
+        "nonempty_trees": 95,
+        "failed_worker_indexes": [
+          47,
+          84,
+          90
+        ],
+        "median_s": 2.768,
+        "max_s": 100.694
+      },
+      "gui_1": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {
+          "200": 96,
+          "502": 2
+        },
+        "nonempty_trees": 0,
+        "failed_worker_indexes": [
+          47,
+          84
+        ],
+        "median_s": 0.22,
+        "max_s": 1.19
+      },
+      "stop": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {},
+        "nonempty_trees": 0,
+        "failed_worker_indexes": [],
+        "median_s": 0.118,
+        "max_s": 0.179
+      }
+    },
+    "inference_calls": 0
+  },
+  "after_bridge": {
+    "raw_directory": "out/osworld-v2-raw/concurrency-20260920/w98-1789936393",
+    "template": "osworld-v2-gnome:be5ffc32-390c-4b67-99c7-c14b42861019",
+    "workers": 98,
+    "reset_rounds": 3,
+    "unique_guest_ids": 392,
+    "stages": {
+      "create": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {},
+        "nonempty_trees": 0,
+        "failed_worker_indexes": [],
+        "median_s": 1.734,
+        "max_s": 6.978
+      },
+      "initial_observations": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {
+          "200": 294
+        },
+        "nonempty_trees": 98,
+        "failed_worker_indexes": [],
+        "median_s": 3.645,
+        "max_s": 37.039
+      },
+      "reset_0": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {},
+        "nonempty_trees": 0,
+        "failed_worker_indexes": [],
+        "median_s": 1.474,
+        "max_s": 3.572
+      },
+      "after_reset_0": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {
+          "200": 294
+        },
+        "nonempty_trees": 98,
+        "failed_worker_indexes": [],
+        "median_s": 3.617,
+        "max_s": 7.016
+      },
+      "launch_vscode_0": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {
+          "200": 98
+        },
+        "nonempty_trees": 0,
+        "failed_worker_indexes": [],
+        "median_s": 0.192,
+        "max_s": 0.256
+      },
+      "loaded_observations_0": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {
+          "200": 294
+        },
+        "nonempty_trees": 98,
+        "failed_worker_indexes": [],
+        "median_s": 3.196,
+        "max_s": 4.737
+      },
+      "gui_0": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {
+          "200": 98
+        },
+        "nonempty_trees": 0,
+        "failed_worker_indexes": [],
+        "median_s": 0.21,
+        "max_s": 0.308
+      },
+      "reset_1": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {},
+        "nonempty_trees": 0,
+        "failed_worker_indexes": [],
+        "median_s": 0.65,
+        "max_s": 2.677
+      },
+      "after_reset_1": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {
+          "200": 294
+        },
+        "nonempty_trees": 98,
+        "failed_worker_indexes": [],
+        "median_s": 3.382,
+        "max_s": 6.645
+      },
+      "launch_vscode_1": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {
+          "200": 98
+        },
+        "nonempty_trees": 0,
+        "failed_worker_indexes": [],
+        "median_s": 0.233,
+        "max_s": 0.538
+      },
+      "loaded_observations_1": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {
+          "200": 294
+        },
+        "nonempty_trees": 98,
+        "failed_worker_indexes": [],
+        "median_s": 3.158,
+        "max_s": 4.402
+      },
+      "gui_1": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {
+          "200": 98
+        },
+        "nonempty_trees": 0,
+        "failed_worker_indexes": [],
+        "median_s": 0.206,
+        "max_s": 0.278
+      },
+      "reset_2": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {},
+        "nonempty_trees": 0,
+        "failed_worker_indexes": [],
+        "median_s": 0.645,
+        "max_s": 1.841
+      },
+      "after_reset_2": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {
+          "200": 294
+        },
+        "nonempty_trees": 98,
+        "failed_worker_indexes": [],
+        "median_s": 3.099,
+        "max_s": 5.29
+      },
+      "launch_vscode_2": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {
+          "200": 98
+        },
+        "nonempty_trees": 0,
+        "failed_worker_indexes": [],
+        "median_s": 0.201,
+        "max_s": 0.261
+      },
+      "loaded_observations_2": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {
+          "200": 294
+        },
+        "nonempty_trees": 98,
+        "failed_worker_indexes": [],
+        "median_s": 3.365,
+        "max_s": 4.368
+      },
+      "gui_2": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {
+          "200": 98
+        },
+        "nonempty_trees": 0,
+        "failed_worker_indexes": [],
+        "median_s": 0.204,
+        "max_s": 0.494
+      },
+      "stop": {
+        "workers": 98,
+        "exceptions": 0,
+        "http_status_counts": {},
+        "nonempty_trees": 0,
+        "failed_worker_indexes": [],
+        "median_s": 0.097,
+        "max_s": 0.255
+      }
+    },
+    "inference_calls": 0
+  },
+  "crash_evidence": {
+    "crashed_guest_ids": [
+      "ieb03m6pn5oscx1h9ywci",
+      "iv541ousg2t3aoh90pgwt"
+    ],
+    "signal": "SIGSEGV",
+    "library": "libglib-2.0.so.0.7200.4",
+    "symbolized_path": [
+      "atspi_accessible_get_name",
+      "dbind_send_and_allow_reentry",
+      "dbus_connection_dispatch",
+      "g_queue_push_tail",
+      "g_list_append",
+      "g_slice_alloc"
+    ],
+    "other_thread": "simultaneous atspi_accessible_get_child_at_index / DBus call",
+    "available_ram_mb_min": 7000,
+    "first_corruption_instruction_identified": false,
+    "core_debug_guest_deleted": true
+  },
+  "native_canary": {
+    "model": "anthropic.claude-opus-5",
+    "agent_kind": "claude",
+    "benchmark_score": null,
+    "purpose": "native upstream agent tool/transport canary",
+    "template": "osworld-v2-gnome:be5ffc32-390c-4b67-99c7-c14b42861019",
+    "settings": {
+      "max_tokens": 16000,
+      "top_p": null,
+      "temperature": null,
+      "only_n_most_recent_images": 10,
+      "effort": "max",
+      "max_steps": 10,
+      "action_space": "claude_computer_use",
+      "observation_type": "screenshot"
+    },
+    "sandbox_id": "ixhhpykcp0blrymnszfnl",
+    "predict_calls": 8,
+    "native_action_dicts": 8,
+    "artifact_verified": true,
+    "passed": true,
+    "wall_s": 44.575
+  },
+  "model_concurrency": {
+    "tested_full_agent_workers": 2,
+    "account_quota_verified": false,
+    "published_opus5_mantle_input_tpm": 20000000,
+    "published_opus5_mantle_output_tpm": 2000000,
+    "count_tokens_access_status": 403
+  },
+  "inference_accounting": {
+    "shared_cap_usd": 160,
+    "user_limit_usd": 200,
+    "measured_estimate_usd": 59.724882,
+    "retained_unknown_or_pending_usd": 65.32864,
+    "accounted_usd": 125.053522,
+    "active_requests": 0,
+    "new_sample_measured_usd": 4.47668,
+    "note": "Token-based upper pricing estimate, not an invoice. Includes earlier sample spending and full reservations for unknown responses, including two rejected obsolete-beta requests. Pending reservations are retained."
+  },
+  "tests": {
+    "passed": 470,
+    "subtests_passed": 2,
+    "failures": 0
+  },
+  "limitations": [
+    "No full 108-task evaluator rerun on the new template.",
+    "High-worker tests cover bridge/observations and task030 setup, not a full inference campaign.",
+    "Native model scores from short samples cannot reproduce a published 500-step aggregate."
+  ],
+  "native_task_samples": [
+    {
+      "id": "087",
+      "domain": "wps",
+      "path_status": "OK",
+      "transport_ok": true,
+      "evaluator_ran": true,
+      "steps_taken": 30,
+      "score": 0.01,
+      "sandbox_id": "iw7vd66ah5s23gr28dk18",
+      "wall_clock_s": 707.3,
+      "agent_kind": "claude",
+      "model": "anthropic.claude-opus-5",
+      "max_steps": 30,
+      "agent_settings": {
+        "action_space": "claude_computer_use",
+        "effort": "max",
+        "max_steps": 30,
+        "max_tokens": 16000,
+        "observation_type": "screenshot",
+        "only_n_most_recent_images": 10,
+        "temperature": null,
+        "top_p": null
+      },
+      "model_usage": {
+        "agent": {
+          "calls": 30,
+          "input_tokens": 60,
+          "output_tokens": 14309,
+          "unmeasured_calls": 0
+        },
+        "judge": {
+          "calls": 0,
+          "input_tokens": null,
+          "output_tokens": null,
+          "unmeasured_calls": 0
+        },
+        "simulator": {
+          "calls": 0,
+          "input_tokens": null,
+          "output_tokens": null,
+          "unmeasured_calls": 0
+        }
+      },
+      "eval_model_call_attempts": 0,
+      "eval_model_successes": 0,
+      "user_sim_call_attempts": 0,
+      "user_sim_successes": 0,
+      "task_id": "087",
+      "template": "osworld-v2-gnome:be5ffc32-390c-4b67-99c7-c14b42861019"
+    },
+    {
+      "id": "092",
+      "domain": "blender",
+      "path_status": "OK",
+      "transport_ok": true,
+      "evaluator_ran": true,
+      "steps_taken": 30,
+      "score": 0.2,
+      "sandbox_id": "iv54ne0wlxeki6qflvx4k",
+      "wall_clock_s": 496.7,
+      "agent_kind": "claude",
+      "model": "anthropic.claude-opus-5",
+      "max_steps": 30,
+      "agent_settings": {
+        "action_space": "claude_computer_use",
+        "effort": "max",
+        "max_steps": 30,
+        "max_tokens": 16000,
+        "observation_type": "screenshot",
+        "only_n_most_recent_images": 10,
+        "temperature": null,
+        "top_p": null
+      },
+      "model_usage": {
+        "agent": {
+          "calls": 30,
+          "input_tokens": 60,
+          "output_tokens": 17523,
+          "unmeasured_calls": 0
+        },
+        "judge": {
+          "calls": 0,
+          "input_tokens": null,
+          "output_tokens": null,
+          "unmeasured_calls": 0
+        },
+        "simulator": {
+          "calls": 0,
+          "input_tokens": null,
+          "output_tokens": null,
+          "unmeasured_calls": 0
+        }
+      },
+      "eval_model_call_attempts": 0,
+      "eval_model_successes": 0,
+      "user_sim_call_attempts": 0,
+      "user_sim_successes": 0,
+      "task_id": "092",
+      "template": "osworld-v2-gnome:be5ffc32-390c-4b67-99c7-c14b42861019"
+    },
+    {
+      "id": "079",
+      "domain": "wps",
+      "path_status": "ERROR",
+      "transport_ok": false,
+      "evaluator_ran": false,
+      "steps_taken": 0,
+      "score": null,
+      "sandbox_id": "i6zfaakvse91v9mt9m5wd",
+      "wall_clock_s": 84.0,
+      "agent_kind": "claude",
+      "model": "anthropic.claude-opus-5",
+      "max_steps": 30,
+      "agent_settings": {
+        "action_space": "claude_computer_use",
+        "effort": "max",
+        "max_steps": 30,
+        "max_tokens": 16000,
+        "observation_type": "screenshot",
+        "only_n_most_recent_images": 10,
+        "temperature": null,
+        "top_p": null
+      },
+      "model_usage": {
+        "agent": {
+          "calls": 0,
+          "input_tokens": null,
+          "output_tokens": null,
+          "unmeasured_calls": 0
+        },
+        "judge": {
+          "calls": 0,
+          "input_tokens": null,
+          "output_tokens": null,
+          "unmeasured_calls": 0
+        },
+        "simulator": {
+          "calls": 0,
+          "input_tokens": null,
+          "output_tokens": null,
+          "unmeasured_calls": 0
+        }
+      },
+      "eval_model_call_attempts": 0,
+      "eval_model_successes": 0,
+      "user_sim_call_attempts": 0,
+      "user_sim_successes": 0,
+      "error_cause": "environment-setup",
+      "error_type": "EnvironmentSetupError",
+      "task_id": "079",
+      "template": "osworld-v2-gnome:be5ffc32-390c-4b67-99c7-c14b42861019",
+      "scope_note": "Direct diagnostic invocation omitted required website fleet wiring; setup failed before inference. Excluded from agent comparison."
+    }
+  ],
+  "model_request_burst": {
+    "requests": 80,
+    "passed": 80,
+    "http_status_counts": {
+      "200": 80
+    },
+    "peak_upstream_reserved_inflight": 80,
+    "wall_s": 2.576,
+    "max_response_s": 2.562,
+    "median_response_s": 1.3969999999999998,
+    "model": "anthropic.claude-opus-5",
+    "thinking": "disabled",
+    "max_output_tokens": 32,
+    "scope": "identical tiny text-only request burst, not long-context adaptive-effort inference",
+    "spend_policy": "Fixed literal text-only request reserved $0.02 each (1024 input at $12/MTok plus 32 output at $30/MTok); native agent calls retain full-context reservations."
+  },
+  "wps_render_failure": {
+    "template": "osworld-v2-gnome:be5ffc32-390c-4b67-99c7-c14b42861019",
+    "task_id": "087",
+    "pptx_existed": true,
+    "pdf_export_bytes": 1791438,
+    "exported_slide_pngs": 0,
+    "pdftoppm_available": false,
+    "score_interpretation": "Score .01 was affected by missing renderer; not valid environment parity evidence."
+  },
+  "current_template": "osworld-v2-gnome:cd4a1a63-eb56-418f-9ac3-60fbbf2b838e",
+  "final_task030": {
+    "raw_directory": "out/osworld-v2-raw/concurrency-20260920/task030-w98-1789937549",
+    "template": "osworld-v2-gnome:cd4a1a63-eb56-418f-9ac3-60fbbf2b838e",
+    "task_id": "030",
+    "workers": 98,
+    "completed": 98,
+    "passed": 98,
+    "failed": 0,
+    "reset_max_s": 73.054,
+    "accessibility_max_s": 79.018,
+    "inference_calls": 0,
+    "scope": "actual upstream task setup + screenshot + bounded accessibility readiness; no evaluator",
+    "workers_with_transient_a11y_http500": 85,
+    "a11y_http502_count": 0
+  },
+  "wps_render_control": {
+    "receipt": "out/osworld-v2-evidence/concurrency/render-control.json",
+    "template": "osworld-v2-gnome:cd4a1a63-eb56-418f-9ac3-60fbbf2b838e",
+    "passed": true,
+    "cleanup": {
+      "attempted": true,
+      "success": true
+    },
+    "tasks": [
+      {
+        "task_id": "079",
+        "pdf_pages": 26,
+        "png_count": 26,
+        "passed": true
+      },
+      {
+        "task_id": "087",
+        "pdf_pages": 19,
+        "png_count": 19,
+        "passed": true
+      }
+    ]
+  },
+  "final_native_wps_sample": {
+    "id": "087",
+    "domain": "wps",
+    "path_status": "OK",
+    "transport_ok": true,
+    "evaluator_ran": true,
+    "steps_taken": 30,
+    "score": 0.01,
+    "sandbox_id": "iwgj5uli1zxcgco06b85f",
+    "wall_clock_s": 378.4,
+    "agent_kind": "claude",
+    "model": "anthropic.claude-opus-5",
+    "max_steps": 30,
+    "agent_settings": {
+      "action_space": "claude_computer_use",
+      "effort": "max",
+      "max_steps": 30,
+      "max_tokens": 16000,
+      "observation_type": "screenshot",
+      "only_n_most_recent_images": 10,
+      "temperature": null,
+      "top_p": null
+    },
+    "model_usage": {
+      "agent": {
+        "calls": 30,
+        "input_tokens": 60,
+        "output_tokens": 9721,
+        "unmeasured_calls": 0
+      },
+      "judge": {
+        "calls": 3,
+        "input_tokens": 9817,
+        "output_tokens": 122,
+        "unmeasured_calls": 0
+      },
+      "simulator": {
+        "calls": 0,
+        "input_tokens": null,
+        "output_tokens": null,
+        "unmeasured_calls": 0
+      }
+    },
+    "eval_model_call_attempts": 3,
+    "eval_model_successes": 3,
+    "user_sim_call_attempts": 0,
+    "user_sim_successes": 0,
+    "task_id": "087",
+    "template": "osworld-v2-gnome:cd4a1a63-eb56-418f-9ac3-60fbbf2b838e",
+    "rendered_slide_pngs": 19,
+    "all_slide_images_fully_decoded": true
+  },
+  "cleanup": {
+    "campaign_id": "osworld-v2-concurrency-20260920",
+    "leftover_guests_removed": 0,
+    "remaining_campaign_guests": 0,
+    "budget_proxy_stopped": true,
+    "checked_at_epoch": 1789937961.3047721
+  }
+}

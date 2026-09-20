@@ -247,6 +247,7 @@ def main() -> int:
             temperature=args.temperature,
             top_p=args.top_p,
             max_trajectory_length=args.max_trajectory_length,
+            max_steps=args.max_steps,
         )
         receipt["agent_settings"] = settings
         agent = build_agent(
@@ -258,7 +259,7 @@ def main() -> int:
         env = DesktopEnv(
             provider_name="e2b",
             os_type="Ubuntu",
-            action_space="pyautogui",
+            action_space=settings["action_space"],
             client_password=args.client_password,
             require_a11y_tree=False,
             require_terminal=False,

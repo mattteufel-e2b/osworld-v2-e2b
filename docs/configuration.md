@@ -17,6 +17,24 @@ uniquely-sandboxed record. A passing receipt does not mean the agent solved ever
 `REQUIRE_NO_MODEL_COVERAGE=0` is the default; a preceding no-model run is optional and
 belongs to the [maintainer validation workflow](../maintainer/README.md).
 
+## Comparing with upstream Claude
+
+The public [pinned sample launcher](https://github.com/xlang-ai/OSWorld-V2/blob/d578d2d4e0dc82b43e270fdaa7fa89d9708cd154/scripts/bash/run_multienv_claude.sh)
+uses Sonnet 4.6 for agent, judge, and simulator. The tested Bedrock key lists Opus 5 but not
+Sonnet 4.6. `AGENT_KIND=claude MODEL=anthropic.claude-opus-5` uses the pinned native Claude
+agent and a model with an official result on our **August 8** task release: 31.43% binary,
+68.31% partial, max effort, batch tool, 500 steps. The [official result data](https://osworld-v2.xlang.ai/static/data/leaderboard/official-results.json?v=leaderboard-v21-v1)
+also lists newer 2.1 scores; those use a different task release.
+
+The published aggregate is a comparison target, not proof of environment parity. Its exact
+batch configuration, judge/simulator settings, action pauses, and checkpoint settings must
+match before attributing a score difference to E2B. Our generic runner defaults to a
+three-second action pause; set `SLEEP_AFTER_EXECUTION=0` to match the pinned Claude launcher.
+That launcher also enables inline checkpoints at 150/300. The coordinator does not expose those checkpoints. Use matched
+per-task reference trajectories or rerun the same agent configuration on the reference VM
+for a controlled environment comparison. Haiku judging and short samples do not reproduce
+the published baseline.
+
 ## Judge and user simulator configuration
 
 Agent credentials are separate from the upstream judge and simulator credentials. The default
@@ -71,7 +89,8 @@ Each per-task receipt records `model_usage` per role (`agent`, `judge`, `simulat
 carries `calls`, `input_tokens`, `output_tokens`, and `unmeasured_calls`. The campaign receipt
 sums those per-task roles under `summary.model_usage`.
 
-Agent usage is measured for the `m3` kind, whose SDK client the tracker wraps. The `prompt` kind
+Agent usage is measured for the `m3` and `claude` kinds through the Anthropic standard and
+beta Messages SDK clients. Cache-read and cache-write tokens are not included. The `prompt` kind
 sends requests with `requests` and reports `agent.calls = 0` with `input_tokens`/`output_tokens`
 `null`; judge and simulator usage is measured regardless of agent kind.
 

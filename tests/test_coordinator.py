@@ -533,6 +533,7 @@ def _coordinator_env_recording_agent_args(
         "TOP_P",
         "MAX_TRAJECTORY_LENGTH",
         "ENABLE_RECORDING",
+        "SLEEP_AFTER_EXECUTION",
     ):
         env.pop(name, None)
     return env, args_file
@@ -553,7 +554,11 @@ def _run_coordinator_recording(env: dict[str, str]) -> subprocess.CompletedProce
 def test_coordinator_forwards_generation_settings_and_deadline_to_the_runner(tmp_path):
     env, args_file = _coordinator_env_recording_agent_args(tmp_path)
     env.update(
-        MAX_TOKENS="4096", TEMPERATURE="0.2", TOP_P="0.95", MAX_TRAJECTORY_LENGTH="5"
+        MAX_TOKENS="4096",
+        TEMPERATURE="0.2",
+        TOP_P="0.95",
+        MAX_TRAJECTORY_LENGTH="5",
+        SLEEP_AFTER_EXECUTION="0",
     )
     _run_coordinator_recording(env)
     argv = args_file.read_text()
@@ -562,6 +567,7 @@ def test_coordinator_forwards_generation_settings_and_deadline_to_the_runner(tmp
         "--temperature 0.2",
         "--top-p 0.95",
         "--max-trajectory-length 5",
+        "--sleep-after-execution 0",
         "--deadline-seconds 30",
         "--agent-kind m3",
     ):
@@ -572,11 +578,23 @@ def test_coordinator_forwards_generation_settings_and_deadline_to_the_runner(tmp
 @needs_free_hostmap_port
 def test_coordinator_leaves_generation_settings_to_agent_defaults_when_unset(tmp_path):
     env, args_file = _coordinator_env_recording_agent_args(tmp_path)
-    for name in ("MAX_TOKENS", "TEMPERATURE", "TOP_P", "MAX_TRAJECTORY_LENGTH"):
+    for name in (
+        "MAX_TOKENS",
+        "TEMPERATURE",
+        "TOP_P",
+        "MAX_TRAJECTORY_LENGTH",
+        "SLEEP_AFTER_EXECUTION",
+    ):
         env.pop(name, None)
     _run_coordinator_recording(env)
     argv = args_file.read_text()
-    for flag in ("--max-tokens", "--temperature", "--top-p", "--max-trajectory-length"):
+    for flag in (
+        "--max-tokens",
+        "--temperature",
+        "--top-p",
+        "--max-trajectory-length",
+        "--sleep-after-execution",
+    ):
         assert flag not in argv, flag
 
 

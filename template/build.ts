@@ -130,6 +130,7 @@ async function main() {
       'freecadcmd',
       'certutil',
       'google-chrome',
+      'pdftoppm',
     ]
     const which = await sandbox.commands.run(
       'missing=""; ' +
@@ -152,7 +153,7 @@ async function main() {
     // VNC_UNITS_ABSENT, neither a MISSING_ marker) and does not fail the build,
     // matching the launcher gate above.
     const versions = await sandbox.commands.run(
-      'for p in google-chrome-stable kicad wps-office libnss3-tools; do ' +
+      'for p in google-chrome-stable kicad wps-office libnss3-tools poppler-utils; do ' +
         "dpkg-query -W -f='${Package} ${Version}\\n' \"$p\" 2>/dev/null || echo \"MISSING_PACKAGE $p\"; " +
         'done; ' +
         'for p in x11vnc novnc websockify; do ' +

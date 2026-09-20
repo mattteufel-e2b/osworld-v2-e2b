@@ -537,6 +537,8 @@ export const template = Template({ fileContextPath: filesDir })
     // 96 DPI via Xresources so Xft-based apps size text consistently at 1080p.
     "printf 'Xft.dpi: 96\\n' > /home/user/.Xresources",
   ])
+  // Tasks 079/087 render exported slide PDFs with pdftoppm.
+  .runCmd('apt-get install -y poppler-utils')
   // ---- OSWorld server payload + session scripts ---------------------------
   .makeDir('/opt/osworld-server')
   .copy('server', '/opt/osworld-server')

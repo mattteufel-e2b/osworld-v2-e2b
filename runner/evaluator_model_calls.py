@@ -118,6 +118,7 @@ class EvaluatorModelCallTracker:
         llm_metrics=None,
         user_simulator=None,
         anthropic_messages=None,
+        anthropic_beta_messages=None,
         openai_completions=None,
     ) -> None:
         """Wrap the evaluator/simulator entry points so this tracker sees usage.
@@ -136,12 +137,23 @@ class EvaluatorModelCallTracker:
             model_client = real_model_client
             llm_metrics = real_llm_metrics
             user_simulator = LLMUserSimulator
-        if anthropic_messages is None and openai_completions is None:
+        if (
+            anthropic_messages is None
+            and anthropic_beta_messages is None
+            and openai_completions is None
+        ):
             anthropic_messages = _sdk_class("anthropic.resources.messages", "Messages")
+            anthropic_beta_messages = _sdk_class(
+                "anthropic.resources.beta.messages", "Messages"
+            )
             openai_completions = _sdk_class(
                 "openai.resources.chat.completions", "Completions"
             )
-        for sdk_class in (anthropic_messages, openai_completions):
+        for sdk_class in (
+            anthropic_messages,
+            anthropic_beta_messages,
+            openai_completions,
+        ):
             # Wrapping happens on the class, which is process-global: a second
             # install must not stack a second wrapper on the same create.
             if sdk_class is not None and not getattr(

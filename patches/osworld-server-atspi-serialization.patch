@@ -1,0 +1,63 @@
+--- a/src/accessibility.py
++++ b/src/accessibility.py
+@@ -3,6 +3,8 @@
+ import platform
+ import re
+ import subprocess
++import threading
++from functools import wraps
+ from typing import Any, Dict, List, Optional, Sequence, Tuple
+ 
+ import lxml.etree
+@@ -27,6 +29,21 @@
+ )
+ 
+ logger = logging.getLogger(__name__)
++
++# libatspi shares native caches and a deferred-message queue across readers.
++# Serialize complete Linux reads, including Registry access and object cleanup.
++_atspi_lock = threading.RLock()
++
++
++def _serialize_linux_atspi(function):
++    @wraps(function)
++    def serialized(*args, **kwargs):
++        if platform.system() == "Linux":
++            with _atspi_lock:
++                return function(*args, **kwargs)
++        return function(*args, **kwargs)
++
++    return serialized
+ 
+ _accessibility_ns_map = {
+     "ubuntu": {
+@@ -103,6 +120,7 @@
+     return False
+ 
+ 
++@_serialize_linux_atspi
+ def get_terminal_output() -> Optional[str]:
+     user_platform = platform.system()
+     output: Optional[str] = None
+@@ -571,6 +589,7 @@
+     return xml_node
+ 
+ 
++@_serialize_linux_atspi
+ def build_accessibility_tree() -> str:
+     os_name: str = platform.system()
+ 
+@@ -582,11 +601,8 @@
+ 
+         desktop: Accessible = pyatspi.Registry.getDesktop(0)
+         xml_node = lxml.etree.Element("desktop-frame", nsmap=accessibility_ns_map_ubuntu)
+-        with concurrent.futures.ThreadPoolExecutor() as executor:
+-            futures = [executor.submit(create_atspi_node, app_node, 1) for app_node in desktop]
+-            for future in concurrent.futures.as_completed(futures):
+-                xml_tree = future.result()
+-                xml_node.append(xml_tree)
++        for app_node in desktop:
++            xml_node.append(create_atspi_node(app_node, 1))
+         return lxml.etree.tostring(xml_node, encoding="unicode")
+ 
+     if os_name == "Windows":

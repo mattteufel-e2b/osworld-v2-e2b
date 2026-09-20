@@ -4,8 +4,9 @@
 # in-process bridge on OS-assigned loopback ports, so workers never collide
 # and need no port arithmetic. Concurrency defaults to and is capped at 80:
 # strict reset can briefly own two guests per worker, so 80 workers peak near
-# 160 guest sandboxes plus the two fleet sandboxes under a 200-concurrent-
-# sandbox account ceiling. Task 082 alone dials host port 3000, so it gets a
+# 160 guest sandboxes plus the two fleet sandboxes. This is a conservative
+# coordinator policy; the account admitted 201 in the live capacity probe.
+# Task 082 alone dials host port 3000, so it gets a
 # literal task-service listener, and runs solo when RUN_TASK_082_CONCURRENT=0.
 set -uo pipefail
 
@@ -206,7 +207,7 @@ PY
 # upstream default otherwise. (`${arr[@]+...}` keeps bash 3.2 happy under set -u.)
 generation_args=()
 for pair in MAX_TOKENS:--max-tokens TEMPERATURE:--temperature TOP_P:--top-p \
-    MAX_TRAJECTORY_LENGTH:--max-trajectory-length; do
+    MAX_TRAJECTORY_LENGTH:--max-trajectory-length SLEEP_AFTER_EXECUTION:--sleep-after-execution; do
     name="${pair%%:*}"
     if [ -n "${!name:-}" ]; then generation_args+=("${pair#*:}" "${!name}"); fi
 done

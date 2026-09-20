@@ -10,14 +10,78 @@ full-suite/focused receipts under `out/osworld-v2-evidence/full-suite/` cover th
 surface on that build. The September 8 MiniMax campaign used
 `osworld-v2-gnome:0d796343-1a70-4bd3-990e-8bb469b3dd20`; evidence for one build does not
 certify another build. **Current build:
-`osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8`**, which carries its own 108-task
-ladder, the guest-browser secure-context probe, the long-typing control and a nine-task priced
-agent run — see "September 18 final-build ladder and live verification" below. Every claim in
-this ledger names the build it was measured on.
+`osworld-v2-gnome:cd4a1a63-eb56-418f-9ac3-60fbbf2b838e`** serializes Linux AT-SPI reads and
+adds Poppler for slide rendering. Its evidence covers the focused
+concurrency and native-Claude checks below. The complete 108-task ladder belongs to
+`00124a57…`; it does not certify this rebuild. Every claim in this ledger names its build.
 Release pin: `osworld-v2-2026.08.08`. OSWorld-V2 checkout: `d578d2d4e0dc82b43e270fdaa7fa89d9708cd154`.
 
 This ledger separates what was verified to match a stated reference, what was recorded
 without a reference to match against, and what is excluded or unexercised outright.
+
+## September 20 concurrency and native-Claude verification
+
+[Evidence](out/osworld-v2-evidence/concurrency/verification-20260920.json) separates account
+admission, desktop transport, task setup, and model execution. **Three workers is not a
+measured ceiling.** The coordinator's default/cap remains 80; a separate bridge probe also
+tested 98 workers. Strict reset can temporarily double guest count. An admission-only probe
+held 201 guests simultaneously and deleted all 201; the account's upper quota remains unknown.
+
+On `00124a57…`, the 98-worker probe observed two control-server deaths during accessibility
+reads after screen-size and screenshot requests succeeded. Kernel/apport records showed
+SIGSEGV in GLib with over 7 GB RAM available. A symbolized core enters `g_queue_push_tail`
+through libatspi/DBus while another thread reads AT-SPI children. This supports the shared
+native-state race; the first corrupting instruction was not identified. An 80-process repeat
+of actual task-030 setup then passed 74/80; six exhausted accessibility retries with 502s.
+
+`patches/osworld-server-atspi-serialization.patch` removes Linux per-application parallel
+traversal and holds one shared lock around complete accessibility and terminal reads.
+Windows/macOS behavior is unchanged. Rebuilt guest `be5ffc32…` passed task-030 setup and
+observations in **80/80 independent processes**. Its **98-worker, three-reset** probe used
+392 guest instances and returned HTTP 200 with nonempty trees throughout. These checks
+exercise the reproduced failure; they are not a full 108-task evaluator or inference campaign.
+Historical 502s without crash records cannot individually be assigned this cause.
+
+Final build `cd4a1a63…` passed actual task-030 setup, screenshot, and nonempty accessibility
+checks in **98/98 independent processes**, with no 502s. Eighty-five workers saw transient
+accessibility HTTP 500 responses before bounded retries succeeded; maximum reset time was
+73.05 seconds and maximum accessibility-readiness time 79.02 seconds. This establishes
+completion under the tested cold-start load, not error-free first attempts.
+
+The public pinned native Claude agent is available as `AGENT_KIND=claude`; Opus 5 is offered
+by the tested Bedrock Mantle key. The live native-agent canary made eight calls, executed
+eight native action dictionaries, and created a verified file on `be5ffc32…`. Mantle rejected
+the upstream obsolete prompt-caching beta header; setup omits that header while retaining
+cache controls, native prompts, tools, and parsing. A thin wrapper propagates failed
+predictions, and beta Messages SDK usage is counted. See [baseline configuration and
+comparison limits](docs/configuration.md#comparing-with-upstream-claude).
+
+Native Opus 5 samples on `be5ffc32…` ran 30 steps each: Blender 092 opened Blender and
+completed evaluation with score `0.2`; WPS 087 opened its presentation and returned `0.01`.
+The WPS result exposed a missing `pdftoppm`: PDF export succeeded, but no slide PNGs were
+produced. Evaluator completion alone did not prove functional slide rendering. Build
+`cd4a1a63…` installs `poppler-utils` and requires its package and launcher in the build gate.
+The direct 079 diagnostic omitted website-fleet wiring and failed before inference; it is
+excluded from agent comparison.
+The final-image [rendering control](out/osworld-v2-evidence/concurrency/render-control.json)
+uses the actual evaluator export commands: 079 produced 26/26 valid slide PNGs and 087
+produced 19/19. All 45 images fully decoded; the temporary guest was deleted. This control
+uses unchanged inputs and verifies rendering, not task success or visual reference fidelity.
+
+The final-image native Opus 5 sample for 087 completed 30 actions and evaluation in
+378.4 seconds, downloaded and fully decoded all 19 slide PNGs, and completed 3/3 live
+Haiku judge calls. Its score remained `0.01`; repaired rendering is not evidence of task
+success. Blender and WPS sample scores use short budgets and do not reproduce a published
+500-step result. All test guests and the local budget proxy were stopped.
+
+Shared inference accounting totals **$125.05**: $59.72 estimated
+measured usage plus $65.33 retained reservations for responses without usage.
+This includes earlier samples, is below the $160 guard and $200 user limit, and is not an
+AWS invoice. There are no calls still in flight.
+
+An 80-way Opus 5 request burst returned 80/80 HTTP 200 responses in 2.58 seconds with
+80 requests simultaneously reserved at the upstream boundary. It used tiny literal prompts,
+32 output tokens, and disabled thinking, so it does not establish full-agent throughput.
 
 ## September 17 parity-build ladder, and the disposition of task 030
 
@@ -48,7 +112,7 @@ campaign: **104 `PATH_PASS`, one `MODEL_BOUNDARY_PASS` (035, the judge boundary 
 refused as designed), and three `PATH_FAIL` (008, 009, 030)**. The gate reports **FAIL** on
 that receipt and the summary is committed red.
 
-Those three are one signature, not three defects. Each records `stage: reset`, `cause:
+These three share a reset/observation failure signature. Each records `stage: reset`, `cause:
 reset-or-observation`, `evaluator_ran: false`, `score: null`, with a second-generation guest
 (post strict-reset) answering `502` to every accessibility-tree request; 008 and 009 also drew
 `500` from the CDP `/json/version` endpoint. All three started inside the first three seconds
@@ -68,9 +132,9 @@ This is the reset-time ingress 5xx burst already recorded for
 fresh sandboxes at concurrency 3 and all three passed:
 [summary](out/osworld-v2-evidence/full-suite/validate-108-final-followup-20260918.summary.json).
 Read together, all 108 tasks reached the harness's passing boundaries on this build — the same
-disposition the September 11 ladder gave 043 and 082. It does not close the flake: a transient
-post-reset guest-readiness fault under first-wave concurrency remains open, and its rate on
-this run (3 of 108) was worse than on the two prior ladders (1 and 0).
+disposition the September 11 ladder gave 043 and 082. Those low-concurrency retries did not establish high-concurrency reliability. The failure
+rate was 3 of 108; the September 20 investigation above reproduces a native control-server
+crash and tests its fix at high concurrency.
 
 Two live controls ran against the same build and the same fleet campaign. The guest-browser
 secure-context probe
@@ -94,8 +158,9 @@ sandboxes, all unique, `retried_task_ids: []`, `implicit_retries: false`. Eight 
 receipts are `path_status: OK` with an evaluator that ran; the ninth (035) is `ERROR` and the
 gate reports **FAIL**, as it should. Scores, recorded verbatim and not asserted: 092 `0.2`,
 079 `0.05`, 087 `0.01`, and `0.0` for 026, 038, 041, 067 and 107 — mean partial `0.0325`,
-binary accuracy `0.0`. That is a benchmark result on nine deliberately hard tasks, not a
-verdict on the port.
+binary accuracy `0.0`. The September 20 investigation found `pdftoppm` absent from this
+build: 079/087 slide-rendering scores are affected by that environment defect and cannot
+be treated as agent-performance or parity evidence. The recorded scores remain unchanged.
 
 035's `ERROR` is the agent, not the infrastructure: at step ~406 it typed `killall -9 python3`
 into a guest terminal (its gitignored trajectory,
@@ -139,11 +204,10 @@ at all; that re-run is recorded separately and was deliberately **not** folded i
 committed summary. Task 030's own `related_apps` are `vscode` and `terminal` — neither is an
 application this template change added or reconfigured.
 
-On that evidence the failure is attributable to transient guest-ingress unreachability under
-80-way concurrency rather than to the template change. The mechanism is not proven: nothing
-here observed the ingress layer itself, and the correlation (repeated 502s on one worker,
-recovery in isolation, an untouched application set) is what the attribution rests on. The
-task is not a closed item.
+These historical receipts do not distinguish ingress failure from a dead guest control
+server. The September 20 investigation above observed native AT-SPI/GLib crashes with the
+same HTTP symptom and verified the serialization fix against an 80-process task-030 repeat.
+The historical failures lack cores, so their individual causes remain unproven.
 
 ## September 14 judge and 36-task full-inference verification
 
@@ -270,7 +334,8 @@ the harness's passing boundaries. Those checks did not establish application-lau
 file-format compatibility: the [September 14 runtime controls](out/osworld-v2-evidence/sample-36/runtime-controls-20260914.json)
 confirm missing WPS/Blender/MuseScore launchers, an incompatible MuseScore version, and a
 package hold blocking KiCad installation on this build. The 043 failure did not reproduce
-and remains a transient post-reset guest-readiness fault, not a closed item.
+and has no crash record establishing its cause; see the September 20 investigation of this
+HTTP symptom on the application-complete build.
 
 **Agent rollout with recording** (task 093, upstream M3 agent, `accounts/fireworks/models/minimax-m3`,
 500 steps, 2,048 thinking tokens, judge pointed at Fireworks MiniMax because the OpenAI key has
@@ -362,8 +427,9 @@ full native-result parity or a passing 24-task sample.
   `xlang-ai/osworld-server@a3cc3f0c64e463f020d1a44780307e9b46cbcab1`, with hark's null-safe
   AT-SPI serializer guards re-applied, plus the exact-process-path open-file fallback and
   near-silent ffmpeg recording flags. The unlicensed source is generated only by
-  `template/fetch_server.sh`; the repository carries two reviewable patches against the pin
-  (`patches/osworld-server-atspi-guards.patch`, `patches/osworld-server-runtime-reliability.patch`),
+  `template/fetch_server.sh`; the repository carries three reviewable patches against the pin
+  (`patches/osworld-server-atspi-guards.patch`, `patches/osworld-server-runtime-reliability.patch`,
+  `patches/osworld-server-atspi-serialization.patch`),
   not a copy of upstream source. V2 carries the identical AT-SPI defect — `role`, `name`,
   action description, key binding, stripped role-name — at the same call sites as V1.
   Corroborated live: accessibility observations returned substantial, non-empty content
@@ -371,12 +437,9 @@ full native-result parity or a passing 24-task sample.
   (`out/osworld-v2-evidence/validate-run1.json`, `validate-run2.json`,
   `accessibility_characters` present and nonzero on every record).
 - **Provider contract**: `E2BVMManager`/`E2BProvider` registered by `runner/setup.sh`, whose
-  whole footprint in the pinned checkout is eight idempotent, anchor-asserted string patches
-  (a)–(h) across five tracked files — `desktop_env/providers/__init__.py` (factory
-  registration), `desktop_env/desktop_env.py` (cloud-provider classification, strict reset),
-  `scripts/python/run_multienv_m3.py` (`--provider_name e2b`), `mm_agents/m3/parser.py` and
-  `desktop_env/controllers/python.py` (the disclosed execution patches below) — plus the
-  vendored provider files (`provider.py`, `manager.py`, `bridge.py`, `e2b_policy.py`). Patch
+  footprint is declared and verified by `runner/setup.sh`: patches (a)–(n) cover provider
+  registration, strict reset, execution and agent transport compatibility, plus vendored
+  provider files (`provider.py`, `manager.py`, `bridge.py`, `e2b_policy.py`). Patch
   anchors and logic are committed at `runner/setup.sh`; `setup.sh --verify` proves exactly
   this set before a run and `--restore` removes it.
   Verified working, not just applied: the environment-path validation ladder created 20
@@ -655,18 +718,16 @@ real long-horizon rollout accumulates. Treat the published median 1.6 h / tail 3
 operative planning number, with this conversion's scaled ~1 h figure only as a
 sanity-check floor.
 
-- **1 trial/task, 108 tasks, at the median 1.6 h/rollout**: ≈ 172.8 sandbox-hours. Serial,
-  that is ~7.2 sandbox-days; a concurrency ceiling of 200 sandboxes, approved by the
-  operator during this conversion (recorded here as the authoritative statement — no
-  separate committed artifact), covers all 108 in one wave, so wall clock collapses to
-  approximately one task's duration — **~1.6 h median, ~3 h worst-case tail** — not 7 days.
-- **3 trials/task (recommended), 324 rollouts**: ≈ 518.4 sandbox-hours at the median. At the
-  same 200-concurrency ceiling that is 324/200 ≈ 2 waves, so **~2× one task's duration
-  wall-clock, roughly 3–6 h**, plus the fixed cost of running two fleet lanes (websites,
-  GitLab) live for the whole campaign window.
+- **1 trial/task, 108 tasks, at the median 1.6 h/rollout**: ≈172.8 sandbox-hours.
+  The coordinator admits at most 80 workers, so budget two waves, approximately 3.2 h at
+  that representative duration, plus startup and the long tail. The successful 201-sandbox
+  admission probe does not increase this worker cap; strict resets also consume extra slots.
+- **3 trials/task, 324 rollouts**: ≈518.4 sandbox-hours at the median. At 80 workers,
+  budget five waves, approximately 8 h at that representative duration, plus startup and
+  the long tail. These are planning estimates, not measured Opus 5 completion times.
 - **Sandbox compute cost and LLM API cost in dollars are deliberately not estimated here** —
-  current E2B sandbox pricing and the chosen model's per-token pricing (Opus 4.8 with
-  extended/max thinking is materially more expensive per rollout than the gpt-4o baseline
+  current E2B sandbox pricing and the chosen model's per-token pricing (Opus 5 with
+  max effort is materially more expensive per rollout than the gpt-4o baseline
   this conversion used) were out of scope for this task and must be priced against
   current rate cards before authorization, not assumed from this conversion's numbers.
 - This estimate excludes: fleet warm-up (websites fleet first-boot compose build measured

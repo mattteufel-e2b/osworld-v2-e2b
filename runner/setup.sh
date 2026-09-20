@@ -3,7 +3,7 @@
 # (examples/osworld-v2/upstream.lock.json) and wire in the E2B provider
 # (provider/provider.py + provider/manager.py + provider/bridge.py, the
 # in-process bridge) so OSWorld-V2's own run.py works with --provider_name e2b.
-# Idempotent: re-running is safe and each string patch (a)-(m) is guarded,
+# Idempotent: re-running is safe and each string patch (a)-(n) is guarded,
 # reporting "already applied" on the second run.
 #
 # Checkout states (the checkout is gitignored, so its state lives on disk only):
@@ -55,6 +55,7 @@ PATCHED_TRACKED=(
     scripts/python/run_multienv_m3.py
     mm_agents/m3/parser.py
     mm_agents/m3/agent.py
+    mm_agents/anthropic/main.py
     desktop_env/controllers/python.py
     desktop_env/controllers/website.py
 )
@@ -356,6 +357,13 @@ replace_once(
     "(m) adaptive thinking omits unsupported fixed budget",
 )
 
+replace_once(
+    "mm_agents/anthropic/main.py",
+    '            betas.append(PROMPT_CACHING_BETA_FLAG)\n',
+    '            # Prompt caching is generally available; keep cache_control without the obsolete beta.\n',
+    "(n) Claude prompt caching omits obsolete beta header",
+)
+
 EOF
 }
 
@@ -447,9 +455,9 @@ touch "$DEST/desktop_env/providers/e2b/__init__.py"
 # The bridge imports e2b_policy from the checkout root (run.py's cwd).
 cp "$POLICY_FILE" "$DEST/e2b_policy.py"
 
-# ---- string patches (a)-(m): register + classify the provider, force strict
+# ---- string patches (a)-(n): register + classify the provider, force strict
 #      reset, accept --provider_name e2b in the M3 multi-env runner, and the
-#      disclosed M3-parser / controller execution patches -------------------
+#      disclosed agent transport / parser / controller execution patches ----
 apply_adapter_patches "$DEST"
 
 echo

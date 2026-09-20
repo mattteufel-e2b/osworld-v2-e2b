@@ -47,6 +47,7 @@ def test_verify_checkout_rejects_drift_without_modifying_it(tmp_path):
         "lib_run_single.py",
         "desktop_env/providers/e2b/bridge.py",
         "run.py",
+        "mm_agents/anthropic/main.py",
         backend,
     ):
         target = checkout / relative
@@ -124,6 +125,9 @@ PINNED_CONTROLLER = (
 # must occur exactly once in the pinned upstream file -- see
 # test_setup_anchors_are_unique_in_the_pinned_upstream_files.
 PIN_ANCHORS = {
+    "mm_agents/anthropic/main.py": (
+        "            betas.append(PROMPT_CACHING_BETA_FLAG)\n",
+    ),
     "mm_agents/m3/parser.py": (
         '                "super_l": "win",\n                "super": "command",\n',
         PINNED_INFEASIBLE,
@@ -182,11 +186,13 @@ def patched_checkout(tmp_path):
         pytest.skip("pinned upstream checkout not installed")
     _seed_minimal_checkout(tmp_path, "", "")
     for relative in (
+        "mm_agents/anthropic/main.py",
         "mm_agents/m3/parser.py",
         "mm_agents/m3/agent.py",
         "desktop_env/controllers/python.py",
         "desktop_env/controllers/website.py",
     ):
+        (tmp_path / relative).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / relative).write_bytes(
             subprocess.check_output(
                 ["git", "-C", str(source), "show", f"{PIN}:{relative}"]
@@ -194,6 +200,23 @@ def patched_checkout(tmp_path):
         )
     _apply_patches(tmp_path)
     return tmp_path
+
+
+def test_native_claude_cache_header_patch_preserves_every_other_byte_and_is_idempotent(
+    patched_checkout,
+):
+    relative = "mm_agents/anthropic/main.py"
+    pristine = subprocess.check_output(
+        ["git", "-C", str(ROOT / "OSWorld-V2"), "show", f"{PIN}:{relative}"], text=True
+    )
+    expected = pristine.replace(
+        "            betas.append(PROMPT_CACHING_BETA_FLAG)\n",
+        "            # Prompt caching is generally available; keep cache_control without the obsolete beta.\n",
+        1,
+    )
+    assert (patched_checkout / relative).read_text() == expected
+    _apply_patches(patched_checkout)
+    assert (patched_checkout / relative).read_text() == expected
 
 
 def test_fleet_scheme_does_not_downgrade_on_transient_probe_failure(

@@ -46,8 +46,8 @@ def agents(monkeypatch):
     sys.modules.pop("agents", None)
 
 
-def test_shipped_agent_kinds_are_the_upstream_prompt_and_m3_agents(agents):
-    assert set(agents.AGENT_KINDS) == {"prompt", "m3"}
+def test_shipped_agent_kinds_are_the_upstream_agents(agents):
+    assert set(agents.AGENT_KINDS) == {"prompt", "m3", "claude"}
 
 
 def test_prompt_settings_default_to_upstream_run_py_values(agents):
@@ -91,6 +91,75 @@ def test_explicit_generation_settings_override_defaults_only_when_given(agents):
 def test_unknown_agent_kind_is_rejected(agents):
     with pytest.raises(ValueError, match="custom"):
         agents.agent_settings("custom")
+
+
+def test_claude_settings_record_effective_token_budget_and_image_retention(agents):
+    settings = agents.agent_settings(
+        "claude", max_tokens=8192, max_trajectory_length=6, max_steps=237
+    )
+    assert settings == {
+        "max_tokens": 16000,
+        "temperature": None,
+        "top_p": None,
+        "only_n_most_recent_images": 6,
+        "effort": "max",
+        "max_steps": 237,
+        "action_space": "claude_computer_use",
+        "observation_type": "screenshot",
+    }
+    defaults = agents.agent_settings("claude")
+    assert defaults["only_n_most_recent_images"] == 10
+    assert defaults["max_steps"] == 500
+    assert agents.agent_settings("claude", max_tokens=20000)["max_tokens"] == 20000
+
+
+@pytest.mark.parametrize("override", [{"temperature": 0.5}, {"top_p": 0.8}])
+def test_claude_rejects_sampling_overrides_instead_of_recording_ignored_values(
+    agents, override
+):
+    with pytest.raises(ValueError, match="sampling"):
+        agents.agent_settings("claude", **override)
+
+
+def test_claude_builder_routes_messages_transport_and_bearer_auth(agents, monkeypatch):
+    claude_module = types.ModuleType("mm_agents.anthropic.main")
+    claude_module.AnthropicAgent = type("AnthropicAgent", (_Recorder,), {})
+    utils_module = types.ModuleType("mm_agents.anthropic.utils")
+    utils_module.APIProvider = types.SimpleNamespace(ANTHROPIC="messages")
+    utils_module.get_claude_runtime_profile = lambda model: types.SimpleNamespace(
+        thinking_mode="adaptive"
+    )
+    monkeypatch.setitem(sys.modules, "mm_agents.anthropic.main", claude_module)
+    monkeypatch.setitem(sys.modules, "mm_agents.anthropic.utils", utils_module)
+    monkeypatch.setenv(
+        "MODEL_BASE_URL", "https://bedrock-mantle.us-east-1.api.aws/anthropic"
+    )
+    monkeypatch.setenv("MODEL_API_KEY", "test-model-key")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "unrelated-key")
+    settings = agents.agent_settings("claude", max_steps=37)
+    agent = agents.build_agent(
+        "claude",
+        model="anthropic.claude-opus-5",
+        settings=settings,
+        client_password="osworld-public-evaluation",
+    )
+    assert isinstance(agent, claude_module.AnthropicAgent)
+    assert agent.kwargs["provider"] == "messages"
+    assert agent.kwargs["api_key"] == "test-model-key"
+    assert agent.kwargs["screen_size"] == (1920, 1080)
+    assert agent.kwargs["max_steps"] == 37
+    assert agent.kwargs["only_n_most_recent_images"] == 10
+    assert "max_trajectory_length" not in agent.kwargs
+    assert (
+        os.environ["ANTHROPIC_BASE_URL"]
+        == "https://bedrock-mantle.us-east-1.api.aws/anthropic"
+    )
+    assert os.environ["ANTHROPIC_AUTH_TOKEN"] == "test-model-key"
+
+
+def test_claude_preflight_does_not_import_the_optional_anthropic_sdk(tmp_path):
+    result = _check_kind(tmp_path, "claude")
+    assert result.returncode == 0, result.stderr
 
 
 def test_prompt_agent_is_built_from_settings_and_routes_to_model_env(

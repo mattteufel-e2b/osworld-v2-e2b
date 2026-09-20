@@ -72,6 +72,31 @@ Concurrency defaults to and is capped at **80**. Results are in `$RUN_ROOT/agent
 trajectories are in `$RUN_ROOT/agent-raw`. Admitted runs stop their service fleets on exit.
 See [run configuration](docs/configuration.md) for cleanup, recording, and result interpretation.
 
+To use the pinned upstream Claude agent, select `AGENT_KIND=claude`. It sends native
+computer-use tool calls through Anthropic Messages. For Bedrock Mantle, configure:
+
+```bash
+export AGENT_KIND=claude MODEL=anthropic.claude-opus-5 MAX_STEPS=500
+export SLEEP_AFTER_EXECUTION=0             # pinned Claude launcher default
+export MODEL_BASE_URL=https://bedrock-mantle.us-east-1.api.aws/anthropic
+export MODEL_API_KEY="..."                 # your Mantle bearer key
+```
+
+Use the coordinator command above with these agent settings. Claude uses adaptive max
+effort, at least 16,000 output tokens, ten recent images with upstream's chunked removal,
+and model-default sampling. The worker's `--max-trajectory-length` controls image retention;
+`--temperature` and `--top-p` overrides are rejected. Receipts record the effective token
+limit and the run's step budget. Only models with an adaptive-thinking profile in the
+pinned agent are accepted; its fixed desktop password is `osworld-public-evaluation`.
+Upstream prompts, inference settings, and action parsing are preserved. Setup removes the
+obsolete `prompt-caching-2024-07-31` beta header, which Mantle rejects; prompt caching's
+`cache_control` fields and the computer-use beta remain. [Anthropic documents that prompt
+caching requires no beta header](https://platform.claude.com/docs/en/release-notes/overview#december-17th-2024).
+A thin wrapper raises upstream's failure sentinel instead of treating it as a user question. The upstream
+500-attempt retry loop remains; use `AGENT_TASK_TIMEOUT_SECONDS` (or the worker's
+`--deadline-seconds`) to bound failures. This configuration does not establish reproduction
+of the published Opus 5 batch-tool score.
+
 Run `services/stop.py --campaign-id "$OSWORLD_CAMPAIGN_ID" [--dry-run]` to remove exactly
 that campaign's fleets and any leftover guests, such as after a hard-killed run.
 

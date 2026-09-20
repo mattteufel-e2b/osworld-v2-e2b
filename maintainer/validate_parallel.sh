@@ -3,7 +3,7 @@
 # environment-path run with no model calls, configurable E2B concurrency. Not needed
 # to run the benchmark (see README "Quick start"); it qualifies a template build.
 # Worker concurrency defaults to and is capped at 80: strict reset can double
-# guest use under the 200-concurrent-sandbox ceiling. Each worker's harness owns
+# guest use. This is a coordinator policy, not the measured account ceiling. Each worker's harness owns
 # its own in-process bridge; nothing here to namespace or coordinate for that.
 set -uo pipefail
 
