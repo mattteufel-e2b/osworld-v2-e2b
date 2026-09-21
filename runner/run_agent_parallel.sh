@@ -2,10 +2,11 @@
 # Run the complete OSWorld-V2 agent benchmark with bounded E2B concurrency.
 # Each task runs as one agent_runner.py process; its E2BProvider owns an
 # in-process bridge on OS-assigned loopback ports, so workers never collide
-# and need no port arithmetic. Concurrency defaults to and is capped at 80:
+# and need no port arithmetic. Concurrency defaults to 80 and is capped at 120:
 # strict reset can briefly own two guests per worker, so 80 workers peak near
-# 160 guest sandboxes plus the two fleet sandboxes. This is a conservative
-# coordinator policy; the account admitted 201 in the live capacity probe.
+# 160 guest sandboxes plus the two fleet sandboxes. The account admitted 201 in
+# the live capacity probe and the strict-reset overlap is per task and brief, so
+# an operator who has confirmed the org quota may raise this up to 120.
 # Task 082 alone dials host port 3000, so it gets a
 # literal task-service listener, and runs solo when RUN_TASK_082_CONCURRENT=0.
 set -uo pipefail
@@ -20,7 +21,13 @@ AGENT_START_STAGGER_SECONDS="${AGENT_START_STAGGER_SECONDS:-0.25}"
 RUN_TASK_082_CONCURRENT="${RUN_TASK_082_CONCURRENT:-1}"
 REQUIRE_NO_MODEL_COVERAGE="${REQUIRE_NO_MODEL_COVERAGE:-0}"
 MAX_STEPS="${MAX_STEPS:-500}"
-RUN_ID="${RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
+# Resuming continues an earlier run in place: its id selects the same raw dir
+# and output (unless the operator overrides them) and its nonce is recovered
+# from the receipts that survive, so kept rollouts still gate.
+RESUME_RUN_ID="${RESUME_RUN_ID:-}"
+RUN_ID="${RESUME_RUN_ID:-${RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$$}}"
+# Seconds between reap passes of the rolling worker pool. Not an operator knob.
+POOL_POLL_SECONDS="${POOL_POLL_SECONDS:-5}"
 RAW_DIR="${RAW_DIR:-$REPO_ROOT/out/osworld-v2-raw/agent-full/$RUN_ID}"
 OUTPUT="${OUTPUT:-$REPO_ROOT/out/osworld-v2-evidence/full-suite/agent-$RUN_ID.json}"
 UV="uv run --python 3.12 --with e2b==2.34.0"
@@ -34,8 +41,8 @@ if [[ ! "$PARALLEL_CONCURRENCY" =~ ^[1-9][0-9]*$ ]]; then
     echo "PARALLEL_CONCURRENCY must be a positive integer" >&2
     exit 2
 fi
-if [ "$PARALLEL_CONCURRENCY" -gt 80 ]; then
-    echo "PARALLEL_CONCURRENCY must not exceed 80 (strict reset can briefly double guest use)" >&2
+if [ "$PARALLEL_CONCURRENCY" -gt 120 ]; then
+    echo "PARALLEL_CONCURRENCY must not exceed 120 (strict reset can briefly double guest use)" >&2
     exit 2
 fi
 if [[ ! "$AGENT_RETRY_ATTEMPTS" =~ ^[0-9]+$ ]]; then
@@ -101,7 +108,9 @@ export M3_THINKING_MODE M3_THINKING_BUDGET M3_MAX_LLM_RETRIES
 mkdir -p "$RAW_DIR"
 proxy_pid=""
 worker_pids=()
+worker_task_ids=()
 fleets_admitted=0
+aggregated=0
 cleanup_proxy() {
     local status=$?
     trap - EXIT
@@ -119,6 +128,16 @@ cleanup_proxy() {
     if [ -n "$proxy_pid" ] && kill -0 "$proxy_pid" 2>/dev/null; then
         kill "$proxy_pid" 2>/dev/null || true
         wait "$proxy_pid" 2>/dev/null || true
+    fi
+    # An interrupted campaign still gets its receipt: the workers above have
+    # been reaped, so every receipt they wrote is final. Its gate will fail --
+    # that is correct, the run is incomplete -- so the status here is ignored
+    # and `aggregated` keeps the normal path and this one from both running.
+    if [ "$fleets_admitted" -eq 1 ] && [ "$aggregated" -ne 1 ]; then
+        aggregated=1
+        echo "aggregating an interrupted run into $OUTPUT" >&2
+        python3 "$HERE/aggregate_agent.py" \
+            ${aggregate_args[@]+"${aggregate_args[@]}"} || true
     fi
     # Fleets are torn down only for a run that was admitted. A rejection before
     # that (preflight, lifetime gate) is something the operator acts on with the
@@ -175,8 +194,9 @@ if ! $UV python "$V2ROOT/services/fleetlib.py" --check-lifetime "$MANIFEST" \
 fi
 
 mkdir -p "$RAW_DIR/workers" "$(dirname "$OUTPUT")"
-RUN_NONCE="$(python3 "$HERE/prepare_agent_run.py" \
-    --manifest "$MANIFEST" --worker-dir "$RAW_DIR/workers")" || exit 2
+prepare_args=(--manifest "$MANIFEST" --worker-dir "$RAW_DIR/workers")
+if [ -n "$RESUME_RUN_ID" ]; then prepare_args+=(--resume); fi
+RUN_NONCE="$(python3 "$HERE/prepare_agent_run.py" "${prepare_args[@]}")" || exit 2
 export OSWORLD_RUN_NONCE="$RUN_NONCE"
 
 if python3 - <<'PY'
@@ -210,6 +230,23 @@ for item in json.load(open(sys.argv[1]))["tasks"]:
 PY
 )
 
+# A resumed run re-runs only what is still unscored: a task whose rollout
+# already wrote a result is never bought again. prepare_agent_run.py --resume
+# kept those receipts, and retry_candidates.py skips scored tasks on its own.
+if [ -n "$RESUME_RUN_ID" ]; then
+    unscored_rows=()
+    for row in ${task_rows[@]+"${task_rows[@]}"}; do
+        read -r task_id _ <<<"$row"
+        scored=0
+        for result in "$RAW_DIR/workers/task_${task_id}/result.txt" \
+            "$RAW_DIR/workers/task_${task_id}"_retry_*/result.txt; do
+            if [ -e "$result" ]; then scored=1; fi
+        done
+        if [ "$scored" -eq 0 ]; then unscored_rows+=("$row"); fi
+    done
+    task_rows=(${unscored_rows[@]+"${unscored_rows[@]}"})
+fi
+
 # Claude pauses 3s (upstream's default) after every native action unless told
 # otherwise; that is dead time during a 500-step budgeted run, so default it
 # to 0 for this kind only. Other kinds keep upstream's default.
@@ -229,60 +266,164 @@ if [ "${ENABLE_RECORDING:-0}" = "1" ]; then
     generation_args+=(--enable-recording)
 fi
 
-run_batch() {
-    local -a batch=("$@")
-    worker_pids=()
-    local row task_id domain task_service_ports receipt result_dir log pid index
-    local batch_failed=0
-    for row in "${batch[@]}"; do
-        read -r task_id domain <<<"$row"
-        task_service_ports=""
-        if [ "$task_id" = "082" ]; then
-            # Canonical task 082 dials localhost:3000 from the host; this is the
-            # only task-service listener in the release, so it stays literal.
-            task_service_ports="3000:3000"
-        fi
-        receipt="$RAW_DIR/workers/task_${task_id}.json"
-        result_dir="$RAW_DIR/workers/task_${task_id}${ATTEMPT_SUFFIX:-}"
-        log="$RAW_DIR/workers/task_${task_id}${ATTEMPT_SUFFIX:-}.log"
-        rm -f "$receipt"
-        # `exec` makes $! the worker itself rather than an intermediate shell,
-        # so cancellation's `kill -TERM "$pid"` reaches uv (and the python it
-        # supervises) instead of orphaning a rollout that still holds a guest.
-        (
-            cd "$OSWORLD_ROOT" || exit 1
-            export OSWORLD_TASK_SERVICE_PORTS="$task_service_ports"
-            exec "${WORKER_UV[@]}" python "$HERE/agent_runner.py" \
-                --task-id "$task_id" \
-                --domain "$domain" \
-                --tasks-dir "$TASKS_DIR" \
-                --result-dir "$result_dir" \
-                --output "$receipt" \
-                --agent-kind "$AGENT_KIND" \
-                --model "$MODEL" \
-                --max-steps "$MAX_STEPS" \
-                --deadline-seconds "$AGENT_TASK_TIMEOUT_SECONDS" \
-                ${generation_args[@]+"${generation_args[@]}"}
-        ) >"$log" 2>&1 &
-        pid=$!
-        worker_pids+=("$pid")
-        echo "launched agent task $task_id pid=$pid"
-        sleep "$AGENT_START_STAGGER_SECONDS"
-    done
-    for index in "${!worker_pids[@]}"; do
-        wait "${worker_pids[$index]}" || batch_failed=1
-        unset 'worker_pids[index]'
-    done
-    return "$batch_failed"
+launched_pid=""
+launch_worker() {
+    local row="$1"
+    local task_id domain task_service_ports receipt result_dir log
+    read -r task_id domain <<<"$row"
+    task_service_ports=""
+    if [ "$task_id" = "082" ]; then
+        # Canonical task 082 dials localhost:3000 from the host; this is the
+        # only task-service listener in the release, so it stays literal.
+        task_service_ports="3000:3000"
+    fi
+    receipt="$RAW_DIR/workers/task_${task_id}.json"
+    result_dir="$RAW_DIR/workers/task_${task_id}${ATTEMPT_SUFFIX:-}"
+    log="$RAW_DIR/workers/task_${task_id}${ATTEMPT_SUFFIX:-}.log"
+    rm -f "$receipt"
+    # `exec` makes $! the worker itself rather than an intermediate shell,
+    # so cancellation's `kill -TERM "$pid"` reaches uv (and the python it
+    # supervises) instead of orphaning a rollout that still holds a guest.
+    (
+        cd "$OSWORLD_ROOT" || exit 1
+        export OSWORLD_TASK_SERVICE_PORTS="$task_service_ports"
+        exec "${WORKER_UV[@]}" python "$HERE/agent_runner.py" \
+            --task-id "$task_id" \
+            --domain "$domain" \
+            --tasks-dir "$TASKS_DIR" \
+            --result-dir "$result_dir" \
+            --output "$receipt" \
+            --agent-kind "$AGENT_KIND" \
+            --model "$MODEL" \
+            --max-steps "$MAX_STEPS" \
+            --deadline-seconds "$AGENT_TASK_TIMEOUT_SECONDS" \
+            ${generation_args[@]+"${generation_args[@]}"}
+    ) >"$log" 2>&1 &
+    launched_pid=$!
+    echo "launched agent task $task_id pid=$launched_pid"
 }
+
+# One line per finished worker so an operator watching a multi-hour run can see
+# progress without reading receipts. A missing or unparseable receipt is normal
+# here (a worker killed before it wrote one) and must not break the line.
+report_worker_exit() {
+    local task_id="$1" status="$2" done_count="$3" total="$4" running="$5"
+    local elapsed="$6"
+    local score cause
+    read -r score cause <<<"$(python3 - "$RAW_DIR/workers/task_${task_id}.json" <<'PY'
+import json, sys
+try:
+    record = json.load(open(sys.argv[1]))
+except Exception:
+    record = {}
+if not isinstance(record, dict):
+    record = {}
+score = record.get("score")
+cause = record.get("error_cause")
+ok = isinstance(score, (int, float)) and not isinstance(score, bool)
+print(score if ok else "none", cause if isinstance(cause, str) and cause else "-")
+PY
+)"
+    printf 'task %s exit=%s score=%s cause=%s  done=%s/%s running=%s elapsed=%02d:%02d:%02d\n' \
+        "$task_id" "$status" "$score" "$cause" "$done_count" "$total" "$running" \
+        "$((elapsed / 3600))" "$((elapsed % 3600 / 60))" "$((elapsed % 60))"
+}
+
+# Rolling pool: keep $1 workers in flight, refilling a slot as soon as one frees
+# instead of waiting out a whole batch on its slowest task. bash 3.2 has no
+# `wait -n`, so exits are found by polling `kill -0` and the status is then read
+# with a `wait` that returns immediately.
+run_pool() {
+    local concurrency="$1"
+    shift
+    local -a queue=("$@")
+    local total="${#queue[@]}"
+    local pool_failed=0 next=0 running=0 done_count=0
+    local started="$SECONDS"
+    local count index pid task_id status
+    local alive_pids alive_ids
+    worker_pids=()
+    worker_task_ids=()
+    while [ "$next" -lt "$total" ] || [ "$running" -gt 0 ]; do
+        while [ "$next" -lt "$total" ] && [ "$running" -lt "$concurrency" ]; do
+            launch_worker "${queue[$next]}"
+            read -r task_id _ <<<"${queue[$next]}"
+            worker_pids+=("$launched_pid")
+            worker_task_ids+=("$task_id")
+            next=$((next + 1))
+            running=$((running + 1))
+            sleep "$AGENT_START_STAGGER_SECONDS"
+        done
+        sleep "$POOL_POLL_SECONDS"
+        alive_pids=()
+        alive_ids=()
+        count="${#worker_pids[@]}"
+        index=0
+        while [ "$index" -lt "$count" ]; do
+            pid="${worker_pids[$index]}"
+            task_id="${worker_task_ids[$index]}"
+            index=$((index + 1))
+            if kill -0 "$pid" 2>/dev/null; then
+                alive_pids+=("$pid")
+                alive_ids+=("$task_id")
+                continue
+            fi
+            wait "$pid"
+            status=$?
+            if [ "$status" -ne 0 ]; then pool_failed=1; fi
+            done_count=$((done_count + 1))
+            running=$((running - 1))
+            report_worker_exit "$task_id" "$status" "$done_count" "$total" \
+                "$running" "$((SECONDS - started))"
+        done
+        # Assigned, not unset: cleanup_proxy reaps whatever is in flight now.
+        worker_pids=(${alive_pids[@]+"${alive_pids[@]}"})
+        worker_task_ids=(${alive_ids[@]+"${alive_ids[@]}"})
+    done
+    return "$pool_failed"
+}
+
+# Built before the first guest exists so cleanup_proxy can aggregate an
+# interrupted run with exactly the arguments the normal path would use.
+aggregate_args=(
+    --manifest "$MANIFEST"
+    --worker-dir "$RAW_DIR/workers"
+    --output "$OUTPUT"
+    --model "$MODEL"
+    --agent-kind "$AGENT_KIND"
+    --model-transport "$MODEL_BASE_URL"
+    --eval-model "${OSWORLD_EVAL_MODEL_NAME:-}"
+    --eval-provider "${OSWORLD_EVAL_MODEL_PROVIDER:-}"
+    --eval-transport "${OSWORLD_EVAL_MODEL_BASE_URL:-}"
+    --user-sim-model "${OSWORLD_USER_SIM_MODEL:-}"
+    --user-sim-provider "${OSWORLD_USER_SIM_PROVIDER:-}"
+    --user-sim-transport "${OSWORLD_USER_SIM_BASE_URL:-}"
+    --max-steps "$MAX_STEPS"
+    --concurrency "$PARALLEL_CONCURRENCY"
+    --thinking-budget "${M3_THINKING_BUDGET:-0}"
+    --run-nonce "$RUN_NONCE"
+    --campaign-id "$OSWORLD_CAMPAIGN_ID"
+)
+if [ -n "${M3_THINKING_MODE:-}" ]; then
+    aggregate_args+=(--thinking-mode "$M3_THINKING_MODE")
+fi
+if [ "$AGENT_KIND" = "m3" ]; then
+    aggregate_args+=(--m3-max-llm-retries "$M3_MAX_LLM_RETRIES")
+fi
+if [ "$RUN_TASK_082_CONCURRENT" = "1" ]; then
+    aggregate_args+=(--task-082-concurrent)
+fi
+if [ "$REQUIRE_NO_MODEL_COVERAGE" = "1" ]; then
+    aggregate_args+=(--no-model-receipt "$NO_MODEL_RECEIPT")
+fi
 
 # Everything above is local; from here a guest may exist, so an exit must stop the fleets.
 fleets_admitted=1
 
 overall=0
-batch=()
+pool_rows=()
 task_082_row=""
-for row in "${task_rows[@]}"; do
+for row in ${task_rows[@]+"${task_rows[@]}"}; do
     read -r task_id _ <<<"$row"
     if [ "$task_id" = "082" ]; then
         if [ "$RUN_TASK_082_CONCURRENT" != "1" ]; then
@@ -290,17 +431,15 @@ for row in "${task_rows[@]}"; do
             continue
         fi
     fi
-    batch+=("$row")
-    if [ "${#batch[@]}" -eq "$PARALLEL_CONCURRENCY" ]; then
-        run_batch "${batch[@]}" || overall=1
-        batch=()
-    fi
+    pool_rows+=("$row")
 done
-if [ "${#batch[@]}" -gt 0 ]; then run_batch "${batch[@]}" || overall=1; fi
+if [ "${#pool_rows[@]}" -gt 0 ]; then
+    run_pool "$PARALLEL_CONCURRENCY" "${pool_rows[@]}" || overall=1
+fi
 
 if [ -n "$task_082_row" ]; then
     echo "running agent task 082 solo on canonical host port 3000"
-    run_batch "$task_082_row" || overall=1
+    run_pool 1 "$task_082_row" || overall=1
 fi
 
 # Retry infrastructure/path errors in a deliberately small wave. This is not a
@@ -339,7 +478,7 @@ PY
 
     echo "retrying ${#failed_rows[@]} infrastructure/path failures (attempt $attempt)"
     overall=0
-    retry_batch=()
+    retry_rows=()
     retry_082_row=""
     ATTEMPT_SUFFIX="_retry_${attempt}"
     export ATTEMPT_SUFFIX
@@ -353,50 +492,18 @@ PY
             retry_082_row="$row"
             continue
         fi
-        retry_batch+=("$row")
-        if [ "${#retry_batch[@]}" -eq "$AGENT_RETRY_CONCURRENCY" ]; then
-            run_batch "${retry_batch[@]}" || overall=1
-            retry_batch=()
-        fi
+        retry_rows+=("$row")
     done
-    if [ "${#retry_batch[@]}" -gt 0 ]; then run_batch "${retry_batch[@]}" || overall=1; fi
+    if [ "${#retry_rows[@]}" -gt 0 ]; then
+        run_pool "$AGENT_RETRY_CONCURRENCY" "${retry_rows[@]}" || overall=1
+    fi
     if [ -n "$retry_082_row" ]; then
-        run_batch "$retry_082_row" || overall=1
+        run_pool 1 "$retry_082_row" || overall=1
     fi
 done
 unset ATTEMPT_SUFFIX
 
-aggregate_args=(
-    --manifest "$MANIFEST"
-    --worker-dir "$RAW_DIR/workers"
-    --output "$OUTPUT"
-    --model "$MODEL"
-    --agent-kind "$AGENT_KIND"
-    --model-transport "$MODEL_BASE_URL"
-    --eval-model "${OSWORLD_EVAL_MODEL_NAME:-}"
-    --eval-provider "${OSWORLD_EVAL_MODEL_PROVIDER:-}"
-    --eval-transport "${OSWORLD_EVAL_MODEL_BASE_URL:-}"
-    --user-sim-model "${OSWORLD_USER_SIM_MODEL:-}"
-    --user-sim-provider "${OSWORLD_USER_SIM_PROVIDER:-}"
-    --user-sim-transport "${OSWORLD_USER_SIM_BASE_URL:-}"
-    --max-steps "$MAX_STEPS"
-    --concurrency "$PARALLEL_CONCURRENCY"
-    --thinking-budget "${M3_THINKING_BUDGET:-0}"
-    --run-nonce "$RUN_NONCE"
-    --campaign-id "$OSWORLD_CAMPAIGN_ID"
-)
-if [ -n "${M3_THINKING_MODE:-}" ]; then
-    aggregate_args+=(--thinking-mode "$M3_THINKING_MODE")
-fi
-if [ "$AGENT_KIND" = "m3" ]; then
-    aggregate_args+=(--m3-max-llm-retries "$M3_MAX_LLM_RETRIES")
-fi
-if [ "$RUN_TASK_082_CONCURRENT" = "1" ]; then
-    aggregate_args+=(--task-082-concurrent)
-fi
-if [ "$REQUIRE_NO_MODEL_COVERAGE" = "1" ]; then
-    aggregate_args+=(--no-model-receipt "$NO_MODEL_RECEIPT")
-fi
+aggregated=1
 python3 "$HERE/aggregate_agent.py" "${aggregate_args[@]}" || overall=1
 
 exit "$overall"

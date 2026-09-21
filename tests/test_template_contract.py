@@ -694,7 +694,9 @@ def test_full_agent_coordinator_bounds_sandboxes_and_namespaces_task_service_por
     aggregator = (ROOT / "runner" / "aggregate_agent.py").read_text()
 
     assert 'PARALLEL_CONCURRENCY="${PARALLEL_CONCURRENCY:-80}"' in coordinator
-    assert 'if [ "$PARALLEL_CONCURRENCY" -gt 80 ]; then' in coordinator
+    # The default stays 80; the hard cap is 120 for an operator who has
+    # confirmed the org quota (the account admitted 201 in the live probe).
+    assert 'if [ "$PARALLEL_CONCURRENCY" -gt 120 ]; then' in coordinator
     assert 'HOSTMAP_PORT="8090"' in coordinator
     assert 'task_id" = "082"' in coordinator
     assert 'task_service_ports="3000:3000"' in coordinator

@@ -869,3 +869,45 @@ def test_zero_call_receipt_does_not_invalidate_known_cache_totals():
     totals = aggregate_agent._sum_model_usage([new_record, idle])["agent"]
     assert totals["cache_creation_input_tokens"] == 40
     assert totals["cache_read_input_tokens"] == 900
+
+
+def test_diagnostic_scored_summary_counts_records_the_gate_rejected(tmp_path):
+    # The gated mean is the campaign's headline and only attested records feed
+    # it. An operator reading a failed run still needs to know what the scored
+    # rollouts looked like, so the diagnostic mean spans every valid score.
+    manifest, workers = _inputs(tmp_path)
+    data = json.loads(manifest.read_text())
+    data["tasks"] += [
+        {"id": "002", "domain": "release"},
+        {"id": "003", "domain": "release"},
+    ]
+    manifest.write_text(json.dumps(data))
+    rejected = json.loads((workers / "task_001.json").read_text())
+    rejected.update(
+        id="002", run_nonce="a-stale-nonce", score=0.75, sandbox_id="sandbox-2"
+    )
+    (workers / "task_002.json").write_text(json.dumps(rejected))
+    # 003 never produced a receipt at all.
+
+    run, ok = _aggregate_defaults(manifest, workers)
+
+    assert not ok
+    summary = run["summary"]
+    assert summary["scored_tasks"] == 1  # gate-accepted, unchanged
+    assert summary["mean_score"] == 0.25  # gate-accepted, unchanged
+    assert summary["scored_task_count"] == 2
+    assert summary["diagnostic_mean_of_scored"] == 0.5
+    assert summary["unscored_task_ids"] == ["003"]
+
+
+def test_diagnostic_mean_is_null_when_no_record_carries_a_score(tmp_path):
+    manifest, workers = _inputs(tmp_path)
+    record = json.loads((workers / "task_001.json").read_text())
+    record["score"] = None
+    (workers / "task_001.json").write_text(json.dumps(record))
+
+    run, _ = _aggregate_defaults(manifest, workers)
+
+    assert run["summary"]["scored_task_count"] == 0
+    assert run["summary"]["diagnostic_mean_of_scored"] is None
+    assert run["summary"]["unscored_task_ids"] == ["001"]

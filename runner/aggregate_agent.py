@@ -106,6 +106,10 @@ def aggregate(
     records: list[dict] = []
     accepted_records: list[dict] = []
     invalid: dict[str, list[str]] = {}
+    # Diagnostics, never gate inputs: what every rollout scored, including the
+    # ones the gate rejected, so a failed campaign is still readable.
+    diagnostic_scores: list[float] = []
+    unscored_task_ids: list[str] = []
     attested = 0
     expected_thinking_budget = thinking_budget if thinking_budget else None
 
@@ -115,7 +119,12 @@ def aggregate(
             record = json.loads(path.read_text())
         except (OSError, json.JSONDecodeError):
             invalid[task_id] = ["missing-or-invalid-receipt"]
+            unscored_task_ids.append(task_id)
             continue
+        if _valid_score(record.get("score")):
+            diagnostic_scores.append(float(record["score"]))
+        else:
+            unscored_task_ids.append(task_id)
         reasons: list[str] = []
         eval_attempts = record.get("eval_model_call_attempts")
         eval_successes = record.get("eval_model_successes")
@@ -237,6 +246,15 @@ def aggregate(
         "scored_tasks": len(scores),
         "mean_score": (sum(scores) / len(scores)) if scores else None,
         "partial_score": (sum(scores) / len(scores)) if scores else None,
+        # Every valid score, gate-accepted or not. mean_score above is the
+        # campaign's number; this one only tells the operator what happened.
+        "scored_task_count": len(diagnostic_scores),
+        "diagnostic_mean_of_scored": (
+            sum(diagnostic_scores) / len(diagnostic_scores)
+            if diagnostic_scores
+            else None
+        ),
+        "unscored_task_ids": unscored_task_ids,
         "binary_successes": sum(score == 1.0 for score in scores),
         "binary_accuracy": (
             sum(score == 1.0 for score in scores) / len(scores) if scores else None

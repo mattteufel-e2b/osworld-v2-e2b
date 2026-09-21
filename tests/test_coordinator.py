@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -466,8 +467,11 @@ def _coordinator_env_recording_agent_args(
     (fake_bin / "python3").write_text(
         "#!/bin/sh\n"
         'case "$1" in\n'
-        "  */preflight.py|*/prepare_agent_run.py|*/aggregate_agent.py) "
-        '[ "${1##*/}" = prepare_agent_run.py ] && echo nonce; exit 0 ;;\n'
+        "  */preflight.py|*/prepare_agent_run.py|*/aggregate_agent.py)\n"
+        '    [ "${1##*/}" = prepare_agent_run.py ] && '
+        '{ echo "$*" > "$PREPARE_ARGS_FILE"; echo nonce; }\n'
+        '    [ "${1##*/}" = aggregate_agent.py ] && echo "$*" > "$AGGREGATE_ARGS_FILE"\n'
+        "    exit 0 ;;\n"
         '  *) exec "$REAL_PYTHON" "$@" ;;\n'
         "esac\n"
     )
@@ -513,6 +517,8 @@ def _coordinator_env_recording_agent_args(
         "REAL_PYTHON": sys.executable,
         "AGENT_ARGS_FILE": str(args_file),
         "AGENT_ENV_FILE": str(env_file),
+        "PREPARE_ARGS_FILE": str(tmp_path / "prepare-argv.txt"),
+        "AGGREGATE_ARGS_FILE": str(tmp_path / "aggregate-argv.txt"),
         "GUEST_TEMPLATE": IMMUTABLE_GUEST,
         "OSWORLD_CAMPAIGN_ID": "c",
         "E2B_API_KEY": "dummy",
@@ -690,3 +696,207 @@ def test_task_082_worker_gets_the_literal_service_port(tmp_path):
     )
     _run_coordinator_recording(env)
     assert args_file.read_text().strip() == "OSWORLD_TASK_SERVICE_PORTS=3000:3000"
+
+
+POOL_UV = r"""#!/bin/sh
+case "$*" in
+  *agent_runner.py*)
+    prev=""
+    tid=""
+    for a in "$@"; do
+      if [ "$prev" = "--task-id" ]; then tid="$a"; fi
+      prev="$a"
+    done
+    "$REAL_PYTHON" -c 'import sys,time; open(sys.argv[1],"w").write(str(time.time()))' "$MARKS/start_$tid"
+    sleep "$(cat "$MARKS/sleep_$tid")"
+    "$REAL_PYTHON" -c 'import sys,time; open(sys.argv[1],"w").write(str(time.time()))' "$MARKS/end_$tid"
+    exit 0 ;;
+  *hostmap_proxy.py*) exec sleep 60 ;;
+  *) exit 0 ;;
+esac
+"""
+
+
+def _set_manifest_tasks(env: dict[str, str], task_ids: list[str]) -> None:
+    manifest = Path(env["AGENT_MANIFEST"])
+    data = json.loads(manifest.read_text())
+    data["tasks"] = [{"id": task_id, "domain": "t"} for task_id in task_ids]
+    manifest.write_text(json.dumps(data))
+    for task_id in task_ids:
+        (Path(env["OSWORLD_TASKS_DIR"]) / f"task_{task_id}.py").write_text(
+            "TASK = {}\n"
+        )
+
+
+@needs_free_hostmap_port
+def test_rolling_pool_starts_the_next_task_as_soon_as_a_slot_frees(tmp_path):
+    # A fixed-batch scheduler leaves the whole run waiting on its slowest task
+    # before launching anything else; over 108 tasks at 500 steps that is hours
+    # of idle paid capacity. The pool must refill a slot the moment one frees,
+    # and must never exceed PARALLEL_CONCURRENCY while doing it.
+    env, _ = _coordinator_env_recording_agent_args(tmp_path)
+    _set_manifest_tasks(env, ["001", "002", "003"])
+    marks = tmp_path / "marks"
+    marks.mkdir()
+    for task_id, seconds in (("001", 1), ("002", 8), ("003", 0)):
+        (marks / f"sleep_{task_id}").write_text(str(seconds))
+    _write_executable(tmp_path / "bin" / "uv", POOL_UV)
+    env.update(
+        MARKS=str(marks),
+        PARALLEL_CONCURRENCY="2",
+        POOL_POLL_SECONDS="1",
+        AGENT_START_STAGGER_SECONDS="0",
+    )
+
+    result = _run_coordinator_recording(env)
+
+    stamps = {
+        p.name: float(p.read_text())
+        for p in marks.iterdir()
+        if p.name.startswith(("start_", "end_"))
+    }
+    assert set(stamps) == {
+        "start_001",
+        "end_001",
+        "start_002",
+        "end_002",
+        "start_003",
+        "end_003",
+    }, (stamps, result.stdout, result.stderr)
+    # Rolling: 003 started while the slow 002 was still running.
+    assert stamps["start_003"] < stamps["end_002"]
+    # Bounded: it waited for 001's slot rather than running three at once.
+    assert stamps["start_003"] >= stamps["end_001"]
+
+
+@needs_free_hostmap_port
+@pytest.mark.parametrize(
+    "receipt,expected",
+    [
+        ('{"score": 0.5, "error_cause": null}', "score=0.5 cause=-"),
+        ('{"error_cause": "task-timeout"}', "score=none cause=task-timeout"),
+        ("not json at all", "score=none cause=-"),
+    ],
+)
+def test_coordinator_prints_a_progress_line_per_finished_worker(
+    tmp_path, receipt, expected
+):
+    env, _ = _coordinator_env_recording_agent_args(tmp_path)
+    (tmp_path / "receipt-body").write_text(receipt)
+    _write_executable(
+        tmp_path / "bin" / "uv",
+        "#!/bin/sh\n"
+        'case "$*" in\n'
+        "  *agent_runner.py*) "
+        'cat "$RECEIPT_BODY" > "$RAW_DIR/workers/task_001.json"; exit 3 ;;\n'
+        "  *hostmap_proxy.py*) exec sleep 60 ;;\n"
+        "  *) exit 0 ;;\n"
+        "esac\n",
+    )
+    env.update(RECEIPT_BODY=str(tmp_path / "receipt-body"), POOL_POLL_SECONDS="1")
+
+    result = _run_coordinator_recording(env)
+
+    pattern = (
+        r"^task 001 exit=3 "
+        + expected.replace(".", r"\.")
+        + r"  done=1/1 running=0 elapsed=\d\d:\d\d:\d\d$"
+    )
+    assert re.search(pattern, result.stdout, re.M), (pattern, result.stdout)
+
+
+def test_parallel_concurrency_above_the_hard_cap_is_rejected(tmp_path):
+    env, _ = _coordinator_env_recording_agent_args(tmp_path)
+    env["PARALLEL_CONCURRENCY"] = "121"
+    result = _run_coordinator_recording(env)
+    assert result.returncode == 2
+    assert "must not exceed 120" in result.stderr
+
+
+@needs_free_hostmap_port
+def test_parallel_concurrency_of_120_is_admitted(tmp_path):
+    # The account admitted 201 sandboxes in the live capacity probe, so an
+    # operator who has confirmed the org quota may raise the default of 80.
+    env, _ = _coordinator_env_recording_agent_args(tmp_path)
+    env["PARALLEL_CONCURRENCY"] = "120"
+    result = _run_coordinator_recording(env)
+    assert "must not exceed" not in result.stderr
+    assert Path(env["AGENT_ARGS_FILE"]).exists(), (result.stdout, result.stderr)
+
+
+@needs_free_hostmap_port
+def test_resume_skips_scored_tasks_and_asks_prepare_to_keep_them(tmp_path):
+    # Re-buying a finished 500-step rollout is the expensive failure mode of a
+    # coordinator crash; a resumed run must launch only what is still unscored.
+    env, args_file = _coordinator_env_recording_agent_args(tmp_path)
+    _set_manifest_tasks(env, ["001", "002"])
+    workers = Path(env["RAW_DIR"]) / "workers"
+    (workers / "task_001").mkdir(parents=True)
+    (workers / "task_001" / "result.txt").write_text("1.0")
+    _write_executable(
+        tmp_path / "bin" / "uv",
+        "#!/bin/sh\n"
+        'case "$*" in\n'
+        '  *agent_runner.py*) echo "$*" >> "$AGENT_ARGS_FILE"; exit 0 ;;\n'
+        "  *hostmap_proxy.py*) exec sleep 60 ;;\n"
+        "  *) exit 0 ;;\n"
+        "esac\n",
+    )
+    env.update(RESUME_RUN_ID="an-earlier-run", AGENT_START_STAGGER_SECONDS="0")
+
+    result = _run_coordinator_recording(env)
+
+    assert "--resume" in Path(env["PREPARE_ARGS_FILE"]).read_text()
+    launched = args_file.read_text()
+    assert "--task-id 002" in launched, (launched, result.stdout, result.stderr)
+    assert "--task-id 001" not in launched
+
+
+@needs_free_hostmap_port
+def test_interrupted_run_still_writes_a_campaign_receipt(tmp_path):
+    # An operator who cancels (or a coordinator that dies) after hours of
+    # rollouts used to get no aggregate at all, leaving the receipts unread.
+    env = _runner_env(tmp_path, task_timeout=60)
+    env.update(
+        PARALLEL_CONCURRENCY="1",
+        AGENT_RETRY_ATTEMPTS="0",
+        AGENT_START_STAGGER_SECONDS="0",
+        POOL_POLL_SECONDS="1",
+        REQUIRE_NO_MODEL_COVERAGE="0",
+        TEARDOWN_FLEETS_ON_EXIT="1",
+        FLEET_STOPPED_FILE=str(tmp_path / "fleets-stopped"),
+        WORKER_PID_FILE=str(tmp_path / "worker-pid"),
+    )
+    uv = tmp_path / "bin/uv"
+    uv.write_text(
+        uv.read_text().replace(
+            'case "$*" in',
+            """case "$*" in
+  *fleetlib.py*) exit 0 ;;
+  *hostmap_proxy.py*) exec sleep 60 ;;
+  *agent_runner.py*) echo $$ > "$WORKER_PID_FILE"; exec sleep 120 ;;
+  *stop.py*) touch "$FLEET_STOPPED_FILE"; exit 0 ;;""",
+        )
+    )
+    process = subprocess.Popen(
+        ["bash", str(ROOT / "runner/run_agent_parallel.sh")],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        _wait_for_file(Path(env["WORKER_PID_FILE"]))
+        process.terminate()
+        stdout, stderr = process.communicate(timeout=60)
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.communicate()
+
+    assert process.returncode == 143, (stdout, stderr)
+    receipt = json.loads(Path(env["OUTPUT"]).read_text())
+    assert receipt["summary"]["expected_tasks"] == 1
+    assert receipt["summary"]["attested_records"] == 0
+    assert Path(env["FLEET_STOPPED_FILE"]).exists()
