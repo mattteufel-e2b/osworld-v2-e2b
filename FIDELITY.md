@@ -529,6 +529,13 @@ full native-result parity or a passing 24-task sample.
 - **Fonts, seeded profiles, application preferences/accounts**: not reproduced or certified
   against any reference image, same caveat as the V1 conversion — no file-by-file reference
   inventory exists to check against (V2's reference is a gated qcow2/AMI, never inspected).
+- **Task 092 font and Blender version**: the task requires Bauhaus 93, which is absent
+  from the E2B guest and is not supplied by the task setup or local task assets. Its evaluator
+  does not explicitly verify that font, so a high score cannot certify font fidelity.
+  The [pre-August upstream image recipe](https://github.com/xlang-ai/osworld_image/blob/d0ad458c0655bddea4e628437019f153718de947/ansible/group_vars/all.yml#L104)
+  specifies Blender 5.0.0; this guest pins 4.5.14 LTS. That is a recipe difference, not an
+  inventory of the pinned reference AMI. Neither the reference VM's Blender version nor its
+  Bauhaus 93 availability has been verified.
 - **Symbol and Wingdings are absent from the guest; only WPS's warning about them is
   suppressed**: a fresh `wpp` raises a "System Check" window reading "Some formula symbols
   might not be displayed correctly due to missing fonts Symbol, Wingdings...". The baked

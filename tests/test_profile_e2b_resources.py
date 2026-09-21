@@ -9,7 +9,11 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 _TOOL = Path(__file__).resolve().parent.parent / "tools" / "profile_e2b_resources.py"
 _spec = importlib.util.spec_from_file_location("profile_e2b_resources", _TOOL)
@@ -81,6 +85,94 @@ def test_load_ids_from_evidence_json_and_jsonl(tmp_path):
 
 def test_load_ids_ignores_missing_path(capsys):
     assert prof.load_ids_from_evidence(["/no/such/path/xyz"]) == []
+
+
+class FakePaginator:
+    def __init__(self, pages):
+        self.pages = iter(pages)
+        self.has_next = bool(pages)
+        self.remaining = len(pages)
+        self.calls = 0
+
+    def next_items(self):
+        assert self.has_next
+        self.calls += 1
+        page = next(self.pages)
+        if isinstance(page, Exception):
+            raise page
+        self.remaining -= 1
+        self.has_next = self.remaining > 0
+        return page
+
+
+def stub_listing(monkeypatch, listed):
+    monkeypatch.setitem(
+        sys.modules,
+        "e2b",
+        SimpleNamespace(Sandbox=SimpleNamespace(list=lambda: listed)),
+    )
+
+
+def test_metadata_listing_consumes_every_sdk_page_and_matches_all_selectors(
+    monkeypatch,
+):
+    paginator = FakePaginator(
+        [
+            [
+                SimpleNamespace(
+                    sandbox_id=REAL_ID,
+                    metadata={"campaign_id": "ours", "section": "guest"},
+                ),
+                SimpleNamespace(
+                    sandbox_id=REAL_ID2,
+                    metadata={"campaign_id": "other", "section": "guest"},
+                ),
+            ],
+            [],
+            [
+                SimpleNamespace(
+                    sandbox_id=REAL_ID2,
+                    metadata={"campaign_id": "ours", "section": "guest"},
+                ),
+                SimpleNamespace(
+                    sandbox_id="003",
+                    metadata={"campaign_id": "ours", "section": "guest"},
+                ),
+            ],
+        ]
+    )
+    stub_listing(monkeypatch, paginator)
+    assert prof.list_ids_by_metadata({"campaign_id": "ours", "section": "guest"}) == [
+        REAL_ID,
+        REAL_ID2,
+    ]
+    assert paginator.calls == 3
+
+
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_metadata_listing_preserves_legacy_list_forms_and_id_fallback(
+    monkeypatch, wrapped
+):
+    items = [
+        SimpleNamespace(id=REAL_ID, metadata={"campaign_id": "ours"}),
+        SimpleNamespace(sandbox_id=REAL_ID2, metadata=None),
+    ]
+    stub_listing(monkeypatch, SimpleNamespace(sandboxes=items) if wrapped else items)
+    assert prof.list_ids_by_metadata({"campaign_id": "ours"}) == [REAL_ID]
+
+
+def test_metadata_listing_reports_page_failure_without_partial_selection(
+    monkeypatch, capsys
+):
+    paginator = FakePaginator(
+        [
+            [SimpleNamespace(sandbox_id=REAL_ID, metadata={"campaign_id": "ours"})],
+            RuntimeError("page unavailable"),
+        ]
+    )
+    stub_listing(monkeypatch, paginator)
+    assert prof.list_ids_by_metadata({"campaign_id": "ours"}) == []
+    assert "could not list sandboxes: page unavailable" in capsys.readouterr().err
 
 
 # --- summarize -----------------------------------------------------------------
