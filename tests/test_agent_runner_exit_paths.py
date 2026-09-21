@@ -111,6 +111,35 @@ def _run(
     return process, receipt
 
 
+def test_agent_kind_and_model_are_required_with_no_defaults(tmp_path):
+    # A dropped --agent-kind/--model used to fall back to prompt/gpt-4o and
+    # burn budget on the wrong agent; the coordinator must always pass both.
+    checkout = _fake_checkout(tmp_path, "pass")
+    receipt = tmp_path / "receipt.json"
+    cmd = [
+        sys.executable,
+        str(ROOT / "runner" / "agent_runner.py"),
+        "--task-id",
+        "001",
+        "--domain",
+        "test",
+        "--tasks-dir",
+        str(tmp_path / "tasks"),
+        "--result-dir",
+        str(tmp_path / "raw"),
+        "--output",
+        str(receipt),
+        "--max-steps",
+        "3",
+    ]
+    env = {**os.environ, "OSWORLD_RUN_NONCE": "nonce", "PYTHONPATH": str(checkout)}
+    result = subprocess.run(cmd, cwd=checkout, env=env, text=True, capture_output=True)
+    assert result.returncode == 2
+    assert "--agent-kind" in result.stderr
+    assert "--model" in result.stderr
+    assert not receipt.exists()
+
+
 def test_native_claude_worker_records_effective_settings_and_uses_native_actions(
     tmp_path, monkeypatch
 ):

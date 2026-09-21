@@ -58,7 +58,9 @@ if [ "$REQUIRE_NO_MODEL_COVERAGE" != "0" ] && [ "$REQUIRE_NO_MODEL_COVERAGE" != 
     echo "REQUIRE_NO_MODEL_COVERAGE must be 0 or 1" >&2
     exit 2
 fi
-AGENT_TASK_TIMEOUT_SECONDS="${AGENT_TASK_TIMEOUT_SECONDS:-14400}"
+# Default per-task wall-clock deadline: 28800s (8h) budgets a full 500-step
+# rollout with headroom; override for shorter canaries.
+AGENT_TASK_TIMEOUT_SECONDS="${AGENT_TASK_TIMEOUT_SECONDS:-28800}"
 GUEST_READY_TIMEOUT_S="${GUEST_READY_TIMEOUT_S:-180}"
 for knob in AGENT_TASK_TIMEOUT_SECONDS GUEST_READY_TIMEOUT_S; do
     if [[ ! "${!knob}" =~ ^[1-9][0-9]*$ ]]; then
@@ -77,7 +79,12 @@ resolve_e2b_api_key
 : "${MODEL_API_KEY:?MODEL_API_KEY required}"
 : "${MODEL_BASE_URL:?MODEL_BASE_URL required}"
 : "${MODEL:?MODEL required}"
-AGENT_KIND="${AGENT_KIND:-prompt}"  # validated against runner/agents.py by the worker
+# Judge (and user-simulator, which shares the same pair) retry budget: an
+# operator override wins, otherwise budget for the full run.
+: "${OSWORLD_EVAL_MODEL_RETRY_ATTEMPTS:=8}"
+: "${OSWORLD_EVAL_MODEL_RETRY_DELAY:=10}"
+export OSWORLD_EVAL_MODEL_RETRY_ATTEMPTS OSWORLD_EVAL_MODEL_RETRY_DELAY
+: "${AGENT_KIND:?AGENT_KIND required (prompt|m3|claude; see runner/agents.py)}"
 if [ "$AGENT_KIND" = "m3" ] && [[ ! "${M3_THINKING_BUDGET:-}" =~ ^[1-9][0-9]*$ ]]; then
     echo "M3_THINKING_BUDGET must be explicit and positive for an M3 benchmark" >&2
     exit 2
@@ -203,6 +210,13 @@ for item in json.load(open(sys.argv[1]))["tasks"]:
 PY
 )
 
+# Claude pauses 3s (upstream's default) after every native action unless told
+# otherwise; that is dead time during a 500-step budgeted run, so default it
+# to 0 for this kind only. Other kinds keep upstream's default.
+if [ "$AGENT_KIND" = "claude" ] && [ -z "${SLEEP_AFTER_EXECUTION:-}" ]; then
+    SLEEP_AFTER_EXECUTION=0
+fi
+
 # Upstream generation flags, forwarded only when set so agents.py keeps the
 # upstream default otherwise. (`${arr[@]+...}` keeps bash 3.2 happy under set -u.)
 generation_args=()
@@ -212,7 +226,6 @@ for pair in MAX_TOKENS:--max-tokens TEMPERATURE:--temperature TOP_P:--top-p \
     if [ -n "${!name:-}" ]; then generation_args+=("${pair#*:}" "${!name}"); fi
 done
 if [ "${ENABLE_RECORDING:-0}" = "1" ]; then
-    export ENABLE_RECORDING  # receipts record the opt-in
     generation_args+=(--enable-recording)
 fi
 
@@ -249,7 +262,6 @@ run_batch() {
                 --model "$MODEL" \
                 --max-steps "$MAX_STEPS" \
                 --deadline-seconds "$AGENT_TASK_TIMEOUT_SECONDS" \
-                --client-password "osworld-public-evaluation" \
                 ${generation_args[@]+"${generation_args[@]}"}
         ) >"$log" 2>&1 &
         pid=$!

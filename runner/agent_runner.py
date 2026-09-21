@@ -167,8 +167,8 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help="per-task receipt json (gitignored raw)",
     )
-    parser.add_argument("--agent-kind", choices=sorted(AGENT_KINDS), default="prompt")
-    parser.add_argument("--model", default="openai/gpt-4o")
+    parser.add_argument("--agent-kind", choices=sorted(AGENT_KINDS), required=True)
+    parser.add_argument("--model", required=True)
     parser.add_argument("--max-steps", type=int, default=75)
     # Generation settings mirror upstream run.py; unset means the agent kind's
     # upstream default (see agents.py).

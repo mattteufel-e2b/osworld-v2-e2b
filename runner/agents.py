@@ -136,7 +136,9 @@ class CompatiblePromptAgent(PromptAgent):
             f"[agent] LLM exhausted retries (last status {last_status})",
             file=sys.stderr,
         )
-        return ""
+        raise RuntimeError(
+            f"prompt agent exhausted 8 attempts; last error: status {last_status}"
+        )
 
 
 def build_prompt_agent(model: str, settings: dict, client_password: str):

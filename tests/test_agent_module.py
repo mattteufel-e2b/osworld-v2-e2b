@@ -185,6 +185,24 @@ def test_prompt_agent_is_built_from_settings_and_routes_to_model_env(
     assert callable(getattr(agent, "call_llm"))
 
 
+def test_prompt_agent_call_llm_raises_when_retries_are_exhausted(agents, monkeypatch):
+    # A silent "" reached upstream's action parser as a real (empty) model
+    # answer; an exhausted retry budget must fail the task instead.
+    monkeypatch.setenv("MODEL_BASE_URL", "https://example.test/v1")
+    monkeypatch.setenv("MODEL_API_KEY", "sentinel")
+    monkeypatch.setattr(agents.time, "sleep", lambda _seconds: None)
+
+    class _AlwaysFails:
+        status_code = 500
+        text = "server error"
+        headers = {}
+
+    monkeypatch.setattr(agents.requests, "post", lambda *a, **kw: _AlwaysFails())
+    agent = agents.CompatiblePromptAgent(model="provider/model")
+    with pytest.raises(RuntimeError, match="prompt agent exhausted 8 attempts"):
+        agent.call_llm({"messages": []})
+
+
 def test_m3_agent_is_built_with_model_env_transport(agents, monkeypatch):
     monkeypatch.setenv("MODEL_BASE_URL", "https://api.fireworks.ai/inference")
     monkeypatch.setenv("MODEL_API_KEY", "sentinel")

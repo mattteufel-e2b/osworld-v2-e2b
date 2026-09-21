@@ -451,10 +451,13 @@ def _coordinator_env_recording_agent_args(
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     args_file = tmp_path / "agent-argv.txt"
+    env_file = tmp_path / "agent-env.txt"
     (fake_bin / "uv").write_text(
         "#!/bin/sh\n"
         'case "$*" in\n'
-        '  *agent_runner.py*) echo "$*" > "$AGENT_ARGS_FILE"; exit 0 ;;\n'
+        '  *agent_runner.py*) echo "$*" > "$AGENT_ARGS_FILE"; '
+        'env | grep -E "^(OSWORLD_EVAL_MODEL_RETRY_ATTEMPTS|OSWORLD_EVAL_MODEL_RETRY_DELAY)=" '
+        '> "$AGENT_ENV_FILE"; exit 0 ;;\n'
         "  *hostmap_proxy.py*) exec sleep 60 ;;\n"  # readiness loop needs a live proxy pid
         "  *) exit 0 ;;\n"
         "esac\n"
@@ -509,6 +512,7 @@ def _coordinator_env_recording_agent_args(
         "PATH": f"{fake_bin}:{os.environ['PATH']}",
         "REAL_PYTHON": sys.executable,
         "AGENT_ARGS_FILE": str(args_file),
+        "AGENT_ENV_FILE": str(env_file),
         "GUEST_TEMPLATE": IMMUTABLE_GUEST,
         "OSWORLD_CAMPAIGN_ID": "c",
         "E2B_API_KEY": "dummy",
@@ -534,6 +538,8 @@ def _coordinator_env_recording_agent_args(
         "MAX_TRAJECTORY_LENGTH",
         "ENABLE_RECORDING",
         "SLEEP_AFTER_EXECUTION",
+        "OSWORLD_EVAL_MODEL_RETRY_ATTEMPTS",
+        "OSWORLD_EVAL_MODEL_RETRY_DELAY",
     ):
         env.pop(name, None)
     return env, args_file
@@ -548,6 +554,54 @@ def _run_coordinator_recording(env: dict[str, str]) -> subprocess.CompletedProce
         timeout=120,
         check=False,
     )
+
+
+def test_agent_kind_is_required_and_fails_closed(tmp_path):
+    # AGENT_KIND used to default to "prompt", silently burning a full-budget
+    # 500-step campaign on the wrong agent if the operator forgot to set it.
+    env, _ = _coordinator_env_recording_agent_args(tmp_path)
+    env.pop("AGENT_KIND", None)
+    result = _run_coordinator_recording(env)
+    assert result.returncode != 0
+    assert "AGENT_KIND" in result.stderr
+
+
+@needs_free_hostmap_port
+def test_agent_task_timeout_defaults_to_eight_hours(tmp_path):
+    env, args_file = _coordinator_env_recording_agent_args(tmp_path)
+    env.pop("AGENT_TASK_TIMEOUT_SECONDS", None)
+    _run_coordinator_recording(env)
+    assert "--deadline-seconds 28800" in args_file.read_text()
+
+
+@needs_free_hostmap_port
+def test_coordinator_sets_default_judge_and_simulator_retry_budget(tmp_path):
+    env, args_file = _coordinator_env_recording_agent_args(tmp_path)
+    _run_coordinator_recording(env)
+    assert args_file.exists()  # the worker did launch
+    dumped = Path(env["AGENT_ENV_FILE"]).read_text()
+    assert "OSWORLD_EVAL_MODEL_RETRY_ATTEMPTS=8" in dumped
+    assert "OSWORLD_EVAL_MODEL_RETRY_DELAY=10" in dumped
+
+
+@needs_free_hostmap_port
+def test_coordinator_respects_an_operator_override_of_the_retry_budget(tmp_path):
+    env, _ = _coordinator_env_recording_agent_args(tmp_path)
+    env["OSWORLD_EVAL_MODEL_RETRY_ATTEMPTS"] = "3"
+    env["OSWORLD_EVAL_MODEL_RETRY_DELAY"] = "1.5"
+    _run_coordinator_recording(env)
+    dumped = Path(env["AGENT_ENV_FILE"]).read_text()
+    assert "OSWORLD_EVAL_MODEL_RETRY_ATTEMPTS=3" in dumped
+    assert "OSWORLD_EVAL_MODEL_RETRY_DELAY=1.5" in dumped
+
+
+@needs_free_hostmap_port
+def test_coordinator_defaults_claude_sleep_after_execution_to_zero(tmp_path):
+    env, args_file = _coordinator_env_recording_agent_args(tmp_path)
+    env["AGENT_KIND"] = "claude"
+    env.pop("SLEEP_AFTER_EXECUTION", None)
+    _run_coordinator_recording(env)
+    assert "--sleep-after-execution 0" in args_file.read_text()
 
 
 @needs_free_hostmap_port

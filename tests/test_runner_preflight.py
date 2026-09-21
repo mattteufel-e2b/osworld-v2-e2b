@@ -93,6 +93,7 @@ def test_all_runners_fail_before_launching_when_service_runtime_is_missing(tmp_p
         "MODEL_BASE_URL": "https://example.test/v1",
         "MODEL": "test-model",
         "REQUIRE_NO_MODEL_COVERAGE": "0",
+        "AGENT_KIND": "prompt",
     }
 
     for relative in (
