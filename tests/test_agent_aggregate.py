@@ -720,6 +720,8 @@ def _usage(calls: int, inp: int | None, out: int | None, unmeasured: int = 0) ->
         "calls": calls,
         "input_tokens": inp,
         "output_tokens": out,
+        "cache_creation_input_tokens": None,
+        "cache_read_input_tokens": None,
         "unmeasured_calls": unmeasured,
     }
 
@@ -805,3 +807,65 @@ def test_model_usage_is_null_when_no_record_carries_it(tmp_path):
 
     assert ok
     assert run["summary"]["model_usage"] is None
+
+
+def test_cache_usage_aggregates_known_counts_and_preserves_zero():
+    bucket = {
+        **_usage(1, 2, 3),
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 900,
+    }
+    record = {"model_usage": {"agent": bucket}}
+    totals = aggregate_agent._sum_model_usage([record, record])["agent"]
+    assert totals["cache_creation_input_tokens"] == 0
+    assert totals["cache_read_input_tokens"] == 1800
+    assert totals["input_tokens"] == 4
+
+
+@pytest.mark.parametrize(
+    "old_record",
+    [
+        {},
+        {"model_usage": {}},
+        {
+            "model_usage": {
+                "agent": {
+                    "calls": 1,
+                    "input_tokens": 2,
+                    "output_tokens": 3,
+                    "unmeasured_calls": 0,
+                }
+            }
+        },
+    ],
+)
+def test_mixed_old_receipts_make_cache_totals_unknown(old_record):
+    new_record = {
+        "model_usage": {
+            "agent": {
+                **_usage(1, 2, 3),
+                "cache_creation_input_tokens": 40,
+                "cache_read_input_tokens": 900,
+            }
+        }
+    }
+    for records in ([new_record, old_record], [old_record, new_record]):
+        totals = aggregate_agent._sum_model_usage(records)["agent"]
+        assert totals["cache_creation_input_tokens"] is None
+        assert totals["cache_read_input_tokens"] is None
+
+
+def test_zero_call_receipt_does_not_invalidate_known_cache_totals():
+    new_record = {
+        "model_usage": {
+            "agent": {
+                **_usage(1, 2, 3),
+                "cache_creation_input_tokens": 40,
+                "cache_read_input_tokens": 900,
+            }
+        }
+    }
+    idle = {"model_usage": {"agent": _usage(0, None, None)}}
+    totals = aggregate_agent._sum_model_usage([new_record, idle])["agent"]
+    assert totals["cache_creation_input_tokens"] == 40
+    assert totals["cache_read_input_tokens"] == 900

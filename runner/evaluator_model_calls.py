@@ -17,6 +17,7 @@ from functools import wraps
 from typing import Callable
 
 ROLES = ("agent", "judge", "simulator")
+CACHE_TOKEN_FIELDS = ("cache_creation_input_tokens", "cache_read_input_tokens")
 _WRAPPED_MARKER = "_osworld_usage_wrapped"
 
 
@@ -46,13 +47,23 @@ class EvaluatorModelCallTracker:
         self.user_sim_successes = 0
         self._role = ContextVar("osworld_model_role", default="agent")
         self._usage = {
-            role: {"calls": 0, "input": 0, "output": 0, "unmeasured": 0}
+            role: {
+                "calls": 0,
+                "input": 0,
+                "output": 0,
+                "unmeasured": 0,
+                **dict.fromkeys(CACHE_TOKEN_FIELDS, 0),
+            }
             for role in ROLES
         }
 
     @property
     def usage(self) -> dict:
-        """Per-role token counts. Tokens are None when nothing was measured."""
+        """Per-role counts; cache totals are None if any call lacks that field.
+
+        Input/output retain the SDK's semantics. Anthropic cache tokens are
+        separate; OpenAI prompt tokens already include cached input.
+        """
         report = {}
         for role, bucket in self._usage.items():
             measured = bucket["calls"] - bucket["unmeasured"]
@@ -61,6 +72,10 @@ class EvaluatorModelCallTracker:
                 "input_tokens": bucket["input"] if measured > 0 else None,
                 "output_tokens": bucket["output"] if measured > 0 else None,
                 "unmeasured_calls": bucket["unmeasured"],
+                **{
+                    field: bucket[field] if bucket["calls"] else None
+                    for field in CACHE_TOKEN_FIELDS
+                },
             }
         return report
 
@@ -92,6 +107,12 @@ class EvaluatorModelCallTracker:
             bucket = self._usage[self._role.get()]
             bucket["calls"] += 1
             usage = getattr(response, "usage", None)
+            for field in CACHE_TOKEN_FIELDS:
+                value = None if kwargs.get("stream") else getattr(usage, field, None)
+                if type(value) is not int or value < 0:
+                    bucket[field] = None
+                elif bucket[field] is not None:
+                    bucket[field] += value
             # anthropic names them input/output; openai prompt/completion.
             inp = getattr(usage, "input_tokens", None)
             if inp is None:

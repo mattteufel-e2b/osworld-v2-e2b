@@ -17,6 +17,11 @@ uniquely-sandboxed record. A passing receipt does not mean the agent solved ever
 `REQUIRE_NO_MODEL_COVERAGE=0` is the default; a preceding no-model run is optional and
 belongs to the [maintainer validation workflow](../maintainer/README.md).
 
+Token receipts retain each provider's input/output semantics. Anthropic cache-write and
+cache-read tokens are reported separately and must be included in cost estimates;
+`input_tokens` alone excludes them. Missing cache telemetry is `null`, including in
+aggregates that contain older receipts without these counters.
+
 ## Comparing with upstream Claude
 
 The public [pinned sample launcher](https://github.com/xlang-ai/OSWorld-V2/blob/d578d2d4e0dc82b43e270fdaa7fa89d9708cd154/scripts/bash/run_multienv_claude.sh)

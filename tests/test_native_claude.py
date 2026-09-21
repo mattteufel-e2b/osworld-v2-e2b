@@ -47,7 +47,8 @@ def test_native_agent_sends_effective_settings_and_preserves_tool_action_diction
                     'content':[{'type':'tool_use','id':'tool_test','name':'computer',
                                 'input':{'action':'left_click','coordinate':[640,360]}}],
                     'stop_reason':'tool_use','stop_sequence':None,
-                    'usage':{'input_tokens':1,'output_tokens':1},
+                    'usage':{'input_tokens':1,'output_tokens':1,
+                             'cache_creation_input_tokens':40,'cache_read_input_tokens':900},
                 })
             real_client = anthropic.Anthropic
             native.Anthropic = lambda **kwargs: real_client(
@@ -63,6 +64,7 @@ def test_native_agent_sends_effective_settings_and_preserves_tool_action_diction
             assert len(requests) == 1
             assert tracker.usage['agent'] == {
                 'calls': 1, 'input_tokens': 1, 'output_tokens': 1, 'unmeasured_calls': 0,
+                'cache_creation_input_tokens': 40, 'cache_read_input_tokens': 900,
             }
             assert tracker.usage['judge']['calls'] == tracker.usage['simulator']['calls'] == 0
             request = requests[0]

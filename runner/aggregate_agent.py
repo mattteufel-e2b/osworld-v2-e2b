@@ -28,17 +28,34 @@ def _sum_model_usage(records: list[dict]) -> dict | None:
     as "this campaign spent nothing" rather than "this was never measured".
     """
     fields = ("calls", "input_tokens", "output_tokens", "unmeasured_calls")
+    cache_fields = ("cache_creation_input_tokens", "cache_read_input_tokens")
     totals = {
-        role: dict.fromkeys(fields, 0) for role in ("agent", "judge", "simulator")
+        role: dict.fromkeys(fields + cache_fields, 0)
+        for role in ("agent", "judge", "simulator")
     }
     measured_any = False
     for record in records:
         usage = record.get("model_usage")
-        if not isinstance(usage, dict):
-            continue
-        measured_any = True
+        if isinstance(usage, dict):
+            measured_any = True
+        else:
+            usage = {}
         for role, role_totals in totals.items():
             bucket = usage.get(role)
+            # Missing old telemetry must not turn a partial cache count into
+            # a campaign total. A documented zero-call bucket contributes zero.
+            for field in cache_fields:
+                if (
+                    isinstance(bucket, dict)
+                    and type(bucket.get("calls")) is int
+                    and bucket["calls"] == 0
+                ):
+                    continue
+                value = bucket.get(field) if isinstance(bucket, dict) else None
+                if type(value) is not int or value < 0:
+                    role_totals[field] = None
+                elif role_totals[field] is not None:
+                    role_totals[field] += value
             if not isinstance(bucket, dict):
                 continue
             for field in fields:
@@ -51,6 +68,9 @@ def _sum_model_usage(records: list[dict]) -> dict | None:
         if role_totals["calls"] - role_totals["unmeasured_calls"] <= 0:
             role_totals["input_tokens"] = None
             role_totals["output_tokens"] = None
+        if role_totals["calls"] == 0:
+            for field in cache_fields:
+                role_totals[field] = None
     return totals
 
 
