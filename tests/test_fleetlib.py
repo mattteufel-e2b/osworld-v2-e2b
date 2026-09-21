@@ -475,6 +475,9 @@ class FleetRuntimePolicyTests(unittest.TestCase):
                 patch.object(gitlab, "compose_up"),
                 patch.object(gitlab, "wait_api_ready", return_value=0.1),
                 patch.object(
+                    gitlab, "ensure_runner", return_value={"id": 7, "online": True}
+                ),
+                patch.object(
                     gitlab.requests,
                     "get",
                     return_value=type("Response", (), {"status_code": 503})(),
@@ -1305,6 +1308,9 @@ class FleetRuntimePolicyTests(unittest.TestCase):
                 patch.object(gitlab, "compose_up"),
                 patch.object(gitlab, "wait_api_ready", return_value=0.1),
                 patch.object(
+                    gitlab, "ensure_runner", return_value={"id": 7, "online": True}
+                ),
+                patch.object(
                     gitlab.requests,
                     "get",
                     side_effect=[
@@ -1333,7 +1339,8 @@ class FleetRuntimePolicyTests(unittest.TestCase):
             runtime = json.loads(runtime_file.read_text())
 
         ensure_tls.assert_called_once_with(
-            "test-campaign", [f"gitlab.{gitlab.fl.HOST_SUFFIX}"]
+            "test-campaign",
+            [f"gitlab.{gitlab.fl.HOST_SUFFIX}", f"*.gitlab.{gitlab.fl.HOST_SUFFIX}"],
         )
         self.assertTrue(
             runtime["gitlab"]["url"].startswith("https://gitlab.127.0.0.1.nip.io:")

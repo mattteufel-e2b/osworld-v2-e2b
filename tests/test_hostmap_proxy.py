@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import contextlib
+import base64
 import http.client
+import io
 import importlib.util
 import json
 import shutil
@@ -213,6 +215,7 @@ def test_guest_routes_load_traffic_tokens_for_authenticated_ingress(tmp_path):
         "traffic_token": "gitlab-traffic-token",
         "sandbox_id": None,
         "port": 8929,
+        "pages_suffix": "gitlab.127.0.0.1.nip.io",
     }
 
 
@@ -493,3 +496,157 @@ def test_upstream_failure_502_names_the_request_body_size():
     assert response.status == 502
     assert "4096" in body
     assert "connection reset" in body
+
+
+@pytest.fixture
+def pages_runtime(tmp_path, monkeypatch):
+    runtime = tmp_path / "pages-runtime.json"
+    runtime.write_text(
+        json.dumps(
+            {
+                "gitlab": {
+                    "host": "gitlab.127.0.0.1.nip.io",
+                    "aliases": ["54.174.16.65.sslip.io"],
+                    "ingress_host": "8929-g.e2b.app",
+                    "traffic_token": "trusted-token",
+                    "sandbox_id": "g",
+                    "port": 8929,
+                },
+                "websites": {"sites": {"mailhub": {"ingress_host": "mail.e2b.app"}}},
+            }
+        )
+    )
+    monkeypatch.setattr(hostmap_proxy, "RUNTIME_FILE", runtime)
+
+
+@pytest.mark.parametrize("direct", [False, True])
+def test_pages_routes_are_bounded_and_client_cannot_supply_routing_header(
+    pages_runtime, direct
+):
+    def reply(headers):
+        body = json.dumps({k.lower(): v for k, v in headers.items()}).encode()
+        return hostmap_proxy._DirectResponse(
+            {
+                "status": 200,
+                "headers": [],
+                "body_base64": base64.b64encode(body).decode(),
+            }
+        )
+
+    server = hostmap_proxy.make_server(0, tls=None)
+    with (
+        _serving(server),
+        patch.object(hostmap_proxy, "_DIRECT_BODY_THRESHOLD", 0 if direct else 900_000),
+        patch.object(hostmap_proxy, "_E2BSandbox", object()),
+        patch.object(
+            hostmap_proxy,
+            "_open_upstream",
+            side_effect=lambda req: reply(dict(req.header_items())),
+        ),
+        patch.object(
+            hostmap_proxy,
+            "_open_direct",
+            side_effect=lambda target, method, path, headers, body: reply(headers),
+        ),
+    ):
+        for hostname, expected in [
+            (
+                "typesql-ab12.gitlab.127.0.0.1.nip.io",
+                "typesql-ab12.gitlab.127.0.0.1.nip.io",
+            ),
+            ("X.gitlab.127.0.0.1.nip.io", "x.gitlab.127.0.0.1.nip.io"),
+            ("gitlab.127.0.0.1.nip.io", None),
+            ("54.174.16.65.sslip.io", None),
+            ("mailhub.127.0.0.1.nip.io", None),
+            ("a.b.gitlab.127.0.0.1.nip.io", False),
+            ("-a.gitlab.127.0.0.1.nip.io", False),
+            ("a-.gitlab.127.0.0.1.nip.io", False),
+            ("a_b.gitlab.127.0.0.1.nip.io", False),
+            ("a" * 64 + ".gitlab.127.0.0.1.nip.io", False),
+            ("a.54.174.16.65.sslip.io", False),
+            ("a.gitlab.127.0.0.1.nip.io.evil.test", False),
+        ]:
+            conn = http.client.HTTPConnection(
+                "127.0.0.1", server.server_port, timeout=5
+            )
+            conn.request(
+                "POST",
+                "/",
+                body=b"x",
+                headers={
+                    "Host": hostname,
+                    "x-OSWorld-Pages-HOST": "attacker.example",
+                },
+            )
+            response = conn.getresponse()
+            body = response.read()
+            conn.close()
+            assert response.status == (502 if expected is False else 200), hostname
+            if expected is not False:
+                assert json.loads(body).get("x-osworld-pages-host") == expected, (
+                    hostname
+                )
+
+
+@pytest.mark.parametrize(
+    "authority,status,direct",
+    [
+        ("gitlab.127.0.0.1.nip.io:8090", 200, False),
+        ("54.174.16.65.sslip.io:8090", 302, False),
+        ("54.174.16.65.sslip.io", 404, False),
+        ("typesql-ab12.gitlab.127.0.0.1.nip.io", 200, False),
+        ("typesql-ab12.gitlab.127.0.0.1.nip.io:8090", 404, True),
+        ("54.174.16.65.sslip.io:8090", 302, True),
+    ],
+)
+def test_pages_links_keep_canonical_hostname_and_client_port_in_all_responses(
+    pages_runtime, authority, status, direct
+):
+    original = b'{"http":"http://typesql-ab12.gitlab.127.0.0.1.nip.io/","https":"https://typesql-ab12.gitlab.127.0.0.1.nip.io?preview=1","other":"http://a.b.gitlab.127.0.0.1.nip.io/"}'
+    location = "http://typesql-ab12.gitlab.127.0.0.1.nip.io/#preview"
+
+    def upstream(_request):
+        if status != 200:
+            raise urllib.error.HTTPError(
+                "https://ingress/",
+                status,
+                "error",
+                {"Location": location},
+                io.BytesIO(original),
+            )
+        return response()
+
+    def response():
+        return hostmap_proxy._DirectResponse(
+            {
+                "status": status,
+                "headers": [["Location", location]],
+                "body_base64": base64.b64encode(original).decode(),
+            }
+        )
+
+    server = hostmap_proxy.make_server(0, tls=None)
+    with (
+        _serving(server),
+        patch.object(hostmap_proxy, "_DIRECT_BODY_THRESHOLD", 0 if direct else 900_000),
+        patch.object(hostmap_proxy, "_E2BSandbox", object()),
+        patch.object(hostmap_proxy, "_open_upstream", side_effect=upstream),
+        patch.object(
+            hostmap_proxy, "_open_direct", side_effect=lambda *args: response()
+        ),
+    ):
+        conn = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+        conn.request("POST", "/", body=b"x", headers={"Host": authority})
+        result = conn.getresponse()
+        raw_body = result.read()
+        conn.close()
+    assert result.status == status
+    body = json.loads(raw_body)
+    port = ":8090" if authority.endswith(":8090") else ""
+    wanted = "https://typesql-ab12.gitlab.127.0.0.1.nip.io" + port
+    assert result.getheader("Location") == wanted + "/#preview"
+    assert body == {
+        "http": wanted + "/",
+        "https": wanted + "?preview=1",
+        "other": "http://a.b.gitlab.127.0.0.1.nip.io/",
+    }

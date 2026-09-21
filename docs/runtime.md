@@ -112,6 +112,19 @@ does not validate 80 long-context agent sessions. No fixed model-concurrency lim
 - **`validation/`** — task manifests (10-task sample, full 108-task release) referencing
   gated tasks by id only.
 
+## GitLab CI and Pages
+
+Fleet startup registers one instance runner for untagged Docker jobs, reuses its persistent
+configuration on repeat launches, and requires it to be online. Runner API and clone URLs
+use the internal fanout on the Compose network so job containers do not resolve the
+loopback development hostname to themselves.
+
+Pages requests preserve a validated project hostname beneath the configured GitLab host.
+The campaign certificate covers that wildcard; the proxy keeps returned Pages URLs on
+HTTPS and the caller's listener port, including the host evaluator's port 8090. API and Git
+push checks alone do not verify CI or Pages: a deployment control must also complete a job,
+upload its artifact, and retrieve the published page.
+
 ## QEMU → E2B mapping
 
 The provider owns an in-process bridge; DesktopEnv sees a VM at 127.0.0.1 on whatever ports

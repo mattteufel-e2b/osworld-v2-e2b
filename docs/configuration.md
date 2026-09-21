@@ -78,6 +78,16 @@ overrides them. `OSWORLD_USER_SIM_MODEL_NAME` and `OSWORLD_USER_SIM_MODEL_BASE_U
 Literal API keys take precedence over key-variable names; use `OSWORLD_USER_SIM_API_KEY`
 when overriding a literal judge key.
 
+Task 092 has a legacy `OPENAI_API_KEY` presence check before its provider-neutral video
+judge. With Bedrock judging, keep that check nonempty using a placeholder; the explicit
+judge provider, endpoint, and key above still select Bedrock:
+
+```bash
+export OPENAI_API_KEY="${OPENAI_API_KEY:-bedrock-legacy-presence-only}"
+```
+
+Without this variable, upstream silently skips the video judge, worth 0.20 of the score.
+
 Some task judges allow only 5–16 output tokens. Use a model that can return a verdict at that
 budget; reasoning can consume it before a verdict appears. Task-specific token limits take
 precedence over the judge environment setting. The agent's thinking budget is independent of

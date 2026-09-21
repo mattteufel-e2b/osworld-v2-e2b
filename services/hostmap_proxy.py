@@ -45,6 +45,7 @@ import base64
 import contextlib
 import json
 import os
+import re
 import ssl
 import sys
 import threading
@@ -69,6 +70,8 @@ HOST_SUFFIX = os.environ.get("WEBSITE_HOST_SUFFIX", "127.0.0.1.nip.io")
 # Ingress presents Google-managed *.e2b.app certs; verification is fine.
 _SSL_CTX = ssl.create_default_context()
 _DIRECT_BODY_THRESHOLD = 900_000
+_PAGES_HEADER = "X-OSWorld-Pages-Host"
+_DNS_LABEL = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
 # Hop-by-hop headers must not be forwarded.
 _HOP = {
     "connection",
@@ -230,6 +233,32 @@ def _rewrite_location(
     return _rewrite_absolute_site_urls(value.encode(), host, authority, scheme).decode()
 
 
+def _rewrite_pages_urls(payload: bytes, suffix: str, authority: str) -> bytes:
+    """Keep canonical Pages hosts reachable through the client's TLS listener.
+
+    A GitLab API response can advertise a different Pages hostname, including
+    when task 041 accessed GitLab through its alias. Only portless URLs under
+    the configured GitLab host qualify; nested labels and other hosts do not.
+    """
+    if not suffix:
+        return payload
+    _, separator, port = authority.rpartition(":")
+    port_suffix = (
+        f":{port}" if separator and port.isdigit() and 0 < int(port) < 65536 else ""
+    )
+    pattern = (
+        rb"https?://("
+        + (_DNS_LABEL + r"\." + re.escape(suffix)).encode()
+        + rb")(?=[/?#\s\"'<>]|$)"
+    )
+    return re.sub(
+        pattern,
+        lambda match: b"https://" + match[1].lower() + port_suffix.encode(),
+        payload,
+        flags=re.IGNORECASE,
+    )
+
+
 def _load_rules() -> tuple[dict[str, dict], dict[bytes, bytes]]:
     """Read the runtime file once and return (routes, asset_url_map).
 
@@ -265,6 +294,7 @@ def _load_rules() -> tuple[dict[str, dict], dict[bytes, bytes]]:
             "traffic_token": gl.get("traffic_token"),
             "sandbox_id": gl.get("sandbox_id"),
             "port": gl.get("port"),
+            "pages_suffix": gl["host"].lower(),
         }
         rules[gl["host"].lower()] = gitlab_rule
         # Task 041 opens a hardcoded public GitLab host; route it to ours and
@@ -326,12 +356,23 @@ class Handler(BaseHTTPRequestHandler):
     def _resolve(self):
         host = (self.headers.get("Host") or "").split(":")[0].lower()
         rules, asset_url_map = _load_rules()
-        return rules.get(host), host, asset_url_map
+        target = rules.get(host)
+        if target is None and len(host) <= 253:
+            for rule in rules.values():
+                suffix = rule.get("pages_suffix")
+                if suffix and re.fullmatch(
+                    _DNS_LABEL + r"\." + re.escape(suffix), host
+                ):
+                    target = {**rule, "pages_host": host}
+                    break
+        return target, host, asset_url_map
 
     def _scheme(self) -> str:
         return "https" if isinstance(self.connection, ssl.SSLSocket) else "http"
 
-    def _relay(self, status, headers, payload, rewrite_host, authority):
+    def _relay(
+        self, status, headers, payload, rewrite_host, authority, pages_suffix=""
+    ):
         """Send one upstream response (success or HTTPError) back to the client.
 
         A HEAD reply must keep upstream's Content-Length -- it describes the
@@ -340,6 +381,7 @@ class Handler(BaseHTTPRequestHandler):
         zero bytes.
         """
         scheme = self._scheme()
+        payload = _rewrite_pages_urls(payload, pages_suffix, authority)
         head = self.command == "HEAD"
         upstream_length = None
         self.send_response(status)
@@ -352,6 +394,9 @@ class Handler(BaseHTTPRequestHandler):
                 continue
             if lower == "location":
                 value = _rewrite_location(value, rewrite_host, authority, scheme)
+                value = _rewrite_pages_urls(
+                    value.encode(), pages_suffix, authority
+                ).decode()
             self.send_header(key, value)
         self.send_header(
             "Content-Length", (upstream_length or "0") if head else str(len(payload))
@@ -373,7 +418,11 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(502, f"no fleet route for Host {host!r}")
             return
         scheme = self._scheme()
-        rewrite_host = target.get("canonical_host", host)
+        # Pages keeps its own canonical domain; the alias rule only applies to
+        # GitLab itself. Pages URL scheme/port rewriting happens in _relay.
+        rewrite_host = (
+            "" if target.get("pages_host") else target.get("canonical_host", host)
+        )
         ingress_host = target["ingress_host"]
         token = target.get("traffic_token")
         url = f"https://{ingress_host}{self.path}"
@@ -385,10 +434,17 @@ class Handler(BaseHTTPRequestHandler):
             return
         body = _map_asset_urls(body or b"", self.path, asset_url_map) or None
 
+        # The fanout trusts this routing header only after hostname validation.
+        # Strip every client spelling before supplying our own on Pages routes.
+        forward_headers = {
+            key: value
+            for key, value in self.headers.items()
+            if key.lower() not in _HOP and key.lower() != _PAGES_HEADER.lower()
+        }
+        if target.get("pages_host"):
+            forward_headers[_PAGES_HEADER] = target["pages_host"]
         req = urllib.request.Request(url, data=body, method=self.command)
-        for key, value in self.headers.items():
-            if key.lower() in _HOP:
-                continue
+        for key, value in forward_headers.items():
             req.add_header(key, value)
         req.add_header("Host", ingress_host)
         if token:
@@ -402,7 +458,9 @@ class Handler(BaseHTTPRequestHandler):
                 and _E2BSandbox is not None
             )
             response = (
-                _open_direct(target, self.command, self.path, self.headers, body or b"")
+                _open_direct(
+                    target, self.command, self.path, forward_headers, body or b""
+                )
                 if direct
                 else _open_upstream(req)
             )
@@ -411,14 +469,24 @@ class Handler(BaseHTTPRequestHandler):
                     resp.read(), rewrite_host, incoming_authority, scheme
                 )
                 self._relay(
-                    resp.status, resp.headers, payload, rewrite_host, incoming_authority
+                    resp.status,
+                    resp.headers,
+                    payload,
+                    rewrite_host,
+                    incoming_authority,
+                    target.get("pages_suffix", ""),
                 )
         except urllib.error.HTTPError as exc:
             payload = _rewrite_absolute_site_urls(
                 exc.read(), rewrite_host, incoming_authority, scheme
             )
             self._relay(
-                exc.code, exc.headers, payload, rewrite_host, incoming_authority
+                exc.code,
+                exc.headers,
+                payload,
+                rewrite_host,
+                incoming_authority,
+                target.get("pages_suffix", ""),
             )
         except Exception as exc:  # noqa: BLE001
             # The body size is part of the diagnosis: a guest-originated

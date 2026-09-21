@@ -24,6 +24,7 @@ Run:
 from __future__ import annotations
 
 import json
+import re
 import secrets
 import shlex
 import ssl
@@ -74,8 +75,14 @@ def write_fanout(sbx) -> None:
     """nginx fanout: publish GITLAB_PORT and forward to the gitlab container on
     its docker network with Host restored to the external_url host, so GitLab
     sees the Host its external_url expects."""
+    host = f"{GITLAB_SUBDOMAIN}.{fl.HOST_SUFFIX}"
+    pages_host = rf"[a-z0-9](?:[a-z0-9-]{{0,61}}[a-z0-9])?\.{re.escape(host)}"
     conf = (
         "map $http_upgrade $connection_upgrade { default upgrade; '' close; }\n"
+        "map $http_x_osworld_pages_host $gitlab_upstream_host {\n"
+        f"  default {host};\n"
+        f'  "~^{pages_host}$" $http_x_osworld_pages_host;\n'
+        "}\n"
         f"server {{\n"
         f"  listen {GITLAB_PORT};\n"
         f"  client_max_body_size 512m;\n"
@@ -83,7 +90,7 @@ def write_fanout(sbx) -> None:
         f"    resolver 127.0.0.11 valid=10s;\n"
         f"    set $upstream gitlab;\n"
         f"    proxy_pass http://$upstream:80;\n"
-        f"    proxy_set_header Host {GITLAB_SUBDOMAIN}.{fl.HOST_SUFFIX};\n"
+        f"    proxy_set_header Host $gitlab_upstream_host;\n"
         f"    proxy_set_header X-Forwarded-For $remote_addr;\n"
         f"    proxy_set_header X-Forwarded-Proto http;\n"
         f"    proxy_http_version 1.1;\n"
@@ -185,6 +192,118 @@ def wait_api_ready(sbx, token: str) -> float:
     )
 
 
+def ensure_runner(sbx, token: str) -> dict:
+    """Register once per config volume and require an online, untagged runner."""
+    base = f"https://{sbx.get_host(GITLAB_PORT)}/api/v4"
+    internal_url = f"http://fleet_fanout:{GITLAB_PORT}"
+
+    def api(method, path, **kwargs):
+        response = requests.request(
+            method,
+            base + path,
+            timeout=30,
+            headers={
+                "PRIVATE-TOKEN": token,
+                "e2b-traffic-access-token": sbx.traffic_access_token,
+            },
+            **kwargs,
+        )
+        if not response.ok:
+            raise RuntimeError(
+                f"GitLab runner API {method} failed ({response.status_code})"
+            )
+        return response
+
+    def command(script, **kwargs):
+        # Registration output and SDK exceptions can contain the runner token.
+        try:
+            result = sbx.commands.run(script, user="root", timeout=60, **kwargs)
+            if result.exit_code != 0:
+                raise RuntimeError()
+            return result.stdout.strip()
+        except Exception:
+            raise RuntimeError("GitLab runner command failed") from None
+
+    config = "/etc/gitlab-runner/config.toml"
+    local_id = command(
+        "docker exec gitlab-runner sh -c "
+        + shlex.quote(
+            f"if [ -f {config} ]; then "
+            "awk '/^[[:space:]]*\\[\\[runners\\]\\]/ {configured=1} "
+            "/^[[:space:]]*id[[:space:]]*=/ {print $3} "
+            'END {if (!configured) print "NONE"}\' '
+            f"{config}; else echo NONE; fi"
+        )
+    )
+    created = local_id == "NONE"
+    if not created and (not local_id.isdigit() or int(local_id) <= 0):
+        raise RuntimeError("GitLab runner config has no unique numeric runner ID")
+    if created:
+        network = command(
+            "docker inspect gitlab-runner --format "
+            "'{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{\"\\n\"}}{{end}}'"
+        )
+        if not network or len(network.splitlines()) != 1:
+            raise RuntimeError("GitLab runner must have one Compose network")
+        registration = api(
+            "POST",
+            "/user/runners",
+            json={
+                "runner_type": "instance_type",
+                "description": "osworld-docker-runner",
+                "tag_list": "osworld,docker",
+                "run_untagged": True,
+                "locked": False,
+                "paused": False,
+            },
+        ).json()
+        runner_id = registration["id"]
+    else:
+        runner_id = int(local_id)
+    try:
+        if created:
+            backup = (
+                f"rm -f {config}.osworld-backup; "
+                f"if [ -f {config} ]; then cp -p {config} {config}.osworld-backup; fi"
+            )
+            command(
+                "docker exec gitlab-runner sh -c " + shlex.quote(backup) + " && "
+                "docker exec -e RUNNER_TOKEN gitlab-runner gitlab-runner register "
+                f"--non-interactive --url {internal_url} --clone-url {internal_url} "
+                '--token "$RUNNER_TOKEN" --executor docker --docker-image alpine:3.20 '
+                f"--docker-network-mode {shlex.quote(network)} "
+                "--description osworld-docker-runner",
+                envs={"RUNNER_TOKEN": registration["token"]},
+            )
+        deadline = time.monotonic() + 120
+        while time.monotonic() < deadline:
+            state = api("GET", f"/runners/{runner_id}").json()
+            if (
+                state.get("online") is True
+                and state.get("status") == "online"
+                and state.get("paused") is False
+                and state.get("run_untagged") is True
+            ):
+                if created:
+                    command(f"docker exec gitlab-runner rm -f {config}.osworld-backup")
+                return {"id": runner_id, "status": "online", "online": True}
+            time.sleep(3)
+        raise TimeoutError(
+            "GitLab runner did not become online and accept untagged jobs"
+        )
+    except BaseException:
+        if created:
+            try:
+                api("DELETE", f"/runners/{runner_id}")
+            finally:
+                restore = (
+                    f"if [ -f {config}.osworld-backup ]; then "
+                    f"mv {config}.osworld-backup {config}; else rm -f {config}; fi"
+                )
+                command("docker exec gitlab-runner sh -c " + shlex.quote(restore))
+        raise
+
+
 def main() -> int:
     commit = gitlab_pin()
     campaign = fl.campaign_id()
@@ -205,6 +324,7 @@ def main() -> int:
         write_fanout(sbx)
         compose_up(sbx, token)
         ready_secs = wait_api_ready(sbx, token)
+        runner = ensure_runner(sbx, token)
 
         ingress = sbx.get_host(GITLAB_PORT)
         api = requests.get(
@@ -234,7 +354,11 @@ def main() -> int:
         # the CA, or creates the CA itself if GitLab launches first -- either
         # launch order is supported.
         tls = campaign_tls.ensure_campaign_tls(
-            campaign, [f"{GITLAB_SUBDOMAIN}.{fl.HOST_SUFFIX}"]
+            campaign,
+            [
+                f"{GITLAB_SUBDOMAIN}.{fl.HOST_SUFFIX}",
+                f"*.{GITLAB_SUBDOMAIN}.{fl.HOST_SUFFIX}",
+            ],
         )
         proxy_status = fl.restart_host_proxy()
         if not proxy_status.get("running"):
@@ -318,6 +442,7 @@ def main() -> int:
             "gitlab_url": public_url,
             "gitlab_external_url": gitlab_url(),
             "gitlab_port": GITLAB_PORT,
+            "runner": runner,
             "ingress_host": ingress,
             "first_boot_api_ready_seconds": prior.get(
                 "first_boot_api_ready_seconds", ready_secs
