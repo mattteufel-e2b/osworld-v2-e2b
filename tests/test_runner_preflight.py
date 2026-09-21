@@ -325,6 +325,30 @@ def test_preflight_requires_tls_section(tmp_path, monkeypatch):
         preflight.main()
 
 
+@pytest.mark.parametrize(
+    "mode,placeholder", [("live", False), ("live", True), ("stub", False)]
+)
+def test_task_092_requires_legacy_video_judge_gate(
+    tmp_path, monkeypatch, mode, placeholder
+):
+    preflight = _admissible_inputs(tmp_path, monkeypatch)
+    manifest = tmp_path / "manifest.json"
+    data = json.loads(manifest.read_text())
+    data["tasks"] = [{"id": "092", "domain": "test"}]
+    manifest.write_text(json.dumps(data))
+    (tmp_path / "tasks/task_092.py").write_text("TASK = {}\n")
+    monkeypatch.setenv("OSWORLD_EVAL_MODEL_MODE", mode)
+    monkeypatch.setenv("OSWORLD_EVAL_MODEL_PROVIDER", "anthropic")
+    monkeypatch.setenv("OSWORLD_EVAL_MODEL_API_KEY", "bedrock-key")
+    if placeholder:
+        monkeypatch.setenv("OPENAI_API_KEY", "bedrock-legacy-presence-only")
+    if mode == "live" and not placeholder:
+        with pytest.raises(SystemExit, match="092.*OPENAI_API_KEY"):
+            preflight.main()
+    else:
+        assert preflight.main() == 0
+
+
 def test_preflight_rejects_world_readable_campaign_leaf_key(tmp_path, monkeypatch):
     preflight = _admissible_inputs(tmp_path, monkeypatch)
     services = tmp_path / "services"

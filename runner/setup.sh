@@ -313,28 +313,28 @@ replace_once(
     "                elif type(action) == dict:\n"
     "                    self.controller.execute_python_command(action['command'])\n",
     "                elif type(action) == dict:\n"
-    '                    if (self.provider_name == "e2b"\n'
-    '                            and self.action_space == "claude_computer_use"\n'
-    '                            and action.get("name") == "computer"\n'
-    '                            and action.get("input", {}).get("action") == "wait"):\n'
-    "                        import math\n"
-    '                        duration = action["input"].get("duration")\n'
-    "                        if duration is None:\n"
-    "                            duration = 0.5\n"
-    "                        if (type(duration) not in (int, float)\n"
-    "                                or not math.isfinite(duration) or duration < 0):\n"
-    '                            raise ValueError("Native wait duration must be finite and nonnegative")\n'
-    "                        time.sleep(duration or 0.5)\n"
-    '                    elif (self.provider_name == "e2b"\n'
-    '                            and self.action_space == "claude_computer_use"\n'
-    '                            and action.get("name") == "computer"\n'
-    '                            and action.get("input", {}).get("action") == "type"\n'
-    '                            and isinstance(action["input"].get("text"), str)\n'
-    '                            and not action["input"]["text"].isascii()):\n'
-    f"                        command = {clipboard_prefix!r} + action['command']\n"
-    "                        self.controller.execute_python_command(command)\n"
-    "                    else:\n"
-    "                        self.controller.execute_python_command(action['command'])\n",
+    '                    native_computer = (self.provider_name == "e2b"\n'
+    '                        and self.action_space == "claude_computer_use" and action.get("name") == "computer")\n'
+    '                    execution_actions = action.get("e2b_actions", [action]) if native_computer else [action]\n'
+    "                    for execution_action in execution_actions:\n"
+    "                        if (native_computer\n"
+    '                                and execution_action.get("input", {}).get("action") == "wait"):\n'
+    "                            import math\n"
+    '                            duration = execution_action["input"].get("duration")\n'
+    "                            if duration is None:\n"
+    "                                duration = 0.5\n"
+    "                            if (type(duration) not in (int, float)\n"
+    "                                    or not math.isfinite(duration) or duration < 0):\n"
+    '                                raise ValueError("Native wait duration must be finite and nonnegative")\n'
+    "                            time.sleep(duration or 0.5)\n"
+    "                        elif (native_computer\n"
+    '                                and execution_action.get("input", {}).get("action") == "type"\n'
+    '                                and isinstance(execution_action["input"].get("text"), str)\n'
+    '                                and not execution_action["input"]["text"].isascii()):\n'
+    f"                            command = {clipboard_prefix!r} + execution_action['command']\n"
+    "                            self.controller.execute_python_command(command)\n"
+    "                        else:\n"
+    "                            self.controller.execute_python_command(execution_action['command'])\n",
     "(o) native Claude wait and clipboard execution",
 )
 

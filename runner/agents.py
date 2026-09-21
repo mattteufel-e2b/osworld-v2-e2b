@@ -173,14 +173,47 @@ def build_claude_agent(model: str, settings: dict, client_password: str):
         )
 
     class NativeClaudeAgent(AnthropicAgent):
+        def _execution_actions(self, tool_input):
+            if tool_input.get("actions") is not None:
+                for member in tool_input["actions"]:
+                    yield from self._execution_actions(member)
+            else:
+                yield {
+                    "name": "computer",
+                    "input": tool_input,
+                    "command": self.parse_actions_from_tool_call({"input": tool_input}),
+                }
+
         def predict(self, *args, **kwargs):
-            response, actions = super().predict(*args, **kwargs)
+            # Judge/simulator SDK clients use the same process environment.
+            overrides = {
+                "ANTHROPIC_BASE_URL": os.environ["MODEL_BASE_URL"],
+                "ANTHROPIC_AUTH_TOKEN": self.api_key,
+            }
+            previous = {key: os.environ.get(key) for key in overrides}
+            try:
+                os.environ.update(overrides)
+                response, actions = super().predict(*args, **kwargs)
+            finally:
+                for key, value in previous.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
             if response is None:
                 raise RuntimeError("Claude prediction failed; see the raw agent logs")
+            for action in actions:
+                if (
+                    action.get("name") == "computer"
+                    and action.get("input", {}).get("actions") is not None
+                ):
+                    # Preserve the native batch/history; execute its leaves in
+                    # order with one outer observation and action pause.
+                    action["e2b_actions"] = list(
+                        self._execution_actions(action["input"])
+                    )
             return response, actions
 
-    os.environ["ANTHROPIC_BASE_URL"] = os.environ["MODEL_BASE_URL"]
-    os.environ["ANTHROPIC_AUTH_TOKEN"] = os.environ["MODEL_API_KEY"]
     return NativeClaudeAgent(
         model=model,
         api_key=os.environ["MODEL_API_KEY"],

@@ -11,6 +11,71 @@ ROOT = Path(__file__).resolve().parents[1]
 UPSTREAM_PYTHON = ROOT / "OSWorld-V2" / ".venv" / "bin" / "python"
 
 
+@pytest.mark.skipif(not UPSTREAM_PYTHON.exists(), reason="requires upstream runtime")
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize("interrupt", [False, True])
+def test_native_agent_restores_judge_transport_after_prediction(existing, interrupt):
+    result = subprocess.run(
+        [
+            str(UPSTREAM_PYTHON),
+            "-c",
+            textwrap.dedent("""
+            import os, sys
+            from pathlib import Path
+            sys.path[:0] = [str(Path('runner').resolve()), str(Path('OSWorld-V2').resolve())]
+            from agents import build_agent, agent_settings
+            from desktop_env.evaluators.backends.anthropic_backend import AnthropicBackend
+            from desktop_env.evaluators.backends.base import BackendConfig
+            from mm_agents.anthropic.main import AnthropicAgent
+            import anthropic
+
+            existing, interrupt = sys.argv[1] == 'True', sys.argv[2] == 'True'
+            keys = ('ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN')
+            for key in keys:
+                os.environ.pop(key, None)
+            if existing:
+                os.environ.update(ANTHROPIC_BASE_URL='https://judge.test/anthropic',
+                                  ANTHROPIC_AUTH_TOKEN='judge-token')
+            before = {key: os.environ.get(key) for key in keys}
+            os.environ.update(MODEL_BASE_URL='https://agent.test/anthropic', MODEL_API_KEY='agent-key')
+            class Interrupted(BaseException): pass
+            def predict(self, *args, **kwargs):
+                client = anthropic.Anthropic(api_key=self.api_key)
+                assert str(client.base_url) == 'https://agent.test/anthropic/'
+                assert client.auth_token == 'agent-key'
+                client.close()
+                if interrupt: raise Interrupted()
+                return 'question', []
+            AnthropicAgent.predict = predict
+            agent = build_agent('claude', model='anthropic.claude-opus-5',
+                                settings=agent_settings('claude'), client_password='osworld-public-evaluation')
+            assert {key: os.environ.get(key) for key in keys} == before
+            try:
+                assert agent.predict('task', {}) == ('question', [])
+                assert not interrupt
+            except Interrupted:
+                assert interrupt
+            assert {key: os.environ.get(key) for key in keys} == before
+            for endpoint in (None, 'https://explicit-judge.test/anthropic'):
+                judge = AnthropicBackend(BackendConfig(provider='anthropic', model='judge',
+                                        api_key='judge-key', base_url=endpoint))._client
+                assert judge.api_key == 'judge-key'
+                assert judge.auth_token == ('judge-token' if existing else None)
+                expected = endpoint or before['ANTHROPIC_BASE_URL'] or 'https://api.anthropic.com'
+                assert str(judge.base_url).rstrip('/') == expected
+                judge.close()
+        """),
+            str(existing),
+            str(interrupt),
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 @pytest.mark.skipif(
     not UPSTREAM_PYTHON.exists(), reason="requires the upstream runtime from setup.sh"
 )

@@ -46,18 +46,20 @@ resolve_e2b_api_key() {
 # the service launchers wrote; preflight has already required it, including
 # the `tls` section's campaign CA/leaf material.
 #
-# Each value read below is either a fixed-shape URL/suffix (host:port) or an
-# absolute path built from SERVICES_DIR plus a hardcoded filename (ca.crt,
-# leaf.crt, leaf.key, bundle.crt) -- none embeds a space by construction, so
-# `read -r` word-splitting on the six fields is safe as long as SERVICES_DIR
-# itself has no whitespace in it, same pre-existing assumption the two
-# original fields (WEBSITE_HOST_SUFFIX, GITLAB_URL) already relied on.
+# Read complete lines so certificate paths may contain whitespace.
 export_fleet_wiring() {
-    read -r WEBSITE_HOST_SUFFIX GITLAB_URL OSWORLD_CA_CERT OSWORLD_CA_BUNDLE HOSTMAP_TLS_CERT HOSTMAP_TLS_KEY < <(python3 - "$SERVICES_DIR/.runtime.json" <<'PY'
+    {
+        IFS= read -r WEBSITE_HOST_SUFFIX
+        IFS= read -r GITLAB_URL
+        IFS= read -r OSWORLD_CA_CERT
+        IFS= read -r OSWORLD_CA_BUNDLE
+        IFS= read -r HOSTMAP_TLS_CERT
+        IFS= read -r HOSTMAP_TLS_KEY
+    } < <(python3 - "$SERVICES_DIR/.runtime.json" <<'PY'
 import json, sys
 rt = json.load(open(sys.argv[1]))
 tls = rt["tls"]
-print(rt["websites"]["public_host_suffix"], rt["gitlab"]["url"], tls["ca_cert"], tls["bundle"], tls["leaf_cert"], tls["leaf_key"])
+print(rt["websites"]["public_host_suffix"], rt["gitlab"]["url"], tls["ca_cert"], tls["bundle"], tls["leaf_cert"], tls["leaf_key"], sep="\n")
 PY
 )
     export WEBSITE_HOST_SUFFIX GITLAB_URL OSWORLD_CA_CERT HOSTMAP_TLS_CERT HOSTMAP_TLS_KEY

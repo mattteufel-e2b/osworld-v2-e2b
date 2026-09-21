@@ -341,6 +341,61 @@ def test_native_wait_worker_deadline_interrupts_before_observation(patched_check
     assert events == []
 
 
+@pytest.mark.parametrize("nested", [False, True])
+def test_native_batches_preserve_order_and_use_wait_and_clipboard_repairs(
+    patched_checkout, nested
+):
+    python = ROOT / "OSWorld-V2/.venv/bin/python"
+    if not python.exists():
+        pytest.skip("requires upstream runtime")
+    leaves = [{"action": "wait", "duration": 240}, {"action": "type", "text": "café"}]
+    inputs = {
+        "actions": ([{"actions": leaves}] if nested else leaves)
+        + [
+            {"action": "left_click", "coordinate": [640, 360]},
+        ]
+    }
+    # Use the real agent adapter and pinned parser; replace only the model call.
+    result = subprocess.run(
+        [
+            str(python),
+            "-c",
+            """
+import json,os,sys
+from pathlib import Path
+sys.path[:0] = [str(Path('runner').resolve()), str(Path('OSWorld-V2').resolve())]
+from agents import build_agent, agent_settings
+from mm_agents.anthropic.main import AnthropicAgent
+os.environ.update(MODEL_API_KEY='offline', MODEL_BASE_URL='https://model.test')
+agent = build_agent('claude', model='claude-opus-4-7', settings=agent_settings('claude'),
+                    client_password='osworld-public-evaluation')
+action = {'name':'computer', 'input':json.loads(sys.argv[1]), 'action_type':'tool_use'}
+action['command'] = agent.parse_actions_from_tool_call(action)
+AnthropicAgent.predict = lambda *a, **kw: ('response', [action])
+print(json.dumps(agent.predict('instruction', {})[1][0]))
+""",
+            json.dumps(inputs),
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    action = json.loads(result.stdout)
+    events = []
+    env = _step_env(events)
+    _desktop_step(patched_checkout, lambda seconds: events.append(("sleep", seconds)))(
+        env, action, pause=2
+    )
+    assert events[0] == ("sleep", 240)
+    assert events[1][0] == "guest" and "DEVNULL" in events[1][1]
+    assert "pyperclip.copy('café')" in events[1][1]
+    assert events[2][0] == "guest" and "pyautogui.click(960, 540)" in events[2][1]
+    assert events[3:] == [("sleep", 2), ("observe",)]
+    assert env.action_history == [action] and env._step_no == 1
+    assert action["input"] == inputs
+
+
 def test_native_unicode_clipboard_daemon_cannot_hold_execute_response_open(
     patched_checkout, tmp_path, monkeypatch
 ):

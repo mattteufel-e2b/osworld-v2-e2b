@@ -45,7 +45,9 @@ duration before the next observation. This avoids the guest command's 120-second
 without changing the agent's prompts, action history, or ordinary command limits.
 Native Unicode typing also isolates the clipboard helper's output streams so its background
 process cannot keep a completed command's response open. Ordinary command output remains
-captured. These execution repairs address behavior also present in the pinned upstream
+captured. The `claude` adapter applies both repairs to batch members in order, retaining
+the original batch in the trajectory and one observation and action pause per batch.
+These execution repairs address behavior also present in the pinned upstream
 runtime and should be applied consistently to a matched reference run. The upstream
 Ctrl+V paste shortcut is preserved; GNOME Terminal normally requires Ctrl+Shift+V.
 
@@ -53,6 +55,8 @@ Ctrl+V paste shortcut is preserved; GNOME Terminal normally requires Ctrl+Shift+
 
 Agent credentials are separate from the upstream judge and simulator credentials. The default
 uses OpenAI with `OPENAI_API_KEY`; select another endpoint using upstream's settings.
+The Claude adapter scopes its Anthropic endpoint and bearer token to each prediction,
+restoring the environment before any judge or simulator call, including on interruption.
 
 ### Recommended: Haiku 4.5 on Bedrock
 
@@ -101,6 +105,7 @@ export OPENAI_API_KEY="${OPENAI_API_KEY:-bedrock-legacy-presence-only}"
 ```
 
 Without this variable, upstream silently skips the video judge, worth 0.20 of the score.
+Live-run preflight rejects this configuration when task 092 is selected.
 
 Some task judges allow only 5–16 output tokens. Use a model that can return a verdict at that
 budget; reasoning can consume it before a verdict appears. Task-specific token limits take

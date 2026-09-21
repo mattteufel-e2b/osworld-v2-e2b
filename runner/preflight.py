@@ -203,6 +203,17 @@ def main() -> int:
     if missing_tasks:
         fail(f"gated task files missing for ids: {', '.join(missing_tasks)}")
 
+    if (
+        "092" in selected
+        and os.environ.get("OSWORLD_EVAL_MODEL_MODE") != "stub"
+        and not os.environ.get("OPENAI_API_KEY")
+    ):
+        fail(
+            "task 092 requires OPENAI_API_KEY for its legacy video-judge presence check; "
+            "with an explicitly configured non-OpenAI judge, set it to "
+            "bedrock-legacy-presence-only"
+        )
+
     if "082" in selected:
         probe = socket.socket()
         try:

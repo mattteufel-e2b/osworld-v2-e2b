@@ -62,6 +62,7 @@ export OSWORLD_EVAL_MODEL_BASE_URL=https://bedrock-mantle.us-east-1.api.aws/anth
 export OSWORLD_EVAL_MODEL_API_KEY_ENV=AWS_MANTLE
 export OSWORLD_USER_SIM_MODEL=anthropic.claude-haiku-4-5
 export AWS_MANTLE="..."                    # judge and user simulator
+export OPENAI_API_KEY="${OPENAI_API_KEY:-bedrock-legacy-presence-only}" # task 092 presence check
 
 AGENT_MANIFEST="$RUN_ROOT/full-manifest.json" PARALLEL_CONCURRENCY=80 MAX_STEPS=500 \
     AGENT_TASK_TIMEOUT_SECONDS=28800 RAW_DIR="$RUN_ROOT/agent-raw" \

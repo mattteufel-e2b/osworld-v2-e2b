@@ -121,7 +121,7 @@ def test_claude_rejects_sampling_overrides_instead_of_recording_ignored_values(
         agents.agent_settings("claude", **override)
 
 
-def test_claude_builder_routes_messages_transport_and_bearer_auth(agents, monkeypatch):
+def test_claude_builder_preserves_separate_judge_transport(agents, monkeypatch):
     claude_module = types.ModuleType("mm_agents.anthropic.main")
     claude_module.AnthropicAgent = type("AnthropicAgent", (_Recorder,), {})
     utils_module = types.ModuleType("mm_agents.anthropic.utils")
@@ -135,6 +135,7 @@ def test_claude_builder_routes_messages_transport_and_bearer_auth(agents, monkey
         "MODEL_BASE_URL", "https://bedrock-mantle.us-east-1.api.aws/anthropic"
     )
     monkeypatch.setenv("MODEL_API_KEY", "test-model-key")
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://judge.test/anthropic")
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "unrelated-key")
     settings = agents.agent_settings("claude", max_steps=37)
     agent = agents.build_agent(
@@ -150,11 +151,8 @@ def test_claude_builder_routes_messages_transport_and_bearer_auth(agents, monkey
     assert agent.kwargs["max_steps"] == 37
     assert agent.kwargs["only_n_most_recent_images"] == 10
     assert "max_trajectory_length" not in agent.kwargs
-    assert (
-        os.environ["ANTHROPIC_BASE_URL"]
-        == "https://bedrock-mantle.us-east-1.api.aws/anthropic"
-    )
-    assert os.environ["ANTHROPIC_AUTH_TOKEN"] == "test-model-key"
+    assert os.environ["ANTHROPIC_BASE_URL"] == "https://judge.test/anthropic"
+    assert os.environ["ANTHROPIC_AUTH_TOKEN"] == "unrelated-key"
 
 
 def test_claude_preflight_does_not_import_the_optional_anthropic_sdk(tmp_path):
