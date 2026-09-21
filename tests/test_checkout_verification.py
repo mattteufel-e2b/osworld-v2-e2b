@@ -111,6 +111,10 @@ PINNED_NON_200_BRANCH = (
     '                    logger.error("Failed to execute command. Status code: %d", response.status_code)\n'
     '                    logger.info("Retrying to execute command.")\n'
 )
+PINNED_DICT_ACTION = (
+    "                elif type(action) == dict:\n"
+    "                    self.controller.execute_python_command(action['command'])\n"
+)
 PINNED_CONTROLLER = (
     "                response = requests.post(self.http_server + \"/execute\", headers={'Content-Type': 'application/json'},\n"
     "                                         data=payload, timeout=90)\n"
@@ -125,6 +129,7 @@ PINNED_CONTROLLER = (
 # must occur exactly once in the pinned upstream file -- see
 # test_setup_anchors_are_unique_in_the_pinned_upstream_files.
 PIN_ANCHORS = {
+    "desktop_env/desktop_env.py": (PINNED_DICT_ACTION,),
     "mm_agents/anthropic/main.py": (
         "            betas.append(PROMPT_CACHING_BETA_FLAG)\n",
     ),
@@ -163,7 +168,7 @@ def _seed_minimal_checkout(dest: Path, parser_text: str, controller_text: str) -
     )
     (dest / "desktop_env" / "desktop_env.py").write_text(
         'if self.provider_name in {"docker", "aws", "gcp", "azure", "aliyun", "volcengine"}:\n'
-        "if self.is_environment_used:\n"
+        "if self.is_environment_used:\n" + PINNED_DICT_ACTION
     )
     (dest / "scripts" / "python" / "run_multienv_m3.py").write_text(
         'choices=["aws", "virtualbox", "vmware", "docker", "azure"]\n'
@@ -186,6 +191,7 @@ def patched_checkout(tmp_path):
         pytest.skip("pinned upstream checkout not installed")
     _seed_minimal_checkout(tmp_path, "", "")
     for relative in (
+        "desktop_env/desktop_env.py",
         "mm_agents/anthropic/main.py",
         "mm_agents/m3/parser.py",
         "mm_agents/m3/agent.py",
@@ -200,6 +206,137 @@ def patched_checkout(tmp_path):
         )
     _apply_patches(tmp_path)
     return tmp_path
+
+
+def _desktop_step(checkout, sleep):
+    source = ast.parse((checkout / "desktop_env/desktop_env.py").read_text())
+    cls = next(
+        n for n in source.body if isinstance(n, ast.ClassDef) and n.name == "DesktopEnv"
+    )
+    step = next(
+        n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "step"
+    )
+    namespace = {
+        "time": SimpleNamespace(sleep=sleep),
+        "logger": logging.getLogger(__name__),
+    }
+    exec(
+        compile(ast.Module(body=[step], type_ignores=[]), "desktop_env.py", "exec"),
+        namespace,
+    )
+    return namespace["step"]
+
+
+def _step_env(events, provider="e2b", action_space="claude_computer_use"):
+    def observe():
+        events.append(("observe",))
+        return {"screenshot": b"after-action"}
+
+    return SimpleNamespace(
+        provider_name=provider,
+        action_space=action_space,
+        _step_no=0,
+        _traj_no=0,
+        action_history=[],
+        is_environment_used=False,
+        controller=SimpleNamespace(
+            execute_python_command=lambda command: events.append(("guest", command)),
+        ),
+        _get_obs=observe,
+    )
+
+
+@pytest.mark.parametrize(
+    "duration,expected",
+    [(1, 1), (120, 120), (180, 180), (240, 240), (0, 0.5), (None, 0.5)],
+)
+def test_native_wait_preserves_duration_and_observes_after_one_pause(
+    patched_checkout, duration, expected
+):
+    events = []
+    step = _desktop_step(
+        patched_checkout, lambda seconds: events.append(("sleep", seconds))
+    )
+    env = _step_env(events)
+    action = {
+        "name": "computer",
+        "action_type": "tool_use",
+        "input": {"action": "wait", "duration": duration},
+        "command": f"pyautogui.sleep({duration or 0.5})\n",
+    }
+    result = step(env, action, pause=2)
+    assert events == [("sleep", expected), ("sleep", 2), ("observe",)]
+    assert result == ({"screenshot": b"after-action"}, 0, False, {})
+    assert env.action_history == [action] and env.action_history[0] is action
+    assert env._step_no == 1 and env.is_environment_used
+    before = (patched_checkout / "desktop_env/desktop_env.py").read_bytes()
+    _apply_patches(patched_checkout)
+    assert (patched_checkout / "desktop_env/desktop_env.py").read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "provider,space,action_name",
+    [
+        ("e2b", "claude_computer_use", "left_click"),
+        ("aws", "claude_computer_use", "wait"),
+        ("e2b", "pyautogui", "wait"),
+    ],
+)
+def test_native_wait_does_not_change_other_action_execution(
+    patched_checkout, provider, space, action_name
+):
+    events = []
+    step = _desktop_step(
+        patched_checkout, lambda seconds: events.append(("sleep", seconds))
+    )
+    env = _step_env(events, provider, space)
+    action = {
+        "name": "computer",
+        "action_type": "tool_use",
+        "input": {"action": action_name, "duration": 240},
+        "command": "unchanged command",
+    }
+    step(env, action, pause=0)
+    assert events == [("guest", "unchanged command"), ("sleep", 0), ("observe",)]
+
+
+@pytest.mark.parametrize("duration", [-1, float("inf"), float("nan"), "240", True])
+def test_native_wait_rejects_invalid_duration_before_execution(
+    patched_checkout, duration
+):
+    events = []
+    step = _desktop_step(
+        patched_checkout, lambda seconds: events.append(("sleep", seconds))
+    )
+    action = {
+        "name": "computer",
+        "action_type": "tool_use",
+        "input": {"action": "wait", "duration": duration},
+        "command": "unused",
+    }
+    with pytest.raises(ValueError, match="wait duration"):
+        step(_step_env(events), action, pause=0)
+    assert events == []
+
+
+def test_native_wait_worker_deadline_interrupts_before_observation(patched_checkout):
+    class Deadline(BaseException):
+        pass
+
+    def interrupt(_seconds):
+        raise Deadline()
+
+    events = []
+    step = _desktop_step(patched_checkout, interrupt)
+    action = {
+        "name": "computer",
+        "action_type": "tool_use",
+        "input": {"action": "wait", "duration": 240},
+        "command": "pyautogui.sleep(240)\n",
+    }
+    with pytest.raises(Deadline):
+        step(_step_env(events), action, pause=0)
+    assert events == []
 
 
 def test_native_claude_cache_header_patch_preserves_every_other_byte_and_is_idempotent(

@@ -3,7 +3,7 @@
 # (examples/osworld-v2/upstream.lock.json) and wire in the E2B provider
 # (provider/provider.py + provider/manager.py + provider/bridge.py, the
 # in-process bridge) so OSWorld-V2's own run.py works with --provider_name e2b.
-# Idempotent: re-running is safe and each string patch (a)-(n) is guarded,
+# Idempotent: re-running is safe and each string patch (a)-(o) is guarded,
 # reporting "already applied" on the second run.
 #
 # Checkout states (the checkout is gitignored, so its state lives on disk only):
@@ -292,6 +292,32 @@ def replace_once(relative, before, after, label):
     path.write_text(src.replace(before, after, 1))
     print(f"{label}: patched")
 
+# E2B transport compatibility only: native wait tools must not run inside the
+# guest's 120 s command deadline. Keep the requested duration, original action
+# history, subsequent observation and one normal action pause. Prompts, model
+# settings and upstream native action parsing remain unchanged.
+replace_once(
+    "desktop_env/desktop_env.py",
+    "                elif type(action) == dict:\n"
+    "                    self.controller.execute_python_command(action['command'])\n",
+    "                elif type(action) == dict:\n"
+    '                    if (self.provider_name == "e2b"\n'
+    '                            and self.action_space == "claude_computer_use"\n'
+    '                            and action.get("name") == "computer"\n'
+    '                            and action.get("input", {}).get("action") == "wait"):\n'
+    "                        import math\n"
+    '                        duration = action["input"].get("duration")\n'
+    "                        if duration is None:\n"
+    "                            duration = 0.5\n"
+    "                        if (type(duration) not in (int, float)\n"
+    "                                or not math.isfinite(duration) or duration < 0):\n"
+    '                            raise ValueError("Native wait duration must be finite and nonnegative")\n'
+    "                        time.sleep(duration or 0.5)\n"
+    "                    else:\n"
+    "                        self.controller.execute_python_command(action['command'])\n",
+    "(o) native Claude waits use the worker clock",
+)
+
 replace_once(
     "mm_agents/m3/agent.py",
     '                raw_response = {"error": str(e)}\n'
@@ -455,7 +481,7 @@ touch "$DEST/desktop_env/providers/e2b/__init__.py"
 # The bridge imports e2b_policy from the checkout root (run.py's cwd).
 cp "$POLICY_FILE" "$DEST/e2b_policy.py"
 
-# ---- string patches (a)-(n): register + classify the provider, force strict
+# ---- string patches (a)-(o): register + classify the provider, force strict
 #      reset, accept --provider_name e2b in the M3 multi-env runner, and the
 #      disclosed agent transport / parser / controller execution patches ----
 apply_adapter_patches "$DEST"

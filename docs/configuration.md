@@ -40,6 +40,10 @@ per-task reference trajectories or rerun the same agent configuration on the ref
 for a controlled environment comparison. Haiku judging and short samples do not reproduce
 the published baseline.
 
+Native Claude `computer` waits use the worker clock on E2B, preserving the requested
+duration before the next observation. This avoids the guest command's 120-second deadline
+without changing the agent's prompts, action history, or ordinary command limits.
+
 ## Judge and user simulator configuration
 
 Agent credentials are separate from the upstream judge and simulator credentials. The default
