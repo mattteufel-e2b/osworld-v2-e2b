@@ -1,0 +1,74 @@
+{
+  "campaign_id": "osworld-v2-native-parity-20260920",
+  "task_id": "task_092",
+  "audit_status": "completed_with_pre_evaluation_artifact_snapshot",
+  "score": 1.0,
+  "audited_at_utc": "2026-09-21T03:46:40.643791+00:00",
+  "video": {
+    "codec": "vp9",
+    "width": 960,
+    "height": 540,
+    "fps": 24,
+    "decoded_frames": 120,
+    "duration_seconds": 5,
+    "sampled_frame_readable_3d_text": true,
+    "verification_scope": "pre-evaluation file; final evaluator also passed dimensions, duration and visual text checks"
+  },
+  "saved_blend": {
+    "version": "4.5",
+    "render_width": 960,
+    "render_height": 540,
+    "render_percentage": 100,
+    "fps": 24,
+    "frame_start": 1,
+    "frame_end": 120,
+    "text_geometry_and_rotation_independently_verified": false,
+    "verification_scope": "pre-evaluation file render settings; final evaluator reported saved text-object check passed"
+  },
+  "presentation": {
+    "slides": 1,
+    "text_content_check_matches": true,
+    "page_background": "#333333",
+    "text_styles_font": "Radis Sans",
+    "text_styles_size_pt": 22,
+    "external_video_reference": true,
+    "bundled_video": false,
+    "video_visible_in_impress_step": 134,
+    "verification_scope": "final evaluator-downloaded presentation; video UI observation from earlier trajectory"
+  },
+  "limitations": [
+    "Radis Sans substitutes for the unavailable requested font; exact font fidelity is not established.",
+    "Final ODP references a separate video file and bundles no video. The evaluator accepts that reference.",
+    "Saved geometry and full rotation were not independently verified; trajectory steps 21 and 51 show configuration.",
+    "Blend and video hashes identify the pre-evaluation snapshot. Final presentation has a different hash; its font, page color and external media reference were rechecked."
+  ],
+  "source_steps": [
+    21,
+    51,
+    92,
+    134
+  ],
+  "evaluator_source_sha256": "634c7329d7d11b6aabf95abe4303cc4bc13093f978fecc6a05a2bf77029bee8c",
+  "path_status": "OK",
+  "steps_taken": 151,
+  "evaluator_ran": true,
+  "finished_at_utc": "2026-09-21T03:45:26.120681+00:00",
+  "judge": {
+    "attempts": 1,
+    "successes": 1,
+    "verdict": "YES"
+  },
+  "pre_evaluation_artifacts": {
+    "LABIA_logo.blend": {"bytes": 526258, "sha256": "92186f3ee2be9eebca6179ec0443d8bfd84498e700a5501b7513b67f81933f65"},
+    "LABIA_course.odp": {"bytes": 24523, "sha256": "5064e7417ed2eea6e1d57f70b3cbc598197cb4b46542c3979ae2126ee8e9a2b2"},
+    "LABIA_logo.webm": {"bytes": 275348, "sha256": "e305ebab28e71e41c7dd5f45d47aa4d30249c7d6deed34a477a02cff4f012192"}
+  },
+  "pre_evaluation_capture_at_utc": "2026-09-21T03:42:18.041246+00:00",
+  "final_evaluator_artifacts": {
+    "presentation": {"bytes": 24551, "sha256": "78127a03f772a6d11d647b4ab4e0d0e43448da1143e758c573d0f9386a7a69e9", "downloaded_at_utc": "2026-09-21T03:45:24.239044+00:00"},
+    "video_frame_at_0_25_seconds": {"bytes": 53062, "sha256": "4d5168e9d988de145e3620b4f7504b02bb99d14ccb0e174485b9937b99f7c30f", "downloaded_at_utc": "2026-09-21T03:45:24.879671+00:00"},
+    "presentation_hash_matches_snapshot": false,
+    "presentation_content_xml_matches_snapshot": false,
+    "other_cached_frames_excluded_as_stale": true
+  }
+}

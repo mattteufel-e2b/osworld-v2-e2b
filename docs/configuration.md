@@ -110,11 +110,12 @@ controls even with reasoning disabled; its successful agent image calls do not v
 a judge.
 
 Each per-task receipt records `model_usage` per role (`agent`, `judge`, `simulator`): each role
-carries `calls`, `input_tokens`, `output_tokens`, and `unmeasured_calls`. The campaign receipt
-sums those per-task roles under `summary.model_usage`.
+carries `calls`, `input_tokens`, `output_tokens`, `cache_creation_input_tokens`,
+`cache_read_input_tokens`, and `unmeasured_calls`. The campaign receipt sums those per-task
+roles under `summary.model_usage`, preserving unknown cache telemetry as `null`.
 
 Agent usage is measured for the `m3` and `claude` kinds through the Anthropic standard and
-beta Messages SDK clients. Cache-read and cache-write tokens are not included. The `prompt` kind
+beta Messages SDK clients, including separate cache-read and cache-write counts. The `prompt` kind
 sends requests with `requests` and reports `agent.calls = 0` with `input_tokens`/`output_tokens`
 `null`; judge and simulator usage is measured regardless of agent kind.
 

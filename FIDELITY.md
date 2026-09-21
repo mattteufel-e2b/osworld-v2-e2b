@@ -19,6 +19,69 @@ Release pin: `osworld-v2-2026.08.08`. OSWorld-V2 checkout: `d578d2d4e0dc82b43e27
 This ledger separates what was verified to match a stated reference, what was recorded
 without a reference to match against, and what is excluded or unexercised outright.
 
+## September 20 full native-agent Bedrock sample
+
+[Campaign evidence](out/osworld-v2-evidence/native-parity-20260920/campaign.json)
+records six tasks on immutable guest `cd4a1a63-eb56-418f-9ac3-60fbbf2b838e`,
+using the pinned upstream Claude agent with Opus 5, adaptive max effort, up to
+500 actions, zero action pause, and six workers. Live judges used Haiku 4.5.
+Five tasks completed evaluation; task 079 stopped at the budget boundary.
+
+| Task | Coverage | Actions | Score | Result |
+| --- | --- | ---: | ---: | --- |
+| 008 | Expense report and document attachments | 447 | 0.9091 | Evaluated |
+| 030 | Training, checkpoint, and report | 124 | 1.0 | Evaluated |
+| 041 | GitLab CI, artifacts, and Pages | 135 | 0.8215 | Evaluated |
+| 079 | WPS presentation | 265 | — | Budget stop before evaluation |
+| 087 | WPS presentation | 171 | 0.64 | Evaluated |
+| 092 | Blender video and presentation | 151 | 1.0 | Evaluated |
+
+All 22 attempted judge calls succeeded. Artifact audits verified task 008's three
+DOCX attachments and 16 embedded images; task 030's fresh training outputs;
+task 041's successful pipeline and deployed HTTPS page; task 087's 19-slide
+PPTX and 19 fully decoded slide images; and task 092's Blender file, playable
+five-second video, presentation, and fresh evaluator frame. Task 079 produced
+modified 26-slide working decks but left the required output path unchanged.
+Its artifacts were preserved read-only; no completion action or evaluation was
+forced. The coordinator's receipt gate correctly failed because this task was
+incomplete. These are partial task scores, not six successful task completions.
+
+Inference accounting is **$116.0541**, based on provider-reported token usage,
+cache TTL pricing, and a 10% allowance. This fresh allocation is separate from
+previous samples and below the user's $125 limit. The final guard cap was $124;
+its conservative $7.98 reservation for another full-context Opus call could not
+fit, so further inference stopped. CountTokens preflight returned HTTP 403
+because the key lacks `bedrock-mantle:CountTokens`. No charges remain unsettled.
+Four guard replacements occurred with zero in-flight calls or request sockets;
+recorded worker pauses total 106.883 seconds. This campaign does not establish
+full-agent throughput. All campaign guests, service fleets, and local proxies
+were stopped and verified absent.
+
+The campaign exposed two native execution defects repaired in `runner/setup.sh`:
+long `wait` actions exceeded the guest command deadline, and the `xclip` daemon
+inherited captured pipes and prevented a completed typing command from returning.
+The [wait control](out/osworld-v2-evidence/native-parity-20260920/wait-control.json)
+completed a requested 240-second wait in 240.291 seconds. The
+[clipboard control](out/osworld-v2-evidence/native-parity-20260920/native-clipboard-control.json)
+reproduced the original action's HTTP 500 and verified HTTP 200 after the scoped
+pipe fix, including preserved clipboard contents and ordinary command output.
+These six rollouts began before the repairs; complete tasks were not rerun afterward.
+GitLab runner registration, Pages routing, resource pagination, and cache-token
+receipt accounting are also repaired and covered by targeted tests and controls.
+
+Operational WPS and Blender coverage is established; exact reference parity is
+not. There is no matched reference-VM run. The upstream launcher uses Sonnet 4.6,
+which was absent from the tested Bedrock catalog; model, judge, and inline
+checkpoint settings do not reproduce a published result. Bauhaus 93 is absent
+and task 092 used Radis Sans. Blender 4.5.14 differs from the image-building
+recipe's 5.0.0; the actual pinned reference AMI inventory remains unverified.
+WPS symbol-font substitution remains documented. Native Unicode typing retains
+upstream Ctrl+V behavior, which does not paste in the default GNOME Terminal.
+Task 030's agent repaired dependencies in its task-created virtual environment;
+this was not established as a template defect. Task 092's final presentation
+links its video externally rather than bundling it. The complete 108-task ladder
+and an 80-worker full-inference run remain unverified on this final guest.
+
 ## September 20 concurrency and native-Claude verification
 
 [Evidence](out/osworld-v2-evidence/concurrency/verification-20260920.json) separates account

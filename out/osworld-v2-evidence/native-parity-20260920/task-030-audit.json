@@ -1,0 +1,87 @@
+{
+  "campaign_id": "osworld-v2-native-parity-20260920",
+  "task_id": "030",
+  "result": {
+    "path_status": "OK",
+    "score": 1.0,
+    "steps_taken": 124,
+    "wall_clock_s": 2940.1,
+    "transport_ok": true,
+    "evaluator_ran": true,
+    "eval_model_call_attempts": 0,
+    "eval_model_successes": 0
+  },
+  "model_call_counts": {
+    "agent": 124,
+    "judge": 0,
+    "simulator": 0
+  },
+  "fresh_downloaded_outputs": {
+    "train_20_100.log": {"bytes": 2966, "mtime_utc": "2026-09-21T03:54:25.447455+00:00", "sha256": "55b0ac52daebc2a79bbaca6246bb179a5a2d43892c904925af5473393168cd5c", "reference_hash_matches": true},
+    "train_20_90.log": {"bytes": 2966, "mtime_utc": "2026-09-21T03:54:25.576541+00:00", "sha256": "1a498220e3c2663dd3f601370d37a4233a7842adcea88ed3e98f4b894cec82ef", "reference_hash_matches": true},
+    "meeting_note.docx": {
+      "bytes": 33777,
+      "mtime_utc": "2026-09-21T03:54:29.295086+00:00",
+      "sha256": "3dbe4a09a516b52338b8fdac7b349b44d03ce47574bad3466a404de34ac1400a",
+      "zip_integrity": "pass",
+      "table_count": 1,
+      "rows": 2,
+      "columns": 6,
+      "positive_integer_parameter_count": 6
+    },
+    "mtime_scope": "host download time; not guest creation time"
+  },
+  "agent_execution_evidence": {
+    "checkpoint": {"step": 109, "status": "present_and_loaded", "bytes": 2272755, "iteration": 15000},
+    "test_summary": {"step": 111, "predictions": 10000, "correct": 9541, "accuracy_percent": 95.41},
+    "checkpoint_test_progress": {"steps": [99, 104, 107], "status": "progress_observed"}
+  },
+  "dependency_resolution": {
+    "provenance": "agent-created project venv; task README requirements install at step26",
+    "task_requirements": {"numpy": "unconstrained", "torch": "1.12.0", "tqdm": "absent", "sha256": "78ddb4bbd581d46be8cad37ad54f186266fc4facd95186355220c3a282c82360"},
+    "numpy": {"failure_step": 59, "repair_step": 61, "before": "2.2.6", "after": "1.26.4", "torch_numpy_probe": "pass"},
+    "tqdm": {"failure_step": 70, "repair_step": 72, "after": "4.70.1", "status": "installed"},
+    "pristine_template_defect_established": false
+  },
+  "wait_timeout_evidence": {
+    "http_500_count": 7,
+    "guest_deadline_s": 120,
+    "client_deadline_s": 130,
+    "classification": "strong count/timing correlation with native waits reaching guest command deadline",
+    "matching_wait_actions": [
+      {"step": 92, "timestamp_local": "20260920@203156675105", "requested_wait_s": 120, "next_action_delta_s": 125.872},
+      {"step": 96, "timestamp_local": "20260920@203429565593", "requested_wait_s": 180, "next_action_delta_s": 129.038},
+      {"step": 99, "timestamp_local": "20260920@203655047111", "requested_wait_s": 120, "next_action_delta_s": 133.046},
+      {"step": 104, "timestamp_local": "20260920@204238002874", "requested_wait_s": 180, "next_action_delta_s": 130.944},
+      {"step": 105, "timestamp_local": "20260920@204448946649", "requested_wait_s": 240, "next_action_delta_s": 127.804},
+      {"step": 106, "timestamp_local": "20260920@204656750165", "requested_wait_s": 180, "next_action_delta_s": 128.614},
+      {"step": 107, "timestamp_local": "20260920@204905364311", "requested_wait_s": 120, "next_action_delta_s": 134.033}
+    ],
+    "ordinary_subprocess_nonzero_http_status": 200,
+    "response_bodies_and_error_timestamps_retained": false,
+    "exact_individual_http_attribution": "not established",
+    "native_wait_deadline_mismatch": "Patched after this rollout: E2B native waits now use the worker clock.",
+    "fix_control": "wait-control.json:240.291s elapsed for240s request, fresh screenshots before/after, no guest command for wait, ordinary action still uses controller.",
+    "full_task_rerun_after_wait_fix": false
+  },
+  "evaluator_checks": {
+    "exam_count_inferred": 2,
+    "status": "both passed inferred from aggregate score and evaluator control flow",
+    "exact_exam_stdout_or_accuracies_retained": false,
+    "agent_test_accuracy_equals_exam_accuracy": "not established"
+  },
+  "sources": {
+    "raw_root": "out/osworld-v2-raw/native-parity-20260920/agent-raw/workers",
+    "receipt_sha256": "1a8c80d55eae53b425231e686dcf758f341d0699960e7577e6225e67ae05c0ca",
+    "runtime_log_sha256": "0fad718f538c7bb38c6e5e61bf9a445b27281fab6650cd743da3921632925b99",
+    "trajectory_sha256": "53a64d10d5b0e127e3395421f448655366afa843db5c05d0b32421f3cf4fe17e",
+    "evaluator": "OSWorld-V2/evaluation_examples/task_class/task_030.py:365",
+    "native_wait_translation": "OSWorld-V2/mm_agents/anthropic/main.py:449",
+    "guest_deadline_and_response": "template/files/server/src/http_routes.py:139",
+    "controller_timeout_break": "OSWorld-V2/desktop_env/controllers/python.py:675"
+  },
+  "independent_audit": {
+    "model_calls": 0,
+    "guest_changes": 0
+  }
+}
