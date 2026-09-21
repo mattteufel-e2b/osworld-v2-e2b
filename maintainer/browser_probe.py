@@ -16,8 +16,7 @@ Chrome over CDP, not from the host with ``curl``.
 
 What it does, once:
   1. Creates a single guest through the provider's in-process bridge, exactly as
-     ``maintainer/harness.py`` and ``maintainer/typing_control.py`` do
-     (``DesktopEnv(provider_name="e2b", ...)``). The bridge installs the in-guest
+     ``maintainer/harness.py`` does (``DesktopEnv(provider_name="e2b", ...)``). The bridge installs the in-guest
      Host-mapping proxy, the campaign CA (system trust store *and* Chrome's NSS
      database) and the ``/etc/hosts`` entries from ``OSWORLD_FLEET_RULES``, so the
      fleet origins resolve and verify inside the guest the way they do in a task.
@@ -55,6 +54,8 @@ What it does, once:
      clears the isolated probe session. Pushes a 2 MiB Git blob from the guest
      with chunked HTTP, verifies it through GitLab, and deletes the probe project.
   7. Writes ``<output-dir>/browser-probe-<build-id>.json`` and kills the guest.
+     That raw record is gitignored; commit its reduction from
+     ``maintainer/receipt_summary.py`` under ``out/osworld-v2-evidence/fleet/``.
 
 Acceptance criteria (evaluated into ``acceptance``; the script exits non-zero if
 any is false). Per origin: ``secure`` is ``true``, ``typeof navigator.clipboard``
@@ -130,8 +131,8 @@ import requests
 
 
 # desktop_env is imported from the pinned checkout, whose root must be the cwd
-# (several upstream modules resolve repo-relative paths from it). harness.py and
-# typing_control.py do the same; keep all three able to run directly.
+# (several upstream modules resolve repo-relative paths from it). harness.py
+# does the same; keep both able to run directly.
 sys.path.insert(0, os.getcwd())
 
 from desktop_env.desktop_env import DesktopEnv  # noqa: E402

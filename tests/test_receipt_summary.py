@@ -136,3 +136,67 @@ def test_agent_records_keep_the_dict_shape():
         "score": 0.6,
         "steps_taken": 27,
     }
+
+
+def test_browser_probe_record_keeps_acceptance_and_reduces_origin_lists():
+    record = {
+        "schema_version": 1,
+        "build_id": "00124a57",
+        "passed": True,
+        "acceptance": {"teamchat.secure": True, "all_origins_probed": True},
+        "bridge": {"sandbox_id": "sbx"},
+        "cdp": {
+            "browser_version": {"Browser": "Chrome/153"},
+            "enable_errors": {"Log": None},
+            "event_count": 223,
+        },
+        "origins": [
+            {
+                "label": "teamchat",
+                "requested_url": "https://teamchat.127.0.0.1.nip.io",
+                "raw_probe": "{...}",
+                "values": {"secure": True, "clipboard": "object"},
+                "security": {"source": "event", "value": "secure", "events": [1, 2]},
+                "console_entries": [{"text": "x"}],
+                "blocked_urls": [],
+                "network": {
+                    "total_requests": 2,
+                    "schemes": {"https": 2},
+                    "requests": [{"url": "a"}, {"url": "b"}],
+                    "insecure_requests": [],
+                    "insecure_urls": [],
+                    "mixed_content_blocked": [],
+                    "failures": [],
+                    "requests_truncated": False,
+                },
+            }
+        ],
+    }
+
+    summary = summarize(record, "browser-probe-00124a57.json")
+
+    assert summary["kind"] == "browser-probe-summary"
+    assert summary["acceptance"] == record["acceptance"]
+    assert summary["passed"] is True
+    assert "bridge" not in summary
+    assert summary["cdp"] == {
+        "browser": "Chrome/153",
+        "enable_errors": {"Log": None},
+        "event_count": 223,
+    }
+    origin = summary["origins"][0]
+    assert "raw_probe" not in origin
+    assert origin["values"] == {"secure": True, "clipboard": "object"}
+    assert origin["security"] == {"source": "event", "value": "secure"}
+    assert origin["console_entries_count"] == 1
+    assert origin["blocked_urls"] == []
+    assert origin["network"] == {
+        "total_requests": 2,
+        "schemes": {"https": 2},
+        "requests_truncated": False,
+        "insecure_urls": [],
+        "requests_count": 2,
+        "failures_count": 0,
+        "insecure_requests_count": 0,
+        "mixed_content_blocked_count": 0,
+    }

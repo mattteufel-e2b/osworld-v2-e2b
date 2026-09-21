@@ -12,7 +12,7 @@ or any committed file.
 
 Re-runnable: reuses the recorded sandbox if it is still alive. On success prints
 exactly these lines to stdout:
-    GITLAB_URL=http://gitlab.127.0.0.1.nip.io:8090
+    GITLAB_URL=https://gitlab.127.0.0.1.nip.io:8090
     GITLAB_TOKEN_FILE=<abs path to gitignored token file>
 
 Run:

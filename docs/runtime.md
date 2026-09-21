@@ -242,7 +242,7 @@ campaign's state.
 Status: everything above is implemented and covered by unit tests against faked sandboxes. The
 guest-side half has since been exercised against a live guest on build
 `osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8`. The guest-browser probe
-([evidence](../out/osworld-v2-evidence/fleet/browser-probe-00124a57-267c-45e7-93d1-ca0ff196e4b8.json))
+([summary](../out/osworld-v2-evidence/fleet/browser-probe-00124a57-267c-45e7-93d1-ca0ff196e4b8.summary.json))
 read `isSecureContext: true`, a `secure` visible security state over TLS 1.3, and no
 certificate interstitial from inside the guest's own Chrome on all six fleet origins, which
 means the trust install and the guest proxy's TLS termination both worked; priced inference ran

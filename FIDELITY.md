@@ -138,7 +138,7 @@ crash and tests its fix at high concurrency.
 
 Two live controls ran against the same build and the same fleet campaign. The guest-browser
 secure-context probe
-([evidence](out/osworld-v2-evidence/fleet/browser-probe-00124a57-267c-45e7-93d1-ca0ff196e4b8.json),
+([summary](out/osworld-v2-evidence/fleet/browser-probe-00124a57-267c-45e7-93d1-ca0ff196e4b8.summary.json),
 `maintainer/browser_probe.py`) drove the guest's own Chrome 153 over CDP across TeamChat,
 CloudCRM, MailHub, StreamView, `studio.streamview` and the task-041 GitLab alias. The
 long-typing control
@@ -616,11 +616,13 @@ the configured limit and then fails the task. The worst-case span of a non-timeo
 `execute_python_command` grew with the longer per-request deadline (three attempts at up to
 130 s each instead of 90 s), because (h) short-circuits only the guest's own timeout 500.
 
-`maintainer/typing_control.py` is the isolated control that exercises (g) and (h) together
-against one live guest build — one 3,000-keypress action, the returned value and its wall
-time, two screenshots 15 s apart, and the guest's own `POST /execute` count. It has now been
-run once, on `osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8`:
+An isolated long-typing control exercised (g) and (h) together against one live guest
+build — one 3,000-keypress action, the returned value and its wall time, two screenshots
+15 s apart, and the guest's own `POST /execute` count. It was run once, on
+`osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8`:
 [result](out/osworld-v2-evidence/controls/typing-control-00124a57-267c-45e7-93d1-ca0ff196e4b8.json).
+The hand-run script that produced it was a one-off and is not kept in the repository; the
+result file records its inputs and acceptance criteria.
 The 66,016-character action returned `None` after **120.39 s**, the two screenshots taken 5 s
 and 20 s after that return are byte-identical (both in the text-area crop and in the full
 frame), and exactly **one** `POST /execute` reached the guest. All three acceptance criteria
@@ -648,9 +650,9 @@ Task 092 scored 0.1; the other five scored 0. Task 095 declared failure after
 23 actions; the other tasks exhausted the limit. No task retry was used.
 
 This verifies bounded execution, not benchmark performance or scoring parity.
-Sonnet repeatedly supplied out-of-bounds pointer positions in four tasks despite
-the M3 prompt's normalized-coordinate rule:
-[pointer diagnostics](out/osworld-v2-evidence/pr5-bedrock-sample/pointer-diagnostics.json).
+Sonnet repeatedly supplied out-of-bounds pointer positions in four tasks (008, 019, 041
+and 092; none in 026 or 095) despite the M3 prompt's normalized-coordinate rule; the
+per-action pointer diagnostics stay in the gitignored raw run directory.
 This agent/model pairing is not validated for a larger performance run.
 The sample did not reach an LLM judge or user-simulator call; their live coverage
 comes from the explicit task-loop controls described above.
@@ -661,9 +663,9 @@ measured usage, plus $40.37 retained reservations for responses without usage,
 or $95.62 accounted against the shared $160 cutoff and requested $200 limit.
 The estimate uses published prices with a 10% allowance, not an AWS invoice.
 Both service fleets and all campaign guests were stopped after verification.
-Earlier Haiku attempts are preserved as
-[diagnostics](out/osworld-v2-evidence/pr5-bedrock-sample/diagnostic-attempts.json),
-including intentional interruptions and malformed-action failures.
+Earlier Haiku attempts, including intentional interruptions and malformed-action
+failures, are counted in that accounting; their per-attempt notes stay in the
+gitignored raw run directory.
 
 ## Not-certified / excluded
 

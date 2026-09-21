@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""Reduce a no-model ladder or agent campaign receipt to a committable summary.
+"""Reduce a no-model ladder, agent campaign or browser-probe receipt to a
+committable summary.
 
 The full aggregate receipt is thousands of lines of per-task detail; only its
 identity, its gate fields and each task's path status (or score, for an agent
-campaign) belong in the repository as evidence. The full receipt stays under
-the gitignored out/osworld-v2-raw/.
+campaign) belong in the repository as evidence. A browser-probe record
+(maintainer/browser_probe.py) keeps its acceptance booleans, per-origin probe
+values and per-origin request tallies, and drops the verbatim request, event
+and console lists behind them. The full receipt stays under the gitignored
+out/osworld-v2-raw/.
 """
 
 from __future__ import annotations
@@ -81,7 +85,91 @@ def _is_no_model(receipt: dict) -> bool:
     )
 
 
+# Browser-probe record shape (maintainer/browser_probe.py): top-level blocks
+# dropped outright, per-origin lists reduced to their length, and the
+# per-origin URL lists that are the probe's negative findings (expected empty)
+# kept verbatim so an empty list stays checkable.
+PROBE_DROP_TOP = ("bridge", "host", "origins", "cdp", "sanitized")
+PROBE_ORIGIN_DROP = ("raw_probe", "probe_expression", "navigate")
+PROBE_ORIGIN_COUNT = ("console_entries", "log_findings")
+PROBE_NETWORK_COUNT = (
+    "requests",
+    "failures",
+    "insecure_requests",
+    "mixed_content_blocked",
+)
+PROBE_NETWORK_VERBATIM = (
+    "total_requests",
+    "schemes",
+    "requests_truncated",
+    "insecure_urls",
+)
+
+
+def _is_browser_probe(receipt: dict) -> bool:
+    return isinstance(receipt.get("acceptance"), dict) and isinstance(
+        receipt.get("origins"), list
+    )
+
+
+def _summarize_origin(origin: dict) -> dict:
+    reduced = {
+        key: value
+        for key, value in origin.items()
+        if key not in PROBE_ORIGIN_DROP
+        and key not in PROBE_ORIGIN_COUNT
+        and key not in ("network", "security")
+    }
+    for key in PROBE_ORIGIN_COUNT:
+        if isinstance(origin.get(key), list):
+            reduced[f"{key}_count"] = len(origin[key])
+    security = origin.get("security")
+    if isinstance(security, dict):
+        reduced["security"] = {
+            key: security[key] for key in ("source", "value") if key in security
+        }
+    network = origin.get("network")
+    if isinstance(network, dict):
+        reduced["network"] = {
+            key: network[key] for key in PROBE_NETWORK_VERBATIM if key in network
+        }
+        for key in PROBE_NETWORK_COUNT:
+            if isinstance(network.get(key), list):
+                reduced["network"][f"{key}_count"] = len(network[key])
+    return reduced
+
+
+def _summarize_browser_probe(record: dict, source_name: str) -> dict:
+    summary: dict = {"kind": "browser-probe-summary", "source_receipt": source_name}
+    summary.update(
+        {key: value for key, value in record.items() if key not in PROBE_DROP_TOP}
+    )
+    cdp = record.get("cdp")
+    if isinstance(cdp, dict):
+        browser = cdp.get("browser_version")
+        summary["cdp"] = {
+            "browser": browser.get("Browser") if isinstance(browser, dict) else None,
+            "enable_errors": cdp.get("enable_errors"),
+            "event_count": cdp.get("event_count"),
+        }
+    summary["origins"] = [
+        _summarize_origin(origin)
+        for origin in record.get("origins", [])
+        if isinstance(origin, dict)
+    ]
+    summary["reduction_note"] = (
+        "Committed reduction of the raw probe record under out/osworld-v2-raw/: "
+        "every acceptance value and per-origin probe value is verbatim; the "
+        "per-origin request, security-event and console lists are reduced to "
+        "counts and per-scheme tallies (insecure_urls and blocked_urls stay "
+        "verbatim, so an empty list remains the checkable negative result)."
+    )
+    return summary
+
+
 def summarize(receipt: dict, source_name: str) -> dict:
+    if _is_browser_probe(receipt):
+        return _summarize_browser_probe(receipt, source_name)
     # One flag drives both the receipt's overall kind and each record's
     # shape below, so a no-model record can never end up with a dict shape
     # (or vice versa) just because it happens to carry a "score" key.

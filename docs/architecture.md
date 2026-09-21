@@ -191,7 +191,7 @@ All in `examples/osworld-v2/upstream.lock.json`:
 
 | Input | Pin | How it arrives |
 |---|---|---|
-| `xlang-ai/OSWorld-V2` | commit `d578d2d` | `runner/setup.sh` clones it (gitignored), copies in provider, manager, bridge and policy, applies 4 one-line patches |
+| `xlang-ai/OSWorld-V2` | commit `d578d2d` | `runner/setup.sh` clones it (gitignored), copies in provider, manager, bridge and policy, applies the anchored string patches (a)–(n) across eight tracked files that `setup.sh --verify` proves and `--restore` removes (`FIDELITY.md`, "Local patches to upstream execution") |
 | `xlang-ai/osworld-server` | commit `a3cc3f0` | `template/fetch_server.sh` downloads, patches, bakes into the guest template (never redistributed) |
 | Guest base image | `ubuntu:22.04@sha256:…` | `template/template.ts` via the E2B Template SDK |
 | Fleet base image | `debian:bookworm@sha256:…` + Docker | `services/build_fleet_template.py` |
