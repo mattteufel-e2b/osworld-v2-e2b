@@ -292,10 +292,22 @@ def replace_once(relative, before, after, label):
     path.write_text(src.replace(before, after, 1))
     print(f"{label}: patched")
 
-# E2B transport compatibility only: native wait tools must not run inside the
-# guest's 120 s command deadline. Keep the requested duration, original action
-# history, subsequent observation and one normal action pause. Prompts, model
-# settings and upstream native action parsing remain unchanged.
+# Shared upstream execution-path repair, applied only to E2B native actions.
+# xclip's background selection owner inherits PIPE handles from pyperclip;
+# /execute then waits for EOF even after the typing process has exited. Give
+# only that clipboard child null output streams, leaving ordinary output intact.
+# Native Ctrl+V parsing is deliberately unchanged (including terminal behavior).
+clipboard_prefix = (
+    "import pyperclip as _osworld_clipboard\n"
+    "import subprocess as _osworld_subprocess\n"
+    "def _osworld_clipboard_copy(text, primary=False):\n"
+    "    _osworld_subprocess.run(['xclip', '-selection', 'p' if primary else 'c'], "
+    "input=text.encode('utf-8'), stdout=_osworld_subprocess.DEVNULL, "
+    "stderr=_osworld_subprocess.DEVNULL)\n"
+    "_osworld_clipboard.copy = _osworld_clipboard_copy\n"
+)
+# Native wait tools must not run inside the guest's 120 s command deadline.
+# Keep duration, action history, observation and one normal action pause.
 replace_once(
     "desktop_env/desktop_env.py",
     "                elif type(action) == dict:\n"
@@ -313,9 +325,17 @@ replace_once(
     "                                or not math.isfinite(duration) or duration < 0):\n"
     '                            raise ValueError("Native wait duration must be finite and nonnegative")\n'
     "                        time.sleep(duration or 0.5)\n"
+    '                    elif (self.provider_name == "e2b"\n'
+    '                            and self.action_space == "claude_computer_use"\n'
+    '                            and action.get("name") == "computer"\n'
+    '                            and action.get("input", {}).get("action") == "type"\n'
+    '                            and isinstance(action["input"].get("text"), str)\n'
+    '                            and not action["input"]["text"].isascii()):\n'
+    f"                        command = {clipboard_prefix!r} + action['command']\n"
+    "                        self.controller.execute_python_command(command)\n"
     "                    else:\n"
     "                        self.controller.execute_python_command(action['command'])\n",
-    "(o) native Claude waits use the worker clock",
+    "(o) native Claude wait and clipboard execution",
 )
 
 replace_once(

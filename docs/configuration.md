@@ -43,6 +43,11 @@ the published baseline.
 Native Claude `computer` waits use the worker clock on E2B, preserving the requested
 duration before the next observation. This avoids the guest command's 120-second deadline
 without changing the agent's prompts, action history, or ordinary command limits.
+Native Unicode typing also isolates the clipboard helper's output streams so its background
+process cannot keep a completed command's response open. Ordinary command output remains
+captured. These execution repairs address behavior also present in the pinned upstream
+runtime and should be applied consistently to a matched reference run. The upstream
+Ctrl+V paste shortcut is preserved; GNOME Terminal normally requires Ctrl+Shift+V.
 
 ## Judge and user simulator configuration
 

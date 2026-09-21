@@ -3,7 +3,9 @@ import base64
 import json
 import logging
 import os
+import shlex
 import subprocess
+import sys
 from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
@@ -337,6 +339,113 @@ def test_native_wait_worker_deadline_interrupts_before_observation(patched_check
     with pytest.raises(Deadline):
         step(_step_env(events), action, pause=0)
     assert events == []
+
+
+def test_native_unicode_clipboard_daemon_cannot_hold_execute_response_open(
+    patched_checkout, tmp_path, monkeypatch
+):
+    # Model xclip's real daemon behavior: the copy process exits, but its child
+    # keeps inherited stdout/stderr open. The real guest /execute function
+    # must still finish and preserve ordinary captured command output.
+    clipboard = tmp_path / "clipboard.txt"
+    xclip = tmp_path / "xclip"
+    xclip.write_text(
+        f"#!{sys.executable}\n"
+        "import os,sys,time\n"
+        f"open({str(clipboard)!r}, 'wb').write(sys.stdin.buffer.read())\n"
+        "if os.fork() == 0:\n"
+        "    time.sleep(2)\n"
+        "    os._exit(0)\n"
+    )
+    xclip.chmod(0o755)
+    (tmp_path / "pyperclip.py").write_text(
+        "import subprocess\n"
+        "def copy(text):\n"
+        "    p = subprocess.Popen(['xclip', '-selection', 'c'], stdin=subprocess.PIPE, close_fds=True)\n"
+        "    p.communicate(input=text.encode('utf-8'))\n"
+    )
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ["PATH"])
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path))
+    source = ast.parse((ROOT / "template/files/server/src/http_routes.py").read_text())
+    register = next(
+        n
+        for n in source.body
+        if isinstance(n, ast.FunctionDef) and n.name == "register_http_routes"
+    )
+    execute = next(
+        n
+        for n in register.body
+        if isinstance(n, ast.FunctionDef) and n.name == "execute_command"
+    )
+    execute.decorator_list = []
+    request = SimpleNamespace(json={})
+    namespace = {
+        "request": request,
+        "jsonify": lambda data: data,
+        "subprocess": subprocess,
+        "platform_name": "Linux",
+        "os": os,
+        "shlex": shlex,
+    }
+    exec(
+        compile(ast.Module(body=[execute], type_ignores=[]), "http_routes.py", "exec"),
+        namespace,
+    )
+    responses = []
+
+    def execute_python(command):
+        request.json = {
+            "command": [sys.executable, "-c", command],
+            "shell": False,
+            "timeout": 1,
+        }
+        responses.append(namespace["execute_command"]())
+
+    env = _step_env([])
+    env.controller.execute_python_command = execute_python
+    text = "Clipboard caf\u00e9 \u65e5\u672c\u8a9e"
+    command = f"import pyperclip\npyperclip.copy({text!r})\nprint('ordinary stdout retained')\n"
+    action = {
+        "name": "computer",
+        "action_type": "tool_use",
+        "input": {"action": "type", "text": text},
+        "command": command,
+    }
+    _desktop_step(patched_checkout, lambda _: None)(env, action, pause=0)
+    assert responses == [
+        {
+            "status": "success",
+            "output": "ordinary stdout retained\n",
+            "error": "",
+            "returncode": 0,
+        }
+    ]
+    assert clipboard.read_bytes() == text.encode("utf-8")
+    assert action["command"] == command and env.action_history == [action]
+
+
+@pytest.mark.parametrize(
+    "provider,space,text",
+    [
+        ("e2b", "claude_computer_use", "ASCII"),
+        ("aws", "claude_computer_use", "caf\u00e9"),
+        ("e2b", "pyautogui", "caf\u00e9"),
+    ],
+)
+def test_unicode_clipboard_repair_leaves_other_execution_unchanged(
+    patched_checkout, provider, space, text
+):
+    events = []
+    action = {
+        "name": "computer",
+        "action_type": "tool_use",
+        "input": {"action": "type", "text": text},
+        "command": "original command",
+    }
+    _desktop_step(patched_checkout, lambda _: None)(
+        _step_env(events, provider, space), action, pause=0
+    )
+    assert events == [("guest", "original command"), ("observe",)]
 
 
 def test_native_claude_cache_header_patch_preserves_every_other_byte_and_is_idempotent(
