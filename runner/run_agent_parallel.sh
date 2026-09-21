@@ -109,6 +109,12 @@ mkdir -p "$RAW_DIR"
 proxy_pid=""
 worker_pids=()
 worker_task_ids=()
+# Campaign-wide progress: N is the task count this run set out to complete,
+# k counts every worker that has finished (retries included, so it can pass N),
+# and the clock starts with the first pool.
+progress_total=0
+progress_done=0
+progress_started=""
 fleets_admitted=0
 aggregated=0
 cleanup_proxy() {
@@ -300,6 +306,10 @@ launch_worker() {
             ${generation_args[@]+"${generation_args[@]}"}
     ) >"$log" 2>&1 &
     launched_pid=$!
+    # Registered before anything else runs: a signal between the fork and this
+    # append would leave cleanup_proxy blind to a worker that holds a guest.
+    worker_pids+=("$launched_pid")
+    worker_task_ids+=("$task_id")
     echo "launched agent task $task_id pid=$launched_pid"
 }
 
@@ -307,8 +317,8 @@ launch_worker() {
 # progress without reading receipts. A missing or unparseable receipt is normal
 # here (a worker killed before it wrote one) and must not break the line.
 report_worker_exit() {
-    local task_id="$1" status="$2" done_count="$3" total="$4" running="$5"
-    local elapsed="$6"
+    local task_id="$1" status="$2" running="$3"
+    local elapsed="$((SECONDS - progress_started))"
     local score cause
     read -r score cause <<<"$(python3 - "$RAW_DIR/workers/task_${task_id}.json" <<'PY'
 import json, sys
@@ -324,8 +334,9 @@ ok = isinstance(score, (int, float)) and not isinstance(score, bool)
 print(score if ok else "none", cause if isinstance(cause, str) and cause else "-")
 PY
 )"
-    printf 'task %s exit=%s score=%s cause=%s  done=%s/%s running=%s elapsed=%02d:%02d:%02d\n' \
-        "$task_id" "$status" "$score" "$cause" "$done_count" "$total" "$running" \
+    printf 'task %s exit=%s score=%s cause=%s done=%s/%s running=%s elapsed=%02d:%02d:%02d\n' \
+        "$task_id" "$status" "$score" "$cause" "$progress_done" "$progress_total" \
+        "$running" \
         "$((elapsed / 3600))" "$((elapsed % 3600 / 60))" "$((elapsed % 60))"
 }
 
@@ -338,18 +349,17 @@ run_pool() {
     shift
     local -a queue=("$@")
     local total="${#queue[@]}"
-    local pool_failed=0 next=0 running=0 done_count=0
-    local started="$SECONDS"
+    local pool_failed=0 next=0 running=0
     local count index pid task_id status
     local alive_pids alive_ids
     worker_pids=()
     worker_task_ids=()
+    # One clock and one counter for the whole run: the solo-082 pool and every
+    # retry wave continue the campaign's progress instead of restarting it.
+    if [ -z "$progress_started" ]; then progress_started="$SECONDS"; fi
     while [ "$next" -lt "$total" ] || [ "$running" -gt 0 ]; do
         while [ "$next" -lt "$total" ] && [ "$running" -lt "$concurrency" ]; do
             launch_worker "${queue[$next]}"
-            read -r task_id _ <<<"${queue[$next]}"
-            worker_pids+=("$launched_pid")
-            worker_task_ids+=("$task_id")
             next=$((next + 1))
             running=$((running + 1))
             sleep "$AGENT_START_STAGGER_SECONDS"
@@ -371,10 +381,9 @@ run_pool() {
             wait "$pid"
             status=$?
             if [ "$status" -ne 0 ]; then pool_failed=1; fi
-            done_count=$((done_count + 1))
+            progress_done=$((progress_done + 1))
             running=$((running - 1))
-            report_worker_exit "$task_id" "$status" "$done_count" "$total" \
-                "$running" "$((SECONDS - started))"
+            report_worker_exit "$task_id" "$status" "$running"
         done
         # Assigned, not unset: cleanup_proxy reaps whatever is in flight now.
         worker_pids=(${alive_pids[@]+"${alive_pids[@]}"})
@@ -433,6 +442,8 @@ for row in ${task_rows[@]+"${task_rows[@]}"}; do
     fi
     pool_rows+=("$row")
 done
+progress_total="${#pool_rows[@]}"
+if [ -n "$task_082_row" ]; then progress_total=$((progress_total + 1)); fi
 if [ "${#pool_rows[@]}" -gt 0 ]; then
     run_pool "$PARALLEL_CONCURRENCY" "${pool_rows[@]}" || overall=1
 fi

@@ -800,7 +800,7 @@ def test_coordinator_prints_a_progress_line_per_finished_worker(
     pattern = (
         r"^task 001 exit=3 "
         + expected.replace(".", r"\.")
-        + r"  done=1/1 running=0 elapsed=\d\d:\d\d:\d\d$"
+        + r" done=1/1 running=0 elapsed=\d\d:\d\d:\d\d$"
     )
     assert re.search(pattern, result.stdout, re.M), (pattern, result.stdout)
 
@@ -900,3 +900,41 @@ def test_interrupted_run_still_writes_a_campaign_receipt(tmp_path):
     assert receipt["summary"]["expected_tasks"] == 1
     assert receipt["summary"]["attested_records"] == 0
     assert Path(env["FLEET_STOPPED_FILE"]).exists()
+
+
+PROGRESS_LINE = re.compile(
+    r"^task (?P<id>\S+) exit=\S+ score=\S+ cause=\S+ "
+    r"done=(?P<done>\d+)/(?P<total>\d+) running=(?P<running>\d+) "
+    r"elapsed=(?P<h>\d\d):(?P<m>\d\d):(?P<s>\d\d)$",
+    re.M,
+)
+
+
+@needs_free_hostmap_port
+def test_progress_counter_spans_every_pool_of_one_run(tmp_path):
+    # done/N and elapsed describe the campaign, not whichever pool is running.
+    # Per-pool counters restarted at done=1/1 for the solo-082 pool and for
+    # every retry wave, which reads as a run that keeps starting over.
+    env, _ = _coordinator_env_recording_agent_args(tmp_path)
+    _set_manifest_tasks(env, ["001", "082"])
+    marks = tmp_path / "marks"
+    marks.mkdir()
+    (marks / "sleep_001").write_text("2")
+    (marks / "sleep_082").write_text("0")
+    _write_executable(tmp_path / "bin" / "uv", POOL_UV)
+    env.update(
+        MARKS=str(marks),
+        RUN_TASK_082_CONCURRENT="0",  # 082 runs alone after the pool drains
+        POOL_POLL_SECONDS="1",
+        AGENT_START_STAGGER_SECONDS="0",
+    )
+
+    result = _run_coordinator_recording(env)
+
+    progress = {m.group("id"): m for m in PROGRESS_LINE.finditer(result.stdout)}
+    assert set(progress) == {"001", "082"}, (result.stdout, result.stderr)
+    assert progress["001"].group("done", "total") == ("1", "2")
+    # The solo pool is the run's second: it continues the count, not restarts it.
+    assert progress["082"].group("done", "total") == ("2", "2")
+    seconds = int(progress["082"].group("s")) + 60 * int(progress["082"].group("m"))
+    assert seconds >= 2, (result.stdout,)  # the clock started with the first pool
