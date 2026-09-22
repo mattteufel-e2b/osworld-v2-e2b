@@ -5,7 +5,7 @@ upstream desktop environment to E2B while keeping OSWorld's tasks, agents, and e
 It includes a desktop template, the E2B provider with its in-process sandbox bridge, service
 fleets, and an optional parallel coordinator.
 
-The port is experimental. See the [verified results and known limitations](docs/pr-1-verification.md).
+The port is experimental. See the [verified results and known limitations](FIDELITY.md).
 
 ## Quick start
 
@@ -187,5 +187,5 @@ redistributed (see `docs/runtime.md`).
 - [Agent, judge, and run configuration](docs/configuration.md)
 - [Runtime, resources, networking, and snapshots](docs/runtime.md)
 - [Maintainer validation](maintainer/README.md)
-- [Verification evidence](FIDELITY.md) and [known issues](docs/pr-1-verification.md)
+- [Verification evidence and known issues](FIDELITY.md)
 - [Architecture walkthrough](docs/architecture.md)

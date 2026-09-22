@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Host-mapping proxy for the OSWorld-V2 service fleet.
 
-Binds 127.0.0.1:<HOSTMAP_PORT> (default 80) and maps each incoming request's
+Binds 127.0.0.1:<HOSTMAP_PORT> (default 8090) and maps each incoming request's
 `Host` header to the fleet sandbox ingress endpoint that actually serves it:
 
     Host: mailhub.127.0.0.1.nip.io   ->  https://<port>-<websites-sbx>.e2b.app
@@ -605,7 +605,7 @@ def main() -> int:
     # before -- required for the no-model validation ladder that runs ahead
     # of TLS support landing.
     ports = [
-        int(p) for p in os.environ.get("HOSTMAP_PORT", "80").split(",") if p.strip()
+        int(p) for p in os.environ.get("HOSTMAP_PORT", "8090").split(",") if p.strip()
     ]
     tls_ports = {
         int(p) for p in os.environ.get("HOSTMAP_TLS_PORTS", "").split(",") if p.strip()

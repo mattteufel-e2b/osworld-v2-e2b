@@ -201,8 +201,9 @@ crash and tests its fix at high concurrency.
 
 Two live controls ran against the same build and the same fleet campaign. The guest-browser
 secure-context probe
-([summary](out/osworld-v2-evidence/fleet/browser-probe-00124a57-267c-45e7-93d1-ca0ff196e4b8.summary.json),
-`maintainer/browser_probe.py`) drove the guest's own Chrome 153 over CDP across TeamChat,
+([summary](out/osworld-v2-evidence/fleet/browser-probe-00124a57-267c-45e7-93d1-ca0ff196e4b8.summary.json);
+the probe script was retired after this verification, and its summary evidence remains under
+the linked path) drove the guest's own Chrome 153 over CDP across TeamChat,
 CloudCRM, MailHub, StreamView, `studio.streamview` and the task-041 GitLab alias. The
 long-typing control
 ([result](out/osworld-v2-evidence/controls/typing-control-00124a57-267c-45e7-93d1-ca0ff196e4b8.json))
@@ -339,7 +340,7 @@ directory `out/osworld-v2-raw/live-osworld-live-20260918T000607Z/`: the per-task
   `00124a57…`: zero occurrences of `command not found`, zero of `Failed to launch application`,
   and for 107 zero `apt-get` activity, with the agent opening KiCad in its first steps. That
   closes launcher presence and setup success, and nothing more. The original 067 finding
-  (`docs/pr-1-verification.md:114`) has a second half — installed `musescore3` is 3.2.3 and
+  (from the early-PR review, since removed) has a second half — installed `musescore3` is 3.2.3 and
   rejects the input created by MuseScore
   4.6.5, producing no export — and that half is untested and still open: `musescore3` is still
   3.2.3 on this build (recorded under "Unpinnable applications" below), nothing in this wave
@@ -374,8 +375,7 @@ specific runtime paths, not customer readiness or QEMU/E2B benchmark parity.
 
 ## September 11 release validation and recording check (runner split)
 
-After the runner split (`runner/` = benchmark path, `maintainer/` = no-model ladder,
-`tools/spikes/` = one-off probes, one shared `runner/worker_lib.sh` for relay/watchdog/teardown)
+After the runner split (`runner/` = benchmark path, `maintainer/` = no-model ladder)
 and the `ENABLE_RECORDING` opt-in, the ladder and an agent rollout were re-run on template
 `0d796343…`, checkout `d578d2d`.
 
@@ -706,8 +706,10 @@ completed in 10.47 seconds and produced a 5,700-character file whose SHA-256 exa
 matched the expected text, including quotes, backslashes and newlines. See the
 [control receipt](out/osworld-v2-evidence/pr5-bedrock-sample/controls.json).
 
-Upstream issue drafts for (e), (f), and the 90 s-client/120 s-guest deadline mismatch are
-prepared under `out/osworld-v2-evidence/upstream-issues/`; they have not been filed.
+Upstream issue drafts are prepared, not filed, for (e)
+([super key](out/osworld-v2-evidence/upstream-issues/m3-parser-super-key-linux.md)), (f)
+([`[INFEASIBLE]` inside thinking](out/osworld-v2-evidence/upstream-issues/m3-parser-infeasible-inside-thinking.md)),
+and the [90 s-client/120 s-guest deadline mismatch](out/osworld-v2-evidence/upstream-issues/controller-90s-client-vs-120s-guest-deadline.md).
 
 ## Bedrock sample on the current build
 
