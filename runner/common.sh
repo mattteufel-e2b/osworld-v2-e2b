@@ -92,7 +92,9 @@ wait_for_hostmap_proxy() {
             "https://mailhub.127.0.0.1.nip.io:8090/api/state?cookie=$cookie" >/dev/null 2>&1; then
             return 0
         fi
-        sleep 2
+        # The watchdog restarts the proxy, so this poll can be killed midway;
+        # a sleep holding the caller's stdout/stderr would outlive it.
+        sleep 2 >/dev/null 2>&1 </dev/null
     done
     echo "hostmap proxy did not become ready; last log lines:" >&2
     tail -n 40 "$logfile" >&2 2>/dev/null

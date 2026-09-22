@@ -111,8 +111,11 @@ watchdog_pid=""
 PROXY_LOG="$RAW_DIR/hostmap-proxy.log"
 LIVENESS_LOG="$RAW_DIR/fleet-liveness.log"
 # The watchdog restarts the proxy from a subshell, so the pid cleanup has to
-# kill lives on disk rather than in this shell's copy of $proxy_pid.
+# kill lives on disk rather than in this shell's copy of $proxy_pid. A resumed
+# run reuses RAW_DIR, so the file is emptied now: whatever pid an earlier run
+# left there belongs to some unrelated process by the time this one exits.
 HOSTMAP_PROXY_PID_FILE="$RAW_DIR/hostmap-proxy.pid"
+: >"$HOSTMAP_PROXY_PID_FILE"
 # Watchdog cadences. Neither is an operator knob; the tests shorten them.
 PROXY_WATCHDOG_SECONDS="${PROXY_WATCHDOG_SECONDS:-30}"
 FLEET_LIVENESS_SECONDS="${FLEET_LIVENESS_SECONDS:-60}"
@@ -146,8 +149,11 @@ cleanup_proxy() {
         kill "$watchdog_pid" 2>/dev/null || true
         wait "$watchdog_pid" 2>/dev/null || true
     fi
+    # The file tracks a watchdog restart of a proxy this run started; it never
+    # supplies a pid on its own, so a rejection before start_host_proxy kills
+    # nothing at all.
     local live_proxy_pid="$proxy_pid"
-    if [ -s "$HOSTMAP_PROXY_PID_FILE" ]; then
+    if [ -n "$proxy_pid" ] && [ -s "$HOSTMAP_PROXY_PID_FILE" ]; then
         live_proxy_pid="$(cat "$HOSTMAP_PROXY_PID_FILE")"
     fi
     # A restarted proxy is the watchdog subshell's child, not ours, so the

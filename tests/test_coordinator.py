@@ -1019,9 +1019,11 @@ def test_proxy_watchdog_restarts_a_dead_hostmap_proxy(tmp_path):
     # Every worker's setup and evaluate traffic goes through this one proxy: if
     # it dies mid-campaign, every remaining task fails while still buying model
     # tokens. The watchdog notices and starts a replacement.
+    # `exec` makes $$ the pid of the proxy itself, so the file records exactly
+    # which processes were started as proxies, in order.
     env = _watchdog_env(
         tmp_path,
-        '  *hostmap_proxy.py*) echo start >> "$PROXY_STARTS_FILE"; exec sleep 1 ;;',
+        '  *hostmap_proxy.py*) echo $$ >> "$PROXY_STARTS_FILE"; exec sleep 1 ;;',
     )
     log = Path(env["RAW_DIR"]) / "hostmap-proxy.log"
     starts = Path(env["PROXY_STARTS_FILE"])
@@ -1038,9 +1040,12 @@ def test_proxy_watchdog_restarts_a_dead_hostmap_proxy(tmp_path):
 
     assert satisfied, (stdout, stderr)
     assert "hostmap proxy died; restarting" in stderr
-    # The restarted proxy is the one cleanup must kill, so its pid is on disk.
+    started_pids = starts.read_text().split()
+    assert started_pids[0] != started_pids[-1], (started_pids, stdout, stderr)
+    # The restarted proxy -- not the dead one cleanup would otherwise chase --
+    # is the pid left on disk.
     pid_file = Path(env["RAW_DIR"]) / "hostmap-proxy.pid"
-    assert pid_file.read_text().strip().isdigit(), (stdout, stderr)
+    assert pid_file.read_text().strip() != started_pids[0], (stdout, stderr)
 
 
 @needs_free_hostmap_port
@@ -1080,3 +1085,42 @@ echo "$count" > "{curl_count}"
             "see fleet-liveness.log"
         )
         assert stderr.count(message) == 1, (service, stderr)
+
+
+def test_stale_proxy_pid_file_is_never_killed(tmp_path):
+    # RUN_ID reuses RAW_DIR on a resume, so hostmap-proxy.pid can already hold
+    # a pid from an earlier run -- by now some unrelated process. The EXIT trap
+    # is armed before the pre-admission gates, so a rejection there used to run
+    # cleanup with nothing but that stale pid to go on and killed a bystander.
+    import socket
+
+    blocker = socket.socket()
+    try:
+        blocker.bind(("127.0.0.1", 8090))
+    except OSError:
+        pytest.skip("127.0.0.1:8090 is already in use on this machine")
+    blocker.listen(1)
+    bystander = subprocess.Popen(["sleep", "120"])
+    env = _coordinator_env(tmp_path)
+    raw_dir = Path(env["RAW_DIR"])
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    pid_file = raw_dir / "hostmap-proxy.pid"
+    pid_file.write_text(f"{bystander.pid}\n")
+    try:
+        result = subprocess.run(
+            ["bash", str(ROOT / "runner/run_agent_parallel.sh")],
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            timeout=60,
+            check=False,
+        )
+        assert result.returncode == 2, (result.stdout, result.stderr)
+        assert "already occupied" in result.stderr
+        assert bystander.poll() is None, (result.stdout, result.stderr)
+        assert pid_file.read_text().strip() == ""
+    finally:
+        blocker.close()
+        bystander.kill()
+        bystander.wait()
