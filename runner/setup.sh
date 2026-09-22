@@ -3,7 +3,7 @@
 # (examples/osworld-v2/upstream.lock.json) and wire in the E2B provider
 # (provider/provider.py + provider/manager.py + provider/bridge.py, the
 # in-process bridge) so OSWorld-V2's own run.py works with --provider_name e2b.
-# Idempotent: re-running is safe and each string patch (a)-(o) is guarded,
+# Idempotent: re-running is safe and each string patch (a)-(p) is guarded,
 # reporting "already applied" on the second run.
 #
 # Checkout states (the checkout is gitignored, so its state lives on disk only):
@@ -202,6 +202,24 @@ if parser.exists():
         parser.write_text(src.replace(key_anchor, key_patched, 1))
         print("(e) m3/parser.py: patched (super -> win on Linux)")
 
+# (p) native Claude adapter: same X11 Super key repair as (e) ----------------
+# mm_agents/anthropic/main.py keeps its own key_conversion table (20-space
+# indent, inside the tool-use handler). On Linux PyAutoGUI has no "command"
+# key, so every `super`/`super+<x>` the Claude agent emits was silently
+# dropped. Narrow: one entry, neighbours unchanged.
+anthropic_main = dest / "mm_agents/anthropic/main.py"
+if anthropic_main.exists():
+    src = anthropic_main.read_text()
+    claude_key_anchor = '                    "super_l": "win",\n                    "super": "command",\n'
+    claude_key_patched = '                    "super_l": "win",\n                    "super": "win",\n'
+    if claude_key_patched in src:
+        print("(p) anthropic/main.py super key: already applied")
+    else:
+        count = src.count(claude_key_anchor)
+        assert count == 1, f"anthropic/main.py key_conversion super entry found {count}x, need exactly 1 (OSWorld-V2 moved?)"
+        anthropic_main.write_text(src.replace(claude_key_anchor, claude_key_patched, 1))
+        print("(p) anthropic/main.py: patched (super -> win on Linux)")
+
 # (f) M3 parser: the [INFEASIBLE] terminal marker counts only outside the
 # model's thinking block. M3Agent._call_llm prepends thinking as
 # <mm:think>...</mm:think>; a marker mentioned while reasoning overrode an
@@ -307,7 +325,9 @@ clipboard_prefix = (
     "_osworld_clipboard.copy = _osworld_clipboard_copy\n"
 )
 # Native wait tools must not run inside the guest's 120 s command deadline.
-# Keep duration, action history, observation and one normal action pause.
+# Keep duration, action history, observation and one normal action pause. An
+# over-long wait is capped at NATIVE_WAIT_MAX_SECONDS so one tool call cannot
+# spend the sandbox lifetime (and the worker slot) doing nothing.
 replace_once(
     "desktop_env/desktop_env.py",
     "                elif type(action) == dict:\n"
@@ -326,7 +346,10 @@ replace_once(
     "                            if (type(duration) not in (int, float)\n"
     "                                    or not math.isfinite(duration) or duration < 0):\n"
     '                                raise ValueError("Native wait duration must be finite and nonnegative")\n'
-    "                            time.sleep(duration or 0.5)\n"
+    "                            NATIVE_WAIT_MAX_SECONDS = 600\n"
+    "                            if duration > NATIVE_WAIT_MAX_SECONDS:\n"
+    '                                logger.warning("Native wait of %s s clamped to %s s", duration, NATIVE_WAIT_MAX_SECONDS)\n'
+    "                            time.sleep(min(duration, NATIVE_WAIT_MAX_SECONDS) or 0.5)\n"
     "                        elif (native_computer\n"
     '                                and execution_action.get("input", {}).get("action") == "type"\n'
     '                                and isinstance(execution_action["input"].get("text"), str)\n'
@@ -501,7 +524,7 @@ touch "$DEST/desktop_env/providers/e2b/__init__.py"
 # The bridge imports e2b_policy from the checkout root (run.py's cwd).
 cp "$POLICY_FILE" "$DEST/e2b_policy.py"
 
-# ---- string patches (a)-(o): register + classify the provider, force strict
+# ---- string patches (a)-(p): register + classify the provider, force strict
 #      reset, accept --provider_name e2b in the M3 multi-env runner, and the
 #      disclosed agent transport / parser / controller execution patches ----
 apply_adapter_patches "$DEST"

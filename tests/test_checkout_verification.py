@@ -105,6 +105,16 @@ PINNED_KEY_TABLE = (
     '                "escape": "esc",\n'
     "            }\n"
 )
+PINNED_ANTHROPIC_KEY_TABLE = (
+    '            if action == "key":\n'
+    "                key_conversion = {\n"
+    '                    "page_down": "pagedown",\n'
+    '                    "page_up": "pageup",\n'
+    '                    "super_l": "win",\n'
+    '                    "super": "command",\n'
+    '                    "escape": "esc"\n'
+    "                }\n"
+)
 PINNED_INFEASIBLE = (
     '    if "[INFEASIBLE]" in response:\n        return "[INFEASIBLE]", ["FAIL"]\n'
 )
@@ -134,6 +144,7 @@ PIN_ANCHORS = {
     "desktop_env/desktop_env.py": (PINNED_DICT_ACTION,),
     "mm_agents/anthropic/main.py": (
         "            betas.append(PROMPT_CACHING_BETA_FLAG)\n",
+        '                    "super_l": "win",\n                    "super": "command",\n',
     ),
     "mm_agents/m3/parser.py": (
         '                "super_l": "win",\n                "super": "command",\n',
@@ -250,7 +261,7 @@ def _step_env(events, provider="e2b", action_space="claude_computer_use"):
 
 @pytest.mark.parametrize(
     "duration,expected",
-    [(1, 1), (120, 120), (180, 180), (240, 240), (0, 0.5), (None, 0.5)],
+    [(1, 1), (120, 120), (180, 180), (240, 240), (600, 600), (0, 0.5), (None, 0.5)],
 )
 def test_native_wait_preserves_duration_and_observes_after_one_pause(
     patched_checkout, duration, expected
@@ -300,6 +311,35 @@ def test_native_wait_does_not_change_other_action_execution(
     }
     step(env, action, pause=0)
     assert events == [("guest", "unchanged command"), ("sleep", 0), ("observe",)]
+
+
+@pytest.mark.parametrize("duration", [601, 3600, 86400])
+def test_native_wait_clamps_an_overlong_duration_and_says_so(
+    patched_checkout, caplog, duration
+):
+    # A model that asks for an hour of wait would otherwise burn the whole
+    # sandbox lifetime (and the worker slot) doing nothing.
+    events = []
+    step = _desktop_step(
+        patched_checkout, lambda seconds: events.append(("sleep", seconds))
+    )
+    env = _step_env(events)
+    action = {
+        "name": "computer",
+        "action_type": "tool_use",
+        "input": {"action": "wait", "duration": duration},
+        "command": f"pyautogui.sleep({duration})\n",
+    }
+    with caplog.at_level(logging.WARNING):
+        step(env, action, pause=0)
+    assert events == [("sleep", 600), ("sleep", 0), ("observe",)]
+    warnings = [
+        record.getMessage()
+        for record in caplog.records
+        if record.levelno == logging.WARNING
+    ]
+    assert len(warnings) == 1
+    assert str(duration) in warnings[0] and "600" in warnings[0]
 
 
 @pytest.mark.parametrize("duration", [-1, float("inf"), float("nan"), "240", True])
@@ -503,7 +543,7 @@ def test_unicode_clipboard_repair_leaves_other_execution_unchanged(
     assert events == [("guest", "original command"), ("observe",)]
 
 
-def test_native_claude_cache_header_patch_preserves_every_other_byte_and_is_idempotent(
+def test_native_claude_patches_preserve_every_other_byte_and_are_idempotent(
     patched_checkout,
 ):
     relative = "mm_agents/anthropic/main.py"
@@ -513,6 +553,10 @@ def test_native_claude_cache_header_patch_preserves_every_other_byte_and_is_idem
     expected = pristine.replace(
         "            betas.append(PROMPT_CACHING_BETA_FLAG)\n",
         "            # Prompt caching is generally available; keep cache_control without the obsolete beta.\n",
+        1,
+    ).replace(
+        '                    "super_l": "win",\n                    "super": "command",\n',
+        '                    "super_l": "win",\n                    "super": "win",\n',
         1,
     )
     assert (patched_checkout / relative).read_text() == expected
@@ -698,6 +742,29 @@ def test_setup_maps_m3_super_key_to_x11_win(tmp_path):
     assert '"super_l": "win",' in patched  # neighbours untouched
     _apply_patches(dest)  # idempotent
     assert patched == (dest / "mm_agents" / "m3" / "parser.py").read_text()
+
+
+def test_setup_maps_claude_super_key_to_x11_win(tmp_path):
+    dest = tmp_path / "OSWorld-V2"
+    _seed_minimal_checkout(
+        dest,
+        PINNED_PARSER_HEAD + PINNED_KEY_TABLE + PINNED_INFEASIBLE,
+        PINNED_CONTROLLER,
+    )
+    main = dest / "mm_agents" / "anthropic" / "main.py"
+    main.parent.mkdir(parents=True)
+    # Patch (n) shares this file, so the seed must carry its anchor too.
+    main.write_text(
+        PINNED_ANTHROPIC_KEY_TABLE
+        + "            betas.append(PROMPT_CACHING_BETA_FLAG)\n"
+    )
+    _apply_patches(dest)
+    patched = main.read_text()
+    assert '                    "super": "win",' in patched
+    assert '"super": "command"' not in patched
+    assert '                    "super_l": "win",' in patched  # neighbours untouched
+    _apply_patches(dest)  # idempotent
+    assert patched == main.read_text()
 
 
 def test_setup_ignores_infeasible_marker_inside_the_thinking_block(tmp_path):
