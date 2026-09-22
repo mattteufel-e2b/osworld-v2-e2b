@@ -405,6 +405,19 @@ class Handler(BaseHTTPRequestHandler):
         if not head:
             self.wfile.write(payload)
 
+    def _log_failure(self, status, host, reason):
+        """One stderr line per 5xx this handler synthesises or relays.
+
+        `log_message` stays a no-op, so a healthy request is still silent; a
+        proxy that starts failing mid-campaign otherwise answered 502/504 with
+        nothing in its own log and every worker blamed its own guest.
+        """
+        print(
+            f"[hostmap_proxy] {status} {self.command} {host}{self.path}: {reason}",
+            file=sys.stderr,
+            flush=True,
+        )
+
     def _proxy(self):
         if self.server.redirect_to_https:
             host = (self.headers.get("Host") or "").split(":")[0]
@@ -415,7 +428,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         target, host, asset_url_map = self._resolve()
         if target is None:
-            self.send_error(502, f"no fleet route for Host {host!r}")
+            reason = f"no fleet route for Host {host!r}"
+            self._log_failure(502, host, reason)
+            self.send_error(502, reason)
             return
         scheme = self._scheme()
         # Pages keeps its own canonical domain; the alias rule only applies to
@@ -480,6 +495,10 @@ class Handler(BaseHTTPRequestHandler):
             payload = _rewrite_absolute_site_urls(
                 exc.read(), rewrite_host, incoming_authority, scheme
             )
+            if exc.code >= 500:
+                self._log_failure(
+                    exc.code, host, f"upstream {ingress_host}: {exc.reason}"
+                )
             self._relay(
                 exc.code,
                 exc.headers,
@@ -492,11 +511,12 @@ class Handler(BaseHTTPRequestHandler):
             # The body size is part of the diagnosis: a guest-originated
             # /api/state write large enough to trip E2B ingress's request-body
             # boundary fails here and nowhere else.
-            self.send_error(
-                502,
+            reason = (
                 f"upstream {ingress_host} failed "
-                f"({len(body or b'')}-byte request body): {exc}",
+                f"({len(body or b'')}-byte request body): {exc}"
             )
+            self._log_failure(502, host, reason)
+            self.send_error(502, reason)
 
     do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = do_HEAD = do_OPTIONS = _proxy
 

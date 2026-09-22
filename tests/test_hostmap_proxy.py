@@ -650,3 +650,85 @@ def test_pages_links_keep_canonical_hostname_and_client_port_in_all_responses(
         "https": wanted + "?preview=1",
         "other": "http://a.b.gitlab.127.0.0.1.nip.io/",
     }
+
+
+def test_unroutable_host_is_logged_to_stderr(capsys):
+    # log_message is a no-op, so a proxy that starts refusing every request
+    # mid-campaign used to answer 502 in total silence: the campaign log showed
+    # only the workers' downstream failures.
+    server = hostmap_proxy.make_server(0, tls=None)
+    with (
+        _serving(server),
+        patch.object(hostmap_proxy, "_load_rules", return_value=({}, {})),
+    ):
+        conn = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+        conn.request("GET", "/api/state?cookie=x", headers={"Host": "nope.test"})
+        response = conn.getresponse()
+        response.read()
+        conn.close()
+
+    assert response.status == 502
+    assert (
+        "[hostmap_proxy] 502 GET nope.test/api/state?cookie=x: "
+        "no fleet route for Host 'nope.test'" in capsys.readouterr().err
+    )
+
+
+def test_failed_upstream_relay_is_logged_to_stderr(capsys):
+    server = hostmap_proxy.make_server(0, tls=None)
+    with (
+        _serving(server),
+        patch.object(
+            hostmap_proxy,
+            "_load_rules",
+            return_value=({"gitlab": {"ingress_host": "ingress.test"}}, {}),
+        ),
+        patch.object(
+            hostmap_proxy, "_open_upstream", side_effect=OSError("connection reset")
+        ),
+    ):
+        conn = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+        conn.request("POST", "/api/v4/version", body=b"x", headers={"Host": "gitlab"})
+        response = conn.getresponse()
+        response.read()
+        conn.close()
+
+    err = capsys.readouterr().err
+    assert "[hostmap_proxy] 502 POST gitlab/api/v4/version:" in err
+    assert "connection reset" in err
+
+
+def test_relayed_upstream_5xx_is_logged_but_success_stays_quiet(capsys):
+    def upstream(_request):
+        if _request.selector == "/quiet":
+            return hostmap_proxy._DirectResponse(
+                {"status": 200, "headers": [], "body_base64": ""}
+            )
+        raise urllib.error.HTTPError(
+            "https://ingress.test/slow", 504, "Gateway Timeout", {}, io.BytesIO(b"")
+        )
+
+    server = hostmap_proxy.make_server(0, tls=None)
+    with (
+        _serving(server),
+        patch.object(
+            hostmap_proxy,
+            "_load_rules",
+            return_value=({"gitlab": {"ingress_host": "ingress.test"}}, {}),
+        ),
+        patch.object(hostmap_proxy, "_open_upstream", side_effect=upstream),
+    ):
+        conn = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+        conn.request("GET", "/slow", headers={"Host": "gitlab"})
+        failed = conn.getresponse()
+        failed.read()
+        conn.request("GET", "/quiet", headers={"Host": "gitlab"})
+        ok = conn.getresponse()
+        ok.read()
+        conn.close()
+
+    err = capsys.readouterr().err
+    assert failed.status == 504 and ok.status == 200
+    assert "[hostmap_proxy] 504 GET gitlab/slow: " in err
+    assert "/quiet" not in err
+    assert err.count("[hostmap_proxy]") == 1

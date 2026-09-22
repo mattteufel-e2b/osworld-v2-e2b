@@ -107,6 +107,15 @@ export M3_THINKING_MODE M3_THINKING_BUDGET M3_MAX_LLM_RETRIES
 
 mkdir -p "$RAW_DIR"
 proxy_pid=""
+watchdog_pid=""
+PROXY_LOG="$RAW_DIR/hostmap-proxy.log"
+LIVENESS_LOG="$RAW_DIR/fleet-liveness.log"
+# The watchdog restarts the proxy from a subshell, so the pid cleanup has to
+# kill lives on disk rather than in this shell's copy of $proxy_pid.
+HOSTMAP_PROXY_PID_FILE="$RAW_DIR/hostmap-proxy.pid"
+# Watchdog cadences. Neither is an operator knob; the tests shorten them.
+PROXY_WATCHDOG_SECONDS="${PROXY_WATCHDOG_SECONDS:-30}"
+FLEET_LIVENESS_SECONDS="${FLEET_LIVENESS_SECONDS:-60}"
 worker_pids=()
 worker_task_ids=()
 # Campaign-wide progress: N is the task count this run set out to complete,
@@ -131,9 +140,21 @@ cleanup_proxy() {
     for pid in ${worker_pids[@]+"${worker_pids[@]}"}; do
         wait "$pid" 2>/dev/null || true
     done
-    if [ -n "$proxy_pid" ] && kill -0 "$proxy_pid" 2>/dev/null; then
-        kill "$proxy_pid" 2>/dev/null || true
-        wait "$proxy_pid" 2>/dev/null || true
+    # The watchdog goes first: it would otherwise answer the proxy's death by
+    # starting a replacement nobody is left to kill.
+    if [ -n "$watchdog_pid" ] && kill -0 "$watchdog_pid" 2>/dev/null; then
+        kill "$watchdog_pid" 2>/dev/null || true
+        wait "$watchdog_pid" 2>/dev/null || true
+    fi
+    local live_proxy_pid="$proxy_pid"
+    if [ -s "$HOSTMAP_PROXY_PID_FILE" ]; then
+        live_proxy_pid="$(cat "$HOSTMAP_PROXY_PID_FILE")"
+    fi
+    # A restarted proxy is the watchdog subshell's child, not ours, so the
+    # `wait` is best-effort; the kill is what actually reaps it.
+    if [ -n "$live_proxy_pid" ] && kill -0 "$live_proxy_pid" 2>/dev/null; then
+        kill "$live_proxy_pid" 2>/dev/null || true
+        wait "$live_proxy_pid" 2>/dev/null || true
     fi
     # An interrupted campaign still gets its receipt: the workers above have
     # been reaped, so every receipt they wrote is final. Its gate will fail --
@@ -205,27 +226,81 @@ if [ -n "$RESUME_RUN_ID" ]; then prepare_args+=(--resume); fi
 RUN_NONCE="$(python3 "$HERE/prepare_agent_run.py" "${prepare_args[@]}")" || exit 2
 export OSWORLD_RUN_NONCE="$RUN_NONCE"
 
-if python3 - <<'PY'
-import socket
-s = socket.socket()
-s.settimeout(0.2)
-occupied = s.connect_ex(("127.0.0.1", 8090)) == 0
-s.close()
-raise SystemExit(1 if occupied else 0)
-PY
-then :; else
-    echo "127.0.0.1:8090 is already occupied; refusing an ambiguous fleet proxy" >&2
-    exit 2
-fi
+start_host_proxy "agent-benchmark" "$PROXY_LOG" || exit $?
 
-HOSTMAP_PORT="8090" HOSTMAP_TLS_PORTS="8090" \
-    HOSTMAP_TLS_CERT="$HOSTMAP_TLS_CERT" HOSTMAP_TLS_KEY="$HOSTMAP_TLS_KEY" \
-    FLEET_RUNTIME_FILE="$SERVICES_DIR/.runtime.json" \
-    $UV python "$SERVICES_DIR/hostmap_proxy.py" >"$RAW_DIR/hostmap-proxy.log" 2>&1 &
-proxy_pid=$!
-if ! wait_for_hostmap_proxy "$proxy_pid" "agent-benchmark" "$RAW_DIR/hostmap-proxy.log"; then
-    exit 1
-fi
+# Consecutive-miss bookkeeping for one fleet. Returns the updated counters on
+# stdout (bash 3.2 has no associative arrays) and escalates to stderr once per
+# outage, not once per probe.
+escalate_liveness() {
+    local service="$1" state="$2" failures="$3" reported="$4"
+    if [ "$state" != "fail" ]; then
+        echo "0 0"
+        return 0
+    fi
+    failures=$((failures + 1))
+    if [ "$failures" -ge 3 ] && [ "$reported" -eq 0 ]; then
+        reported=1
+        echo "FLEET LIVENESS: $service unreachable for 3 probes;" \
+            "see fleet-liveness.log" >&2
+    fi
+    echo "$failures $reported"
+}
+
+# One curl per fleet, in the readiness probe's form. Appends a line to
+# fleet-liveness.log so an operator can see when an outage started. A failing
+# probe never aborts the run: the workers' own receipts decide the campaign.
+probe_fleet_liveness() {
+    local websites="fail" gitlab="skip"
+    if curl -fsS --connect-timeout 2 --max-time 5 --cacert "$OSWORLD_CA_CERT" \
+        --resolve 'mailhub.127.0.0.1.nip.io:8090:127.0.0.1' \
+        "https://mailhub.127.0.0.1.nip.io:8090/api/state?cookie=liveness" \
+        >/dev/null 2>&1; then
+        websites="ok"
+    fi
+    # No GitLab in this campaign's runtime wiring: the line says so rather than
+    # claiming a health nothing measured.
+    if [ -n "${GITLAB_URL:-}" ]; then
+        gitlab="fail"
+        if curl -fsS --connect-timeout 2 --max-time 5 --cacert "$OSWORLD_CA_CERT" \
+            "$GITLAB_URL/api/v4/version" >/dev/null 2>&1; then
+            gitlab="ok"
+        fi
+    fi
+    printf '%s websites=%s gitlab=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        "$websites" "$gitlab" >>"$LIVENESS_LOG"
+    read -r websites_failures websites_reported <<<"$(escalate_liveness \
+        websites "$websites" "$websites_failures" "$websites_reported")"
+    read -r gitlab_failures gitlab_reported <<<"$(escalate_liveness \
+        gitlab "$gitlab" "$gitlab_failures" "$gitlab_reported")"
+}
+
+# Every worker's setup and evaluate traffic crosses this one proxy, so its
+# death mid-campaign fails every remaining task while the run keeps buying
+# model tokens. Watch it from the background and put a replacement back on
+# 8090; the counters are the callee's to update (bash scopes them dynamically).
+proxy_watchdog() {
+    local since_probe=0
+    local websites_failures=0 websites_reported=0
+    local gitlab_failures=0 gitlab_reported=0
+    while :; do
+        # The sleep must not inherit this script's stdout/stderr: it outlives
+        # the kill below by up to one interval, and a reader of the campaign's
+        # output would block on the pipe that long after the run ended.
+        sleep "$PROXY_WATCHDOG_SECONDS" >/dev/null 2>&1 </dev/null
+        if ! kill -0 "$proxy_pid" 2>/dev/null; then
+            echo "hostmap proxy died; restarting" >&2
+            echo "hostmap proxy died; restarting" >>"$PROXY_LOG"
+            start_host_proxy "agent-benchmark" "$PROXY_LOG" || true
+        fi
+        since_probe=$((since_probe + PROXY_WATCHDOG_SECONDS))
+        if [ "$since_probe" -ge "$FLEET_LIVENESS_SECONDS" ]; then
+            since_probe=0
+            probe_fleet_liveness
+        fi
+    done
+}
+proxy_watchdog &
+watchdog_pid=$!
 
 task_rows=()
 while IFS= read -r row; do task_rows+=("$row"); done < <(

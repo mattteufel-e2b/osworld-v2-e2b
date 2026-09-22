@@ -56,7 +56,7 @@ def test_parallel_validator_owns_proxy_and_namespaces_task_service_ports():
 
     assert 'PARALLEL_CONCURRENCY="${PARALLEL_CONCURRENCY:-80}"' in coordinator
     assert 'if [ "$PARALLEL_CONCURRENCY" -gt 80 ]; then' in coordinator
-    assert 'HOSTMAP_PORT="8090"' in coordinator
+    assert "start_host_proxy " in coordinator
     assert 'task_id" = "082"' in coordinator
     assert 'task_service_ports="3000:3000"' in coordinator
     assert 'OSWORLD_TASK_SERVICE_PORTS="$task_service_ports"' in coordinator
@@ -66,8 +66,7 @@ def test_parallel_validator_owns_proxy_and_namespaces_task_service_ports():
 def test_sequential_validator_owns_host_proxy_for_whole_run():
     validator = (ROOT / "maintainer" / "validate.sh").read_text()
 
-    assert 'HOSTMAP_PORT="8090"' in validator
-    assert '$UV python "$SERVICES_DIR/hostmap_proxy.py"' in validator
+    assert "start_host_proxy " in validator
     assert "trap cleanup_all EXIT INT TERM" in validator
 
 
@@ -697,7 +696,7 @@ def test_full_agent_coordinator_bounds_sandboxes_and_namespaces_task_service_por
     # The default stays 80; the hard cap is 120 for an operator who has
     # confirmed the org quota (the account admitted 201 in the live probe).
     assert 'if [ "$PARALLEL_CONCURRENCY" -gt 120 ]; then' in coordinator
-    assert 'HOSTMAP_PORT="8090"' in coordinator
+    assert "start_host_proxy " in coordinator
     assert 'task_id" = "082"' in coordinator
     assert 'task_service_ports="3000:3000"' in coordinator
     assert "OSWORLD_TASK_082_HOST_PORT" not in coordinator
@@ -850,14 +849,26 @@ def test_host_proxy_readiness_is_shared_and_bounded():
     common = (ROOT / "runner/common.sh").read_text()
     assert "wait_for_hostmap_proxy()" in common
     assert "--connect-timeout 2 --max-time 5" in common
+    # start_host_proxy is the only caller, so every script gets the same
+    # bounded readiness poll instead of a curl loop of its own.
+    assert 'wait_for_hostmap_proxy "$proxy_pid" "$cookie" "$logfile"' in common
     for script in (
         "runner/run_agent_parallel.sh",
         "maintainer/validate.sh",
         "maintainer/validate_parallel.sh",
     ):
         text = (ROOT / script).read_text()
-        assert "wait_for_hostmap_proxy" in text, script
-        assert "api/state?cookie=" not in text, script  # no private curl loops left
+        assert "start_host_proxy " in text, script
+        assert "wait_for_hostmap_proxy" not in text, script
+        # The coordinator's fleet-liveness curl is the only direct probe left
+        # anywhere; nothing re-implements readiness.
+        assert text.count("api/state?cookie=") == text.count(
+            "api/state?cookie=liveness"
+        ), script
+    # Both liveness probes are bounded like the readiness one: an unbounded
+    # curl would wedge the watchdog that also restarts the proxy.
+    coordinator = (ROOT / "runner/run_agent_parallel.sh").read_text()
+    assert coordinator.count("--connect-timeout 2 --max-time 5") == 2
 
 
 def test_template_bakes_vnc_units_disabled_and_nss_trust_tooling():
@@ -886,18 +897,25 @@ def test_template_bakes_vnc_units_disabled_and_nss_trust_tooling():
 
 
 def test_host_proxy_is_started_with_tls_and_probed_over_https():
+    # One starter, in common.sh: three inline copies of the env line drifted
+    # apart and had to be kept in step by hand.
     common = (ROOT / "runner" / "common.sh").read_text()
+    assert "start_host_proxy()" in common
+    assert 'HOSTMAP_PORT="8090" HOSTMAP_TLS_PORTS="8090"' in common
+    assert (
+        'HOSTMAP_TLS_CERT="$HOSTMAP_TLS_CERT" HOSTMAP_TLS_KEY="$HOSTMAP_TLS_KEY"'
+        in common
+    )
+    assert '$UV python "$SERVICES_DIR/hostmap_proxy.py"' in common
     for script in (
         "runner/run_agent_parallel.sh",
         "maintainer/validate.sh",
         "maintainer/validate_parallel.sh",
     ):
         text = (ROOT / script).read_text()
-        assert 'HOSTMAP_PORT="8090" HOSTMAP_TLS_PORTS="8090"' in text, script
-        assert (
-            'HOSTMAP_TLS_CERT="$HOSTMAP_TLS_CERT" HOSTMAP_TLS_KEY="$HOSTMAP_TLS_KEY"'
-            in text
-        ), script
+        assert "start_host_proxy " in text, script
+        assert "HOSTMAP_PORT=" not in text, script  # no inline copy left behind
+        assert "hostmap_proxy.py" not in text, script
         assert "export_fleet_wiring" in text, script
     assert (
         'curl -fsS --connect-timeout 2 --max-time 5 --cacert "$OSWORLD_CA_CERT"'

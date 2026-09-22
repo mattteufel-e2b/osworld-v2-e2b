@@ -98,3 +98,38 @@ wait_for_hostmap_proxy() {
     tail -n 40 "$logfile" >&2 2>/dev/null
     return 1
 }
+
+# Start the single host-side fleet proxy on 127.0.0.1:8090 and wait for it to
+# answer, refusing to share the port with anything already there. Reads $UV
+# (each caller builds its own) and the TLS leaf paths `export_fleet_wiring`
+# exported, sets the global `proxy_pid`, and -- when $HOSTMAP_PROXY_PID_FILE
+# names a file -- records that pid there: the coordinator's watchdog restarts
+# the proxy from a subshell, so cleanup has to read the live pid from disk
+# rather than trust its own first copy. The log is appended to for the same
+# reason: a restart must not erase what the dead proxy said on its way out.
+# Returns 2 when the port is occupied and 1 when the proxy never came up, so
+# callers keep the exit codes the inline blocks used to produce.
+start_host_proxy() {
+    local cookie="$1" logfile="$2"
+    if python3 - <<'PY'
+import socket
+s = socket.socket()
+s.settimeout(0.2)
+occupied = s.connect_ex(("127.0.0.1", 8090)) == 0
+s.close()
+raise SystemExit(1 if occupied else 0)
+PY
+    then :; else
+        echo "127.0.0.1:8090 is already occupied; refusing an ambiguous fleet proxy" >&2
+        return 2
+    fi
+    HOSTMAP_PORT="8090" HOSTMAP_TLS_PORTS="8090" \
+        HOSTMAP_TLS_CERT="$HOSTMAP_TLS_CERT" HOSTMAP_TLS_KEY="$HOSTMAP_TLS_KEY" \
+        FLEET_RUNTIME_FILE="$SERVICES_DIR/.runtime.json" \
+        $UV python "$SERVICES_DIR/hostmap_proxy.py" >>"$logfile" 2>&1 &
+    proxy_pid=$!
+    if [ -n "${HOSTMAP_PROXY_PID_FILE:-}" ]; then
+        echo "$proxy_pid" >"$HOSTMAP_PROXY_PID_FILE"
+    fi
+    wait_for_hostmap_proxy "$proxy_pid" "$cookie" "$logfile" || return 1
+}

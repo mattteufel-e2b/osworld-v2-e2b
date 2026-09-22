@@ -938,3 +938,145 @@ def test_progress_counter_spans_every_pool_of_one_run(tmp_path):
     assert progress["082"].group("done", "total") == ("2", "2")
     seconds = int(progress["082"].group("s")) + 60 * int(progress["082"].group("m"))
     assert seconds >= 2, (result.stdout,)  # the clock started with the first pool
+
+
+def _watchdog_env(tmp_path: Path, proxy_case: str) -> dict[str, str]:
+    """A coordinator run whose workers idle, so the watchdog gets time to act."""
+    env = _runner_env(tmp_path, task_timeout=60)
+    env.update(
+        PARALLEL_CONCURRENCY="1",
+        AGENT_RETRY_ATTEMPTS="0",
+        AGENT_START_STAGGER_SECONDS="0",
+        POOL_POLL_SECONDS="1",
+        PROXY_WATCHDOG_SECONDS="1",
+        FLEET_LIVENESS_SECONDS="1",
+        REQUIRE_NO_MODEL_COVERAGE="0",
+        TEARDOWN_FLEETS_ON_EXIT="1",
+        FLEET_STOPPED_FILE=str(tmp_path / "fleets-stopped"),
+        WORKER_PID_FILE=str(tmp_path / "worker-pid"),
+        PROXY_STARTS_FILE=str(tmp_path / "proxy-starts"),
+    )
+    uv = tmp_path / "bin/uv"
+    uv.write_text(
+        uv.read_text().replace(
+            'case "$*" in',
+            f"""case "$*" in
+  *fleetlib.py*) exit 0 ;;
+{proxy_case}
+  *agent_runner.py*) echo $$ > "$WORKER_PID_FILE"; exec sleep 120 ;;
+  *stop.py*) touch "$FLEET_STOPPED_FILE"; exit 0 ;;""",
+        )
+    )
+    # The liveness probe reads GITLAB_URL and the campaign CA out of the
+    # runtime file, so this one needs the `tls` section a real campaign writes.
+    runtime_path = Path(env["OSWORLD_SERVICES_DIR"]) / ".runtime.json"
+    runtime = json.loads(runtime_path.read_text())
+    runtime["tls"] = {
+        key: str(tmp_path / f"{key}.pem")
+        for key in ("ca_cert", "bundle", "leaf_cert", "leaf_key")
+    }
+    runtime_path.write_text(json.dumps(runtime))
+    return env
+
+
+def _run_until(env: dict[str, str], ready, timeout: float = 45):
+    """Drive the coordinator until `ready()` holds, then cancel it."""
+    process = subprocess.Popen(
+        ["bash", str(ROOT / "runner/run_agent_parallel.sh")],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    satisfied = False
+    try:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline and process.poll() is None:
+            if ready():
+                satisfied = True
+                break
+            time.sleep(0.2)
+        process.terminate()
+        stdout, stderr = process.communicate(timeout=60)
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.communicate()
+        for pid_file in (
+            Path(env["WORKER_PID_FILE"]),
+            Path(env["RAW_DIR"]) / "hostmap-proxy.pid",
+        ):
+            try:
+                os.kill(int(pid_file.read_text().strip()), signal.SIGKILL)
+            except (OSError, ValueError):
+                pass
+    return satisfied, stdout, stderr
+
+
+@needs_free_hostmap_port
+def test_proxy_watchdog_restarts_a_dead_hostmap_proxy(tmp_path):
+    # Every worker's setup and evaluate traffic goes through this one proxy: if
+    # it dies mid-campaign, every remaining task fails while still buying model
+    # tokens. The watchdog notices and starts a replacement.
+    env = _watchdog_env(
+        tmp_path,
+        '  *hostmap_proxy.py*) echo start >> "$PROXY_STARTS_FILE"; exec sleep 1 ;;',
+    )
+    log = Path(env["RAW_DIR"]) / "hostmap-proxy.log"
+    starts = Path(env["PROXY_STARTS_FILE"])
+
+    def restarted():
+        return (
+            log.exists()
+            and "hostmap proxy died; restarting" in log.read_text()
+            and starts.exists()
+            and len(starts.read_text().split()) >= 2
+        )
+
+    satisfied, stdout, stderr = _run_until(env, restarted)
+
+    assert satisfied, (stdout, stderr)
+    assert "hostmap proxy died; restarting" in stderr
+    # The restarted proxy is the one cleanup must kill, so its pid is on disk.
+    pid_file = Path(env["RAW_DIR"]) / "hostmap-proxy.pid"
+    assert pid_file.read_text().strip().isdigit(), (stdout, stderr)
+
+
+@needs_free_hostmap_port
+def test_fleet_liveness_probes_are_logged_and_escalated_once(tmp_path):
+    # A fleet that stops answering is invisible until every worker has failed.
+    # The watchdog probes both fleets and says so once per outage.
+    env = _watchdog_env(tmp_path, "  *hostmap_proxy.py*) exec sleep 120 ;;")
+    curl_count = tmp_path / "curl-count"
+    curl = tmp_path / "bin" / "curl"
+    _write_executable(
+        curl,
+        # The readiness probe must succeed or the run never starts; every
+        # liveness probe after it fails.
+        f"""#!/bin/sh
+count=$(cat "{curl_count}" 2>/dev/null || echo 0)
+count=$((count + 1))
+echo "$count" > "{curl_count}"
+[ "$count" -le 1 ]
+""",
+    )
+    liveness = Path(env["RAW_DIR"]) / "fleet-liveness.log"
+
+    def escalated():
+        return liveness.exists() and liveness.read_text().count("websites=fail") >= 4
+
+    satisfied, stdout, stderr = _run_until(env, escalated)
+
+    assert satisfied, (stdout, stderr, liveness.exists() and liveness.read_text())
+    lines = liveness.read_text().splitlines()
+    assert all(
+        re.match(r"^\S+Z websites=(ok|fail) gitlab=(ok|fail|skip)$", line)
+        for line in lines
+    ), lines
+    for service in ("websites", "gitlab"):
+        message = (
+            f"FLEET LIVENESS: {service} unreachable for 3 probes; "
+            "see fleet-liveness.log"
+        )
+        assert stderr.count(message) == 1, (service, stderr)

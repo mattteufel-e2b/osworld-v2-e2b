@@ -57,27 +57,7 @@ export_fleet_wiring
 # Own the host proxy for the entire campaign. The launchers' best-effort proxy
 # child does not survive every calling shell/PTY lifecycle, which previously
 # produced mid-run connection-refused failures despite healthy service guests.
-if python3 - <<'PY'
-import socket
-s = socket.socket()
-s.settimeout(0.2)
-occupied = s.connect_ex(("127.0.0.1", 8090)) == 0
-s.close()
-raise SystemExit(1 if occupied else 0)
-PY
-then :; else
-    echo "127.0.0.1:8090 is already occupied; refusing an ambiguous fleet proxy" >&2
-    exit 2
-fi
-
-HOSTMAP_PORT="8090" HOSTMAP_TLS_PORTS="8090" \
-    HOSTMAP_TLS_CERT="$HOSTMAP_TLS_CERT" HOSTMAP_TLS_KEY="$HOSTMAP_TLS_KEY" \
-    FLEET_RUNTIME_FILE="$SERVICES_DIR/.runtime.json" \
-    $UV python "$SERVICES_DIR/hostmap_proxy.py" >"$RAW_DIR/hostmap-proxy.log" 2>&1 &
-proxy_pid=$!
-if ! wait_for_hostmap_proxy "$proxy_pid" "parallel-validation" "$RAW_DIR/hostmap-proxy.log"; then
-    exit 1
-fi
+start_host_proxy "parallel-validation" "$RAW_DIR/hostmap-proxy.log" || exit $?
 
 task_ids=()
 while IFS= read -r task_id; do task_ids+=("$task_id"); done < <(
