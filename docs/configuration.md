@@ -111,8 +111,9 @@ also lists newer 2.1 scores; those use a different task release.
 
 The published aggregate is a comparison target, not proof of environment parity. Its exact
 batch configuration, judge/simulator settings, action pauses, and checkpoint settings must
-match before attributing a score difference to E2B. Our generic runner defaults to a
-three-second action pause; set `SLEEP_AFTER_EXECUTION=0` to match the pinned Claude launcher.
+match before attributing a score difference to E2B. For `AGENT_KIND=claude` the coordinator
+already defaults `SLEEP_AFTER_EXECUTION` to 0, matching the pinned Claude launcher; other
+agent kinds keep upstream's three-second action pause unless `SLEEP_AFTER_EXECUTION` is set.
 That launcher also enables inline checkpoints at 150/300. The coordinator does not expose those checkpoints. Use matched
 per-task reference trajectories or rerun the same agent configuration on the reference VM
 for a controlled environment comparison. Haiku judging and short samples do not reproduce

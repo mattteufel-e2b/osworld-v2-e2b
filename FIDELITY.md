@@ -500,7 +500,7 @@ full native-result parity or a passing 24-task sample.
   (`out/osworld-v2-evidence/validate-run1.json`, `validate-run2.json`,
   `accessibility_characters` present and nonzero on every record).
 - **Provider contract**: `E2BVMManager`/`E2BProvider` registered by `runner/setup.sh`, whose
-  footprint is declared and verified by `runner/setup.sh`: patches (a)–(n) cover provider
+  footprint is declared and verified by `runner/setup.sh`: patches (a)–(p) cover provider
   registration, strict reset, execution and agent transport compatibility, plus vendored
   provider files (`provider.py`, `manager.py`, `bridge.py`, `e2b_policy.py`). Patch
   anchors and logic are committed at `runner/setup.sh`; `setup.sh --verify` proves exactly
@@ -669,6 +669,9 @@ exact patched state before every run.
 | (k) `mm_agents/m3/parser.py` typing | each character incurs PyAutoGUI's 0.1-second pause, exceeding the 120-second guest deadline for long inputs | one ordered `pyautogui.write(text, interval=0.001)` call, with one final pause | `tests/test_checkout_verification.py` |
 | (l) `mm_agents/m3/agent.py` empty actions | empty or unparseable model output becomes `ASK_USER`, even when no question was intended | preserve the API log and fail the task; only an explicit parsed `CALL_USER` becomes a simulator question | `tests/test_checkout_verification.py`; task 019 in the Bedrock sample |
 | (m) `mm_agents/m3/agent.py` adaptive thinking | a fixed thinking budget is included with adaptive mode, which Bedrock Sonnet 5 rejects | omit `budget_tokens` for adaptive mode; preserve it for enabled mode | `tests/test_checkout_verification.py`; live Bedrock request validation |
+| (n) `mm_agents/anthropic/main.py` prompt-caching beta | the adapter appends the obsolete prompt-caching beta flag to `betas`, which Bedrock Mantle rejects | the flag is dropped; the `cache_control` blocks stay, prompt caching being generally available | `tests/test_checkout_verification.py`; the live native-agent canary above |
+| (o) `desktop_env/desktop_env.py` native Claude `wait` and Unicode typing | a `wait` runs as a guest command, so a long pause dies at the guest's 120 s deadline; the Unicode clipboard helper's background `xclip` inherits the command's pipes and holds a finished response open | the wait sleeps on the host for the requested duration -- validated finite and nonnegative, clamped to 600 s per action -- and the clipboard child gets null output streams; duration, action history, observation and the ordinary action pause are unchanged | `tests/test_checkout_verification.py`; the native-wait and clipboard sections above |
+| (p) `mm_agents/anthropic/main.py` `key_conversion` table | `super` → `command`; PyAutoGUI's X11 backend has no such key and silently drops the press, the same defect as (e) in the adapter the native Claude agent uses | `super` → `win` (the X11 Super key) | shared defect note: [super key](out/osworld-v2-evidence/upstream-issues/m3-parser-super-key-linux.md); `tests/test_checkout_verification.py` |
 
 (h) deliberately keeps `None` rather than inventing a success-shaped result: upstream evaluator
 getters read `env.controller.execute_python_command(...)["output"]`, so a 200 carrying empty
@@ -706,8 +709,9 @@ completed in 10.47 seconds and produced a 5,700-character file whose SHA-256 exa
 matched the expected text, including quotes, backslashes and newlines. See the
 [control receipt](out/osworld-v2-evidence/pr5-bedrock-sample/controls.json).
 
-Upstream issue drafts are prepared, not filed, for (e)
-([super key](out/osworld-v2-evidence/upstream-issues/m3-parser-super-key-linux.md)), (f)
+Upstream issue drafts are prepared, not filed, for (e) and (p)
+([super key](out/osworld-v2-evidence/upstream-issues/m3-parser-super-key-linux.md), one
+defect in two key tables), (f)
 ([`[INFEASIBLE]` inside thinking](out/osworld-v2-evidence/upstream-issues/m3-parser-infeasible-inside-thinking.md)),
 and the [90 s-client/120 s-guest deadline mismatch](out/osworld-v2-evidence/upstream-issues/controller-90s-client-vs-120s-guest-deadline.md).
 
