@@ -217,6 +217,29 @@ def delete_runtime_section(section: str, sandbox_id: str) -> bool:
     return True
 
 
+# --- launch receipts --------------------------------------------------------
+
+
+def append_launch_receipt(path: Path, record: dict) -> tuple[dict, list]:
+    """Read the receipt a previous launch left at `path` and return
+    (prior, runs): the prior receipt (``{}`` when it is missing or corrupt,
+    so a damaged file can never abort a healthy launch) and its run history
+    with `record` appended to a copy.
+
+    Composing and writing the new receipt stays with each launcher, which
+    carries its own first-boot fields forward out of `prior`.
+    """
+    prior = {}
+    if path.is_file():
+        try:
+            prior = json.loads(path.read_text())
+        except json.JSONDecodeError:
+            prior = {}
+    runs = list(prior.get("runs", []))
+    runs.append(record)
+    return prior, runs
+
+
 # --- sandbox lifecycle ------------------------------------------------------
 
 
@@ -353,6 +376,54 @@ def run(
             f"STDOUT:{res.stdout[-2000:]}\nSTDERR:{res.stderr[-2000:]}"
         )
     return res
+
+
+def clone_repo(
+    sbx: Sandbox,
+    repo_url: str,
+    commit: str,
+    dest: str,
+    *,
+    label: str,
+    already_cloned_log: str,
+    clone_timeout: int,
+    checkout_timeout: int,
+    rewrite_ssh_remotes: bool = False,
+    submodules: bool = False,
+) -> None:
+    """Clone `repo_url` into `dest` (once) and pin it to `commit`.
+
+    Re-runnable: an existing checkout is kept and only re-pinned, so a reused
+    sandbox never re-downloads the repository. `rewrite_ssh_remotes` maps
+    git@github.com: to anonymous HTTPS before the clone (needed by repos whose
+    submodules are declared with SSH URLs); `submodules` syncs and updates them
+    after the checkout, before the pin is logged.
+    """
+    check = sbx.commands.run(
+        f"test -d {dest}/.git && echo yes || echo no", user="root", timeout=15
+    )
+    if "yes" not in (check.stdout or ""):
+        if rewrite_ssh_remotes:
+            run(
+                sbx,
+                'git config --global url."https://github.com/".insteadOf '
+                '"git@github.com:"',
+                timeout=15,
+            )
+        run(sbx, f"git clone {repo_url} {dest}", timeout=clone_timeout)
+    else:
+        log(already_cloned_log)
+    run(sbx, f"git -C {dest} checkout --detach {commit}", timeout=checkout_timeout)
+    if submodules:
+        # Same ceiling as the clone: a submodule tree can be as large as the
+        # repository itself.
+        run(
+            sbx,
+            f"git -C {dest} submodule sync --recursive && "
+            f"git -C {dest} submodule update --init --recursive",
+            timeout=900,
+        )
+    log(f"{label} repo pinned to {commit}")
 
 
 def ensure_swap(sbx: Sandbox, gb: int = 8) -> None:

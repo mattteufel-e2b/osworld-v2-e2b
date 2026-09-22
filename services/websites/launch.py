@@ -87,27 +87,19 @@ def websites_pin() -> str:
 
 
 def clone_repo(sbx, commit: str) -> None:
-    check = sbx.commands.run(
-        f"test -d {REPO_DIR}/.git && echo yes || echo no", user="root", timeout=15
-    )
-    if "yes" not in (check.stdout or ""):
-        # Submodules are declared with git@ SSH URLs; rewrite to anonymous HTTPS.
-        fl.run(
-            sbx,
-            'git config --global url."https://github.com/".insteadOf "git@github.com:"',
-            timeout=15,
-        )
-        fl.run(sbx, f"git clone {REPO_URL} {REPO_DIR}", timeout=900)
-    else:
-        fl.log("OSWorld-web already cloned")
-    fl.run(sbx, f"git -C {REPO_DIR} checkout --detach {commit}", timeout=60)
-    fl.run(
+    fl.clone_repo(
         sbx,
-        f"git -C {REPO_DIR} submodule sync --recursive && "
-        f"git -C {REPO_DIR} submodule update --init --recursive",
-        timeout=900,
+        REPO_URL,
+        commit,
+        REPO_DIR,
+        label="OSWorld-web",
+        already_cloned_log="OSWorld-web already cloned",
+        clone_timeout=900,
+        checkout_timeout=60,
+        # Submodules are declared with git@ SSH URLs; rewrite to anonymous HTTPS.
+        rewrite_ssh_remotes=True,
+        submodules=True,
     )
-    fl.log(f"OSWorld-web repo pinned to {commit}")
     fl.run(sbx, f"cd {REPO_DIR} && bash gen-compose.sh", timeout=60)
 
 
@@ -540,19 +532,13 @@ def main() -> int:
 
         # Preserve first-boot timing across reuse while publishing only after all
         # direct, proxy, and V2 URL-builder gates succeed.
-        prior = {}
-        if RECEIPT.is_file():
-            try:
-                prior = json.loads(RECEIPT.read_text())
-            except json.JSONDecodeError:
-                prior = {}
-        runs = list(prior.get("runs", []))
-        runs.append(
+        prior, runs = fl.append_launch_receipt(
+            RECEIPT,
             {
                 "at": datetime.now(UTC).isoformat(),
                 "sandbox_created_this_run": created,
                 "compose_build_seconds": round(build_secs, 1),
-            }
+            },
         )
 
         receipt = {

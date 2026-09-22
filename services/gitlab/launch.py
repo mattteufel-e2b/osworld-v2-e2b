@@ -60,15 +60,16 @@ def gitlab_pin() -> str:
 
 
 def clone_repo(sbx, commit: str) -> None:
-    check = sbx.commands.run(
-        f"test -d {REPO_DIR}/.git && echo yes || echo no", user="root", timeout=15
+    fl.clone_repo(
+        sbx,
+        REPO_URL,
+        commit,
+        REPO_DIR,
+        label="gitlab",
+        already_cloned_log="gitlab repo already cloned",
+        clone_timeout=120,
+        checkout_timeout=30,
     )
-    if "yes" not in (check.stdout or ""):
-        fl.run(sbx, f"git clone {REPO_URL} {REPO_DIR}", timeout=120)
-    else:
-        fl.log("gitlab repo already cloned")
-    fl.run(sbx, f"git -C {REPO_DIR} checkout --detach {commit}", timeout=30)
-    fl.log(f"gitlab repo pinned to {commit}")
 
 
 def write_fanout(sbx) -> None:
@@ -413,19 +414,13 @@ def main() -> int:
             raise RuntimeError("harness URL GitLab API check failed")
 
         fl.write_private_text(TOKEN_FILE, token + "\n")
-        prior = {}
-        if RECEIPT.is_file():
-            try:
-                prior = json.loads(RECEIPT.read_text())
-            except json.JSONDecodeError:
-                prior = {}
-        runs = list(prior.get("runs", []))
-        runs.append(
+        prior, runs = fl.append_launch_receipt(
+            RECEIPT,
             {
                 "at": datetime.now(UTC).isoformat(),
                 "sandbox_created_this_run": created,
                 "api_ready_seconds": ready_secs,
-            }
+            },
         )
 
         receipt = {

@@ -11,7 +11,7 @@ from contextlib import ExitStack
 import unittest
 from types import SimpleNamespace
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 V2_ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location(
@@ -87,6 +87,27 @@ class RecordingFiles:
     def write(self, path, content, **kwargs):
         self.written[path] = content
         self.write_kwargs[path] = kwargs
+
+
+class RecordingCommands:
+    """Records every sbx.commands.run() call.
+
+    The first reply answers a launcher's `test -d <dir>/.git` probe; every
+    later command replies with empty, successful output.
+    """
+
+    def __init__(self, first_stdout: str = "no"):
+        self.calls: list[tuple[str, dict]] = []
+        self.first_stdout = first_stdout
+
+    def run(self, command, **kwargs):
+        self.calls.append((command, kwargs))
+        stdout = self.first_stdout if len(self.calls) == 1 else ""
+        return SimpleNamespace(stdout=stdout, stderr="", exit_code=0)
+
+    @property
+    def commands(self) -> list[str]:
+        return [command for command, _ in self.calls]
 
 
 class FakeFleetSandbox:
@@ -1346,6 +1367,190 @@ class FleetRuntimePolicyTests(unittest.TestCase):
             runtime["gitlab"]["url"].startswith("https://gitlab.127.0.0.1.nip.io:")
         )
         self.assertEqual(runtime["gitlab"]["aliases"], ["54.174.16.65.sslip.io"])
+
+    def test_gitlab_clone_repo_keeps_its_exact_pinned_clone_sequence(self):
+        gitlab = load_gitlab_launcher()
+        commit = "a" * 40
+        commands = RecordingCommands()
+        sandbox = SimpleNamespace(commands=commands)
+
+        with patch.object(gitlab.fl, "log") as logged:
+            gitlab.clone_repo(sandbox, commit)
+
+        self.assertEqual(
+            commands.calls,
+            [
+                (
+                    f"test -d {gitlab.REPO_DIR}/.git && echo yes || echo no",
+                    {"user": "root", "timeout": 15},
+                ),
+                (
+                    f"git clone {gitlab.REPO_URL} {gitlab.REPO_DIR}",
+                    {"user": "root", "timeout": 120},
+                ),
+                (
+                    f"git -C {gitlab.REPO_DIR} checkout --detach {commit}",
+                    {"user": "root", "timeout": 30},
+                ),
+            ],
+        )
+        self.assertEqual(
+            logged.call_args_list[-1], call(f"gitlab repo pinned to {commit}")
+        )
+
+    def test_gitlab_clone_repo_reuses_an_existing_checkout(self):
+        gitlab = load_gitlab_launcher()
+        commit = "a" * 40
+        commands = RecordingCommands(first_stdout="yes")
+        sandbox = SimpleNamespace(commands=commands)
+
+        with patch.object(gitlab.fl, "log") as logged:
+            gitlab.clone_repo(sandbox, commit)
+
+        self.assertEqual(
+            commands.commands,
+            [
+                f"test -d {gitlab.REPO_DIR}/.git && echo yes || echo no",
+                f"git -C {gitlab.REPO_DIR} checkout --detach {commit}",
+            ],
+        )
+        self.assertIn(call("gitlab repo already cloned"), logged.call_args_list)
+
+    def test_websites_clone_repo_keeps_submodules_and_compose_generation(self):
+        websites = load_websites_launcher()
+        commit = "b" * 40
+        commands = RecordingCommands()
+        sandbox = SimpleNamespace(commands=commands)
+
+        with patch.object(websites.fl, "log") as logged:
+            websites.clone_repo(sandbox, commit)
+
+        self.assertEqual(
+            commands.calls,
+            [
+                (
+                    f"test -d {websites.REPO_DIR}/.git && echo yes || echo no",
+                    {"user": "root", "timeout": 15},
+                ),
+                (
+                    'git config --global url."https://github.com/".insteadOf '
+                    '"git@github.com:"',
+                    {"user": "root", "timeout": 15},
+                ),
+                (
+                    f"git clone {websites.REPO_URL} {websites.REPO_DIR}",
+                    {"user": "root", "timeout": 900},
+                ),
+                (
+                    f"git -C {websites.REPO_DIR} checkout --detach {commit}",
+                    {"user": "root", "timeout": 60},
+                ),
+                (
+                    f"git -C {websites.REPO_DIR} submodule sync --recursive && "
+                    f"git -C {websites.REPO_DIR} submodule update --init --recursive",
+                    {"user": "root", "timeout": 900},
+                ),
+                (
+                    f"cd {websites.REPO_DIR} && bash gen-compose.sh",
+                    {"user": "root", "timeout": 60},
+                ),
+            ],
+        )
+        # The pin is logged after the submodules are in place, before
+        # gen-compose.sh reads the checkout.
+        messages = [item.args[0] for item in logged.call_args_list]
+        self.assertEqual(
+            messages[-2:],
+            [
+                f"OSWorld-web repo pinned to {commit}",
+                f"$ cd {websites.REPO_DIR} && bash gen-compose.sh",
+            ],
+        )
+
+    def test_websites_clone_repo_reuses_an_existing_checkout(self):
+        websites = load_websites_launcher()
+        commands = RecordingCommands(first_stdout="yes")
+        sandbox = SimpleNamespace(commands=commands)
+
+        with patch.object(websites.fl, "log") as logged:
+            websites.clone_repo(sandbox, "b" * 40)
+
+        self.assertNotIn(
+            f"git clone {websites.REPO_URL} {websites.REPO_DIR}", commands.commands
+        )
+        self.assertIn(call("OSWorld-web already cloned"), logged.call_args_list)
+
+    def test_clone_repo_helper_clones_without_submodules_by_default(self):
+        commit = "c" * 40
+        commands = RecordingCommands()
+        sandbox = SimpleNamespace(commands=commands)
+
+        with patch.object(fleetlib, "log") as logged:
+            fleetlib.clone_repo(
+                sandbox,
+                "https://example.test/org/repo",
+                commit,
+                "/srv/repo",
+                label="demo",
+                already_cloned_log="demo already cloned",
+                clone_timeout=11,
+                checkout_timeout=12,
+            )
+
+        self.assertEqual(
+            commands.calls,
+            [
+                (
+                    "test -d /srv/repo/.git && echo yes || echo no",
+                    {"user": "root", "timeout": 15},
+                ),
+                (
+                    "git clone https://example.test/org/repo /srv/repo",
+                    {"user": "root", "timeout": 11},
+                ),
+                (
+                    f"git -C /srv/repo checkout --detach {commit}",
+                    {"user": "root", "timeout": 12},
+                ),
+            ],
+        )
+        self.assertEqual(
+            logged.call_args_list[-1], call(f"demo repo pinned to {commit}")
+        )
+
+    def test_append_launch_receipt_starts_a_run_history_without_a_prior_receipt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            record = {"at": "2026-09-21T00:00:00+00:00"}
+            prior, runs = fleetlib.append_launch_receipt(
+                Path(directory) / "missing.json", record
+            )
+
+        self.assertEqual(prior, {})
+        self.assertEqual(runs, [record])
+
+    def test_append_launch_receipt_extends_the_prior_history_without_mutating_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            receipt = Path(directory) / "receipt.json"
+            earlier = {"at": "2026-09-20T00:00:00+00:00"}
+            receipt.write_text(
+                json.dumps({"first_boot_seconds": 12.5, "runs": [earlier]})
+            )
+            record = {"at": "2026-09-21T00:00:00+00:00"}
+            prior, runs = fleetlib.append_launch_receipt(receipt, record)
+
+        self.assertEqual(prior["first_boot_seconds"], 12.5)
+        self.assertEqual(runs, [earlier, record])
+        self.assertEqual(prior["runs"], [earlier])  # the prior list is copied
+
+    def test_append_launch_receipt_ignores_a_corrupt_prior_receipt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            receipt = Path(directory) / "receipt.json"
+            receipt.write_text("{not json")
+            record = {"at": "2026-09-21T00:00:00+00:00"}
+            prior, runs = fleetlib.append_launch_receipt(receipt, record)
+
+        self.assertEqual(prior, {})
+        self.assertEqual(runs, [record])
 
 
 if __name__ == "__main__":
