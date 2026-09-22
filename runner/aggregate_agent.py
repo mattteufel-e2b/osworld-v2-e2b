@@ -247,14 +247,15 @@ def aggregate(
         "mean_score": (sum(scores) / len(scores)) if scores else None,
         "partial_score": (sum(scores) / len(scores)) if scores else None,
         # Every valid score, gate-accepted or not. mean_score above is the
-        # campaign's number; this one only tells the operator what happened.
-        "scored_task_count": len(diagnostic_scores),
+        # campaign's number; these only tell the operator what happened, and
+        # the prefix keeps them from reading as variants of `scored_tasks`.
+        "diagnostic_scored_task_count": len(diagnostic_scores),
         "diagnostic_mean_of_scored": (
             sum(diagnostic_scores) / len(diagnostic_scores)
             if diagnostic_scores
             else None
         ),
-        "unscored_task_ids": unscored_task_ids,
+        "diagnostic_unscored_task_ids": unscored_task_ids,
         "binary_successes": sum(score == 1.0 for score in scores),
         "binary_accuracy": (
             sum(score == 1.0 for score in scores) / len(scores) if scores else None

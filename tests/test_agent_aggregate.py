@@ -895,9 +895,13 @@ def test_diagnostic_scored_summary_counts_records_the_gate_rejected(tmp_path):
     summary = run["summary"]
     assert summary["scored_tasks"] == 1  # gate-accepted, unchanged
     assert summary["mean_score"] == 0.25  # gate-accepted, unchanged
-    assert summary["scored_task_count"] == 2
+    # The diagnostic counts carry the prefix: `scored_tasks` above is the
+    # gate-accepted population and these are every valid score.
+    assert summary["diagnostic_scored_task_count"] == 2
     assert summary["diagnostic_mean_of_scored"] == 0.5
-    assert summary["unscored_task_ids"] == ["003"]
+    assert summary["diagnostic_unscored_task_ids"] == ["003"]
+    assert "scored_task_count" not in summary
+    assert "unscored_task_ids" not in summary
 
 
 def test_diagnostic_mean_is_null_when_no_record_carries_a_score(tmp_path):
@@ -908,6 +912,6 @@ def test_diagnostic_mean_is_null_when_no_record_carries_a_score(tmp_path):
 
     run, _ = _aggregate_defaults(manifest, workers)
 
-    assert run["summary"]["scored_task_count"] == 0
+    assert run["summary"]["diagnostic_scored_task_count"] == 0
     assert run["summary"]["diagnostic_mean_of_scored"] is None
-    assert run["summary"]["unscored_task_ids"] == ["001"]
+    assert run["summary"]["diagnostic_unscored_task_ids"] == ["001"]

@@ -834,6 +834,56 @@ class GuestManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(templates), bridge.SANDBOX_CREATE_RETRY_ATTEMPTS)
         self.assertEqual(sleeps, [2.0, 4.0, 6.0])
 
+    async def test_sandbox_create_retries_a_connect_timeout(self):
+        # A create that never reached the control plane left nothing behind,
+        # so a second attempt is free of orphans.
+        templates = []
+        real_create = FakeSandbox.create
+
+        def flaky_create(template, **kwargs):
+            templates.append(template)
+            if len(templates) <= 1:
+                raise httpx.ConnectTimeout("timed out connecting")
+            return real_create(template, **kwargs)
+
+        sleeps = []
+        with (
+            patch.object(bridge, "Sandbox", FakeSandbox),
+            patch.object(FakeSandbox, "create", staticmethod(flaky_create)),
+            patch.object(bridge, "time", SimpleNamespace(sleep=sleeps.append)),
+            patch.object(
+                bridge, "random", SimpleNamespace(uniform=lambda low, high: 0.0)
+            ),
+            patch.object(self.manager, "_wait_ready", AsyncMock()),
+        ):
+            guest = await self.manager.replace()
+
+        self.assertEqual(len(templates), 2)
+        self.assertEqual(sleeps, [2.0])
+        self.assertEqual(guest.sandbox_id, FakeSandbox.created[0].sandbox_id)
+
+    async def test_sandbox_create_does_not_retry_a_read_timeout(self):
+        # The request reached the control plane and the answer was lost: a
+        # retry would race a sandbox this worker can no longer name or kill.
+        templates = []
+
+        def read_timeout(template, **kwargs):
+            templates.append(template)
+            raise httpx.ReadTimeout("read timed out")
+
+        sleeps = []
+        with (
+            patch.object(bridge, "Sandbox", FakeSandbox),
+            patch.object(FakeSandbox, "create", staticmethod(read_timeout)),
+            patch.object(bridge, "time", SimpleNamespace(sleep=sleeps.append)),
+            patch.object(self.manager, "_wait_ready", AsyncMock()),
+        ):
+            with self.assertRaises(httpx.ReadTimeout):
+                await self.manager.replace()
+
+        self.assertEqual(len(templates), 1)
+        self.assertEqual(sleeps, [])
+
     async def test_sandbox_create_does_not_retry_a_client_error(self):
         templates = []
 
@@ -855,12 +905,14 @@ class GuestManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sleeps, [])
 
     def test_create_retry_classifier_separates_transient_from_permanent(self):
+        # Only failures that provably never reached the control plane are
+        # retried: a create whose request was sent and then timed out on the
+        # read may already have provisioned a sandbox nobody would ever kill.
         retryable = [
             RateLimitException("429: Rate limit exceeded"),
-            bridge.TimeoutException("timed out"),
-            TimeoutError(),
+            httpx.ConnectError("connection refused"),
+            httpx.ConnectTimeout("timed out connecting"),
             aiohttp.ClientConnectionError(),
-            httpx.TransportError("connection reset"),
             SandboxException("500: internal error"),
             SandboxException("502: bad gateway"),
             SandboxException("no status in this message"),
@@ -872,6 +924,12 @@ class GuestManagerTests(unittest.IsolatedAsyncioTestCase):
             NotFoundException("404: sandbox not found"),
             InvalidArgumentException("400: bad template"),
             ValueError("not an SDK error"),
+            # Sent-and-unanswered: the control plane may have created a guest.
+            bridge.TimeoutException("timed out"),
+            TimeoutError(),
+            httpx.ReadTimeout("read timed out"),
+            httpx.WriteTimeout("write timed out"),
+            httpx.PoolTimeout("pool timed out"),
         ]
         for exc in retryable:
             with self.subTest(exc=exc):

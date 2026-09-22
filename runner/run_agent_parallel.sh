@@ -119,6 +119,8 @@ HOSTMAP_PROXY_PID_FILE="$RAW_DIR/hostmap-proxy.pid"
 # Watchdog cadences. Neither is an operator knob; the tests shorten them.
 PROXY_WATCHDOG_SECONDS="${PROXY_WATCHDOG_SECONDS:-30}"
 FLEET_LIVENESS_SECONDS="${FLEET_LIVENESS_SECONDS:-60}"
+# Cycles the watchdog skips after a refused restart (liveness probes continue).
+PROXY_RESTART_BACKOFF_CYCLES=5
 worker_pids=()
 worker_task_ids=()
 # Campaign-wide progress: N is the task count this run set out to complete,
@@ -149,9 +151,11 @@ cleanup_proxy() {
         kill "$watchdog_pid" 2>/dev/null || true
         wait "$watchdog_pid" 2>/dev/null || true
     fi
-    # The file tracks a watchdog restart of a proxy this run started; it never
-    # supplies a pid on its own, so a rejection before start_host_proxy kills
-    # nothing at all.
+    # The file holds the pid of whichever proxy this run last started, the
+    # watchdog's replacements included, and is emptied when a restart is
+    # refused. It is consulted only when $proxy_pid is non-empty -- i.e. only
+    # after this shell started a proxy of its own -- so a rejection before
+    # start_host_proxy kills nothing at all.
     local live_proxy_pid="$proxy_pid"
     if [ -n "$proxy_pid" ] && [ -s "$HOSTMAP_PROXY_PID_FILE" ]; then
         live_proxy_pid="$(cat "$HOSTMAP_PROXY_PID_FILE")"
@@ -267,7 +271,11 @@ probe_fleet_liveness() {
     # claiming a health nothing measured.
     if [ -n "${GITLAB_URL:-}" ]; then
         gitlab="fail"
+        # /api/v4/version is authenticated: without the campaign's token GitLab
+        # answers 401, `curl -f` fails, and a healthy fleet reports an outage on
+        # every probe. export_fleet_wiring exported the token for this.
         if curl -fsS --connect-timeout 2 --max-time 5 --cacert "$OSWORLD_CA_CERT" \
+            -H "PRIVATE-TOKEN: ${GITLAB_PRIVATE_TOKEN:-}" \
             "$GITLAB_URL/api/v4/version" >/dev/null 2>&1; then
             gitlab="ok"
         fi
@@ -285,7 +293,7 @@ probe_fleet_liveness() {
 # model tokens. Watch it from the background and put a replacement back on
 # 8090; the counters are the callee's to update (bash scopes them dynamically).
 proxy_watchdog() {
-    local since_probe=0
+    local since_probe=0 restart_backoff=0
     local websites_failures=0 websites_reported=0
     local gitlab_failures=0 gitlab_reported=0
     while :; do
@@ -293,10 +301,24 @@ proxy_watchdog() {
         # the kill below by up to one interval, and a reader of the campaign's
         # output would block on the pipe that long after the run ended.
         sleep "$PROXY_WATCHDOG_SECONDS" >/dev/null 2>&1 </dev/null
-        if ! kill -0 "$proxy_pid" 2>/dev/null; then
+        if [ "$restart_backoff" -gt 0 ]; then
+            # A refused restart stays refused for a while (something else holds
+            # 8090), so retrying every cycle only reprints the proxy log tail.
+            restart_backoff=$((restart_backoff - 1))
+        elif ! kill -0 "$proxy_pid" 2>/dev/null; then
             echo "hostmap proxy died; restarting" >&2
             echo "hostmap proxy died; restarting" >>"$PROXY_LOG"
-            start_host_proxy "agent-benchmark" "$PROXY_LOG" || true
+            if ! start_host_proxy "agent-benchmark" "$PROXY_LOG"; then
+                # No proxy of this run is alive: the file must stop naming the
+                # dead one, which cleanup would otherwise kill once the pid has
+                # been recycled. Clearing this subshell's copy makes the next
+                # cycle attempt a restart rather than poll a corpse.
+                : >"$HOSTMAP_PROXY_PID_FILE"
+                proxy_pid=""
+                restart_backoff="$PROXY_RESTART_BACKOFF_CYCLES"
+                echo "hostmap proxy restart failed; retrying in" \
+                    "$((PROXY_RESTART_BACKOFF_CYCLES * PROXY_WATCHDOG_SECONDS)) s" >&2
+            fi
         fi
         since_probe=$((since_probe + PROXY_WATCHDOG_SECONDS))
         if [ "$since_probe" -ge "$FLEET_LIVENESS_SECONDS" ]; then

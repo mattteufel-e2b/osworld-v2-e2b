@@ -59,6 +59,15 @@ SETUP_UPLOAD_TRANSIENT_ERRORS = (
 )
 SANDBOX_CREATE_RETRY_ATTEMPTS = 4
 SANDBOX_CREATE_RETRY_DELAY_S = 2.0
+# Connect-phase failures only: the request never reached the control plane, so
+# no sandbox can exist behind them. A read/write/pool timeout is deliberately
+# absent -- that request was sent, and a retry after one may leave the guest it
+# provisioned running unnamed until its own timeout.
+SANDBOX_CREATE_TRANSIENT_ERRORS = (
+    httpx.ConnectError,
+    httpx.ConnectTimeout,
+    aiohttp.ClientConnectionError,
+)
 # The guest proxy is started in the background, so a crashed start (a port
 # already bound, a syntax error in the uploaded script) is otherwise invisible
 # until every website request in the task fails.
@@ -73,15 +82,21 @@ _HTTP_STATUS_PREFIX = re.compile(r"^(\d{3}):")
 def _is_retryable_create_error(exc: BaseException) -> bool:
     """True for control-plane failures a second create can still win.
 
-    A burst of concurrent workers draws 429s and transient 5xx/transport
-    errors; those are worth a short backoff. Credentials, a bad template and a
-    missing snapshot are permanent and must fail the task immediately. e2b maps
-    429 to RateLimitException and 401 to AuthenticationException (not a
+    A burst of concurrent workers draws 429s and connect-phase failures; those
+    are worth a short backoff. Credentials, a bad template and a missing
+    snapshot are permanent and must fail the task immediately. e2b maps 429 to
+    RateLimitException and 401 to AuthenticationException (not a
     SandboxException at all); everything else arrives as the base
     SandboxException or a specific, permanent subclass, so only the base class
     is eligible -- and only when its message does not start with a 4xx status.
+
+    A timeout waiting for the answer (TimeoutException, httpx read/write/pool
+    timeouts, builtin TimeoutError) is permanent here, unlike on the upload
+    path: the create request was already sent, so a retry can orphan a
+    provisioned sandbox whose id this worker never learns and never kills. One
+    failed task is cheaper than a guest running to its own timeout unowned.
     """
-    if isinstance(exc, SETUP_UPLOAD_TRANSIENT_ERRORS) or isinstance(
+    if isinstance(exc, SANDBOX_CREATE_TRANSIENT_ERRORS) or isinstance(
         exc, RateLimitException
     ):
         return True

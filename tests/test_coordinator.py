@@ -1049,17 +1049,102 @@ def test_proxy_watchdog_restarts_a_dead_hostmap_proxy(tmp_path):
 
 
 @needs_free_hostmap_port
+def test_refused_proxy_restart_empties_the_pid_file_and_backs_off(tmp_path):
+    # A restart the occupancy check refuses leaves no proxy of this run alive,
+    # so the pid file must not keep pointing at the dead one: cleanup would
+    # later kill whatever process has inherited that pid. The watchdog also
+    # stops hammering 8090 -- one line per backoff window, not a 40-line proxy
+    # log tail every cycle -- while the liveness probes keep running.
+    env = _watchdog_env(
+        tmp_path,
+        '  *hostmap_proxy.py*) echo $$ >> "$PROXY_STARTS_FILE"; exec sleep 2 ;;',
+    )
+    pid_file = Path(env["RAW_DIR"]) / "hostmap-proxy.pid"
+    liveness = Path(env["RAW_DIR"]) / "fleet-liveness.log"
+    bystander = None
+    state: dict[str, int | None] = {"lines_at_failure": None}
+
+    def liveness_lines() -> int:
+        return len(liveness.read_text().splitlines()) if liveness.exists() else 0
+
+    def recorded_pid() -> str:
+        return pid_file.read_text().strip() if pid_file.exists() else ""
+
+    def backed_off():
+        nonlocal bystander
+        if bystander is None:
+            # Only once the run's own proxy is up: occupying 8090 any earlier
+            # would fail admission instead of the watchdog's restart.
+            if not recorded_pid():
+                return False
+            bystander = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-c",
+                    "import socket, time\n"
+                    "s = socket.socket()\n"
+                    "s.bind(('127.0.0.1', 8090))\n"
+                    "s.listen(1)\n"
+                    "print('bound', flush=True)\n"
+                    "time.sleep(120)\n",
+                ],
+                stdout=subprocess.PIPE,
+                text=True,
+            )
+            assert bystander.stdout.readline().strip() == "bound"
+            return False
+        if state["lines_at_failure"] is None:
+            if recorded_pid():
+                return False
+            state["lines_at_failure"] = liveness_lines()
+            return False
+        # Probes keep going through the backoff window.
+        return liveness_lines() >= state["lines_at_failure"] + 3
+
+    try:
+        satisfied, stdout, stderr = _run_until(env, backed_off)
+    finally:
+        if bystander is not None:
+            bystander.kill()
+            bystander.wait()
+
+    assert satisfied, (stdout, stderr)
+    assert pid_file.read_text().strip() == "", (stdout, stderr)
+    assert bystander.returncode is None or bystander.returncode < 0, (
+        # killed by this test's own teardown, never by the coordinator's cleanup
+        bystander.returncode,
+        stderr,
+    )
+    assert stderr.count("127.0.0.1:8090 is already occupied") == 1, stderr
+    # PROXY_WATCHDOG_SECONDS=1, so five skipped cycles is five seconds.
+    assert stderr.count("hostmap proxy restart failed; retrying in 5 s") == 1, stderr
+
+
+@needs_free_hostmap_port
 def test_fleet_liveness_probes_are_logged_and_escalated_once(tmp_path):
     # A fleet that stops answering is invisible until every worker has failed.
-    # The watchdog probes both fleets and says so once per outage.
+    # The watchdog probes both fleets and says so once per outage. GitLab's API
+    # answers 401 to an unauthenticated caller, so this fake curl succeeds on
+    # that URL only when the probe carries the campaign's PRIVATE-TOKEN: a
+    # tokenless probe would report an outage on a healthy fleet, every probe.
     env = _watchdog_env(tmp_path, "  *hostmap_proxy.py*) exec sleep 120 ;;")
     curl_count = tmp_path / "curl-count"
+    gitlab_probes = tmp_path / "gitlab-probes"
     curl = tmp_path / "bin" / "curl"
     _write_executable(
         curl,
         # The readiness probe must succeed or the run never starts; every
-        # liveness probe after it fails.
+        # website liveness probe after it fails.
         f"""#!/bin/sh
+case "$*" in
+  *gitlab.example.test*)
+    case "$*" in
+      *"PRIVATE-TOKEN: private-token"*)
+        echo authorized >> "{gitlab_probes}"; exit 0 ;;
+      *)
+        echo unauthenticated >> "{gitlab_probes}"; exit 22 ;;
+    esac ;;
+esac
 count=$(cat "{curl_count}" 2>/dev/null || echo 0)
 count=$((count + 1))
 echo "$count" > "{curl_count}"
@@ -1079,12 +1164,25 @@ echo "$count" > "{curl_count}"
         re.match(r"^\S+Z websites=(ok|fail) gitlab=(ok|fail|skip)$", line)
         for line in lines
     ), lines
-    for service in ("websites", "gitlab"):
-        message = (
-            f"FLEET LIVENESS: {service} unreachable for 3 probes; "
-            "see fleet-liveness.log"
-        )
-        assert stderr.count(message) == 1, (service, stderr)
+    # The authenticated probe reaches a healthy GitLab; only websites is down.
+    assert all(line.endswith("gitlab=ok") for line in lines), lines
+    assert gitlab_probes.read_text().split() == ["authorized"] * len(lines), (
+        gitlab_probes.read_text(),
+        lines,
+    )
+    websites_outage = (
+        "FLEET LIVENESS: websites unreachable for 3 probes; see fleet-liveness.log"
+    )
+    assert stderr.count(websites_outage) == 1, stderr
+    assert "FLEET LIVENESS: gitlab" not in stderr, stderr
+    # The same probe without the header is exactly what the coordinator used to
+    # send, and this fake GitLab rejects it -- so gitlab=ok is not free.
+    unauthenticated = subprocess.run(
+        [str(curl), "-fsS", "https://gitlab.example.test/api/v4/version"],
+        capture_output=True,
+        text=True,
+    )
+    assert unauthenticated.returncode != 0, unauthenticated
 
 
 def test_stale_proxy_pid_file_is_never_killed(tmp_path):
