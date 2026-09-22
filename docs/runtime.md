@@ -67,12 +67,18 @@ Don't trim below these even though measured peaks look low:
 - **Fleet swap is required once**: the websites fleet's first-boot compose build (23 images)
   OOM-wedges an 8 GB sandbox without it; launchers add it idempotently.
 
-Both parallel drivers default to and cap `PARALLEL_CONCURRENCY` at 80. This is a
+The benchmark coordinator (`runner/run_agent_parallel.sh`) defaults `PARALLEL_CONCURRENCY`
+to 80 and caps it at 120; the maintainer-only `validate_parallel.sh` still defaults to and
+caps at 80. The coordinator runs its worker pool as a rolling pool: a new task starts as soon
+as a slot frees, instead of waiting out a fixed batch on its slowest task. The cap is a
 coordinator policy, not the measured E2B account limit. Strict reset creates the replacement
 before deleting the old guest, so budget up to `2 × workers + 2` sandboxes with both fleets:
-162 at 80 workers, 198 at 98. A September 20 admission probe held **201 simultaneous
-sandboxes** successfully; it did not find the account's hard limit. The former 200-sandbox
-planning assumption is therefore not an enforced account ceiling.
+162 at the 80 default, 242 at the 120 cap. A September 20 admission probe held **201
+simultaneous sandboxes** successfully and did not find the account's hard limit, but that
+probe did not reach 242. An operator raising `PARALLEL_CONCURRENCY` above the 80 default
+should first confirm the org's E2B quota comfortably covers the worst-case strict-reset
+overlap at the chosen concurrency; the strict-reset overlap is per task and brief, so it does
+not hold for the whole run.
 
 On `osworld-v2-gnome:be5ffc32-390c-4b67-99c7-c14b42861019`, 80 independent task-030 setup
 workers passed, and a separate 98-worker bridge probe passed three strict-reset cycles
@@ -104,7 +110,7 @@ does not validate 80 long-context agent sessions. No fixed model-concurrency lim
   sandbox lifecycle + token-authenticated loopback proxy for HTTP, WebSocket and CDP on
   OS-assigned ports), `manager.py`.
 - **`runner/`** — pinned-checkout setup and the benchmark driver `run_agent_parallel.sh`
-  (default and cap of 80 concurrent workers).
+  (default 80, capped at 120, rolling worker pool).
 - **`maintainer/`** — verification-ladder scripts, `validate_parallel.sh`, and
   `profile_resources.sh`, which wraps the standalone profiler in `tools/`.
 - **`services/`** — website/GitLab fleet launchers; each fleet runs docker-compose inside

@@ -65,13 +65,17 @@ export AWS_MANTLE="..."                    # judge and user simulator
 export OPENAI_API_KEY="${OPENAI_API_KEY:-bedrock-legacy-presence-only}" # task 092 presence check
 
 AGENT_MANIFEST="$RUN_ROOT/full-manifest.json" PARALLEL_CONCURRENCY=80 MAX_STEPS=500 \
-    AGENT_TASK_TIMEOUT_SECONDS=28800 RAW_DIR="$RUN_ROOT/agent-raw" \
+    RAW_DIR="$RUN_ROOT/agent-raw" \
     OUTPUT="$RUN_ROOT/agent-full.json" runner/run_agent_parallel.sh
 ```
 
-Concurrency defaults to and is capped at **80**. Results are in `$RUN_ROOT/agent-full.json`;
+Concurrency defaults to **80** and is capped at **120**; the per-task deadline defaults to
+28800 seconds (8 hours), so it is omitted above. Results are in `$RUN_ROOT/agent-full.json`;
 trajectories are in `$RUN_ROOT/agent-raw`. Admitted runs stop their service fleets on exit.
 See [run configuration](docs/configuration.md) for cleanup, recording, and result interpretation.
+To resume an interrupted or partially-scored run, rerun the same command with
+`RESUME_RUN_ID=<the previous RUN_ID>`; tasks that already scored are kept and only unscored
+tasks rerun.
 
 To use the pinned upstream Claude agent, select `AGENT_KIND=claude`. It sends native
 computer-use tool calls through Anthropic Messages. For Bedrock Mantle, configure:
