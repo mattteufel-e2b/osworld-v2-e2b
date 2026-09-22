@@ -1,8 +1,7 @@
 """runner/ is the benchmark path a customer runs, and nothing else.
 
-The maintainer validation ladder lives in maintainer/ and the one-off spikes
-that shaped the port live in tools/spikes/. This test keeps the split from
-eroding: a new file in runner/ must be part of running the agent.
+The maintainer validation ladder lives in maintainer/. This test keeps the
+split from eroding: a new file in runner/ must be part of running the agent.
 """
 
 from __future__ import annotations
@@ -33,8 +32,6 @@ RUNNER_FILES = {
 }
 MAINTAINER_FILES = {
     "README.md",
-    "app_smoke.py",  # fresh-guest application launcher smoke -> committed evidence
-    "browser_probe.py",  # hand-run guest-Chrome secure-context probe over the HTTPS fleet
     "harness.py",
     "no_model.py",
     "profile_resources.sh",
@@ -44,7 +41,6 @@ MAINTAINER_FILES = {
     "validate.sh",
     "validate_parallel.sh",
 }
-SPIKE_FILES = {"spike_audio.py", "spike_ingress.py"}
 
 
 def _files(directory: Path) -> set[str]:
@@ -61,7 +57,3 @@ def test_maintainer_validation_ladder_is_separate_and_marked():
     assert _files(ROOT / "maintainer") == MAINTAINER_FILES
     readme = (ROOT / "maintainer" / "README.md").read_text()
     assert "maintainer" in readme.lower() and "not required" in readme.lower()
-
-
-def test_one_off_spikes_are_out_of_the_runner():
-    assert _files(ROOT / "tools" / "spikes") == SPIKE_FILES
