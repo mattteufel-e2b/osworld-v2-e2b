@@ -10,11 +10,19 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import aiohttp
+import httpx
 from aiohttp.test_utils import make_mocked_request
 from e2b import InvalidArgumentException
+from e2b.exceptions import (
+    AuthenticationException,
+    NotFoundException,
+    RateLimitException,
+    SandboxException,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -665,6 +673,212 @@ class GuestManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("HOSTMAP_PORT=80,8090", start)
         self.assertNotIn("HOSTMAP_TLS_PORTS", start)
         self.assertNotIn("HOSTMAP_TLS_CERT", start)
+
+    @staticmethod
+    def _proxy_install_config(directory, runtime):
+        script_file = Path(directory) / "hostmap_proxy.py"
+        runtime_file = Path(directory) / "runtime.json"
+        script_file.write_text("# guest proxy")
+        runtime_file.write_text(json.dumps(runtime))
+        return bridge.BridgeConfig(
+            template=IMMUTABLE_TEMPLATE,
+            campaign_id="test-campaign",
+            guest_proxy_script=str(script_file),
+            fleet_rules=str(runtime_file),
+        )
+
+    @staticmethod
+    def _minimal_fleet_runtime():
+        return {
+            "websites": {
+                "traffic_token": "websites-traffic-token",
+                "host_suffix": "127.0.0.1.nip.io",
+                "sites": {
+                    "mailhub": {
+                        "ingress_host": "13001-websites.e2b.app",
+                        "port": 13001,
+                    }
+                },
+            }
+        }
+
+    async def test_guest_proxy_install_probes_the_first_port_before_returning(self):
+        class Files:
+            def write(self, path, content, **kwargs):
+                pass
+
+        class Commands:
+            def __init__(self):
+                self.calls = []
+
+            def run(self, command, **kwargs):
+                self.calls.append((command, kwargs))
+                return type("Result", (), {"stdout": "no\n", "exit_code": 0})()
+
+        sandbox = type("Sandbox", (), {"files": Files(), "commands": Commands()})()
+        with tempfile.TemporaryDirectory() as directory:
+            bridge._install_guest_proxy(
+                sandbox,
+                self._proxy_install_config(directory, self._minimal_fleet_runtime()),
+            )
+
+        calls = [command for command, _kwargs in sandbox.commands.calls]
+        start = next(
+            i for i, c in enumerate(calls) if "python3 /opt/hostmap_proxy.py" in c
+        )
+        probes = [i for i, c in enumerate(calls) if "create_connection" in c]
+        self.assertEqual(len(probes), 1)
+        self.assertGreater(probes[0], start)
+        probe, probe_kwargs = sandbox.commands.calls[probes[0]]
+        self.assertIn("('127.0.0.1', 80)", probe)
+        self.assertEqual(probe_kwargs.get("user"), "root")
+        self.assertEqual(probe_kwargs.get("timeout"), 15)
+        self.assertNotIn("background", probe_kwargs)
+        # No log tail is read while the proxy comes up cleanly.
+        self.assertFalse(any("hostmap_proxy.log" in c for c in calls[probes[0] + 1 :]))
+
+    async def test_guest_proxy_install_raises_with_the_log_tail_when_it_never_listens(
+        self,
+    ):
+        class Files:
+            def write(self, path, content, **kwargs):
+                pass
+
+        class Commands:
+            def __init__(self):
+                self.calls = []
+
+            def run(self, command, **kwargs):
+                self.calls.append((command, kwargs))
+                if "create_connection" in command:
+                    raise RuntimeError("exit status 1")
+                if "hostmap_proxy.log" in command:
+                    return type(
+                        "Result",
+                        (),
+                        {
+                            "stdout": "Traceback...\nOSError: [Errno 98] in use\n",
+                            "exit_code": 0,
+                        },
+                    )()
+                return type("Result", (), {"stdout": "no\n", "exit_code": 0})()
+
+        sandbox = type("Sandbox", (), {"files": Files(), "commands": Commands()})()
+        with tempfile.TemporaryDirectory() as directory:
+            config = self._proxy_install_config(
+                directory, self._minimal_fleet_runtime()
+            )
+            with self.assertRaises(RuntimeError) as caught:
+                bridge._install_guest_proxy(sandbox, config)
+
+        message = str(caught.exception)
+        self.assertIn("guest Host-mapping proxy did not start", message)
+        self.assertIn("OSError: [Errno 98] in use", message)
+        tails = [
+            command
+            for command, _kwargs in sandbox.commands.calls
+            if "hostmap_proxy.log" in command and command.startswith("tail")
+        ]
+        self.assertEqual(tails, ["tail -n 20 /var/log/hostmap_proxy.log"])
+
+    async def test_sandbox_create_retries_burst_rejections_then_succeeds(self):
+        # A 429 from a concurrent burst of worker creates must cost a short
+        # backoff, not a whole task's inference spend.
+        templates = []
+        real_create = FakeSandbox.create
+
+        def flaky_create(template, **kwargs):
+            templates.append(template)
+            if len(templates) <= 2:
+                raise RateLimitException("429: Rate limit exceeded")
+            return real_create(template, **kwargs)
+
+        sleeps = []
+        with (
+            patch.object(bridge, "Sandbox", FakeSandbox),
+            patch.object(FakeSandbox, "create", staticmethod(flaky_create)),
+            patch.object(bridge, "time", SimpleNamespace(sleep=sleeps.append)),
+            patch.object(
+                bridge, "random", SimpleNamespace(uniform=lambda low, high: 0.5)
+            ),
+            patch.object(self.manager, "_wait_ready", AsyncMock()),
+        ):
+            guest = await self.manager.replace()
+
+        self.assertEqual(len(templates), 3)
+        self.assertEqual(templates, [IMMUTABLE_TEMPLATE] * 3)
+        self.assertEqual(sleeps, [2.5, 4.5])
+        self.assertEqual(guest.sandbox_id, FakeSandbox.created[0].sandbox_id)
+        self.assertFalse(FakeSandbox.created[0].killed)
+
+    async def test_sandbox_create_gives_up_after_the_bounded_attempts(self):
+        templates = []
+
+        def always_rejected(template, **kwargs):
+            templates.append(template)
+            raise RateLimitException("429: Rate limit exceeded")
+
+        sleeps = []
+        with (
+            patch.object(bridge, "Sandbox", FakeSandbox),
+            patch.object(FakeSandbox, "create", staticmethod(always_rejected)),
+            patch.object(bridge, "time", SimpleNamespace(sleep=sleeps.append)),
+            patch.object(
+                bridge, "random", SimpleNamespace(uniform=lambda low, high: 0.0)
+            ),
+            patch.object(self.manager, "_wait_ready", AsyncMock()),
+        ):
+            with self.assertRaises(RateLimitException):
+                await self.manager.replace()
+
+        self.assertEqual(len(templates), bridge.SANDBOX_CREATE_RETRY_ATTEMPTS)
+        self.assertEqual(sleeps, [2.0, 4.0, 6.0])
+
+    async def test_sandbox_create_does_not_retry_a_client_error(self):
+        templates = []
+
+        def forbidden(template, **kwargs):
+            templates.append(template)
+            raise SandboxException("403: forbidden")
+
+        sleeps = []
+        with (
+            patch.object(bridge, "Sandbox", FakeSandbox),
+            patch.object(FakeSandbox, "create", staticmethod(forbidden)),
+            patch.object(bridge, "time", SimpleNamespace(sleep=sleeps.append)),
+            patch.object(self.manager, "_wait_ready", AsyncMock()),
+        ):
+            with self.assertRaises(SandboxException):
+                await self.manager.replace()
+
+        self.assertEqual(len(templates), 1)
+        self.assertEqual(sleeps, [])
+
+    def test_create_retry_classifier_separates_transient_from_permanent(self):
+        retryable = [
+            RateLimitException("429: Rate limit exceeded"),
+            bridge.TimeoutException("timed out"),
+            TimeoutError(),
+            aiohttp.ClientConnectionError(),
+            httpx.TransportError("connection reset"),
+            SandboxException("500: internal error"),
+            SandboxException("502: bad gateway"),
+            SandboxException("no status in this message"),
+        ]
+        permanent = [
+            AuthenticationException("401: Unauthorized"),
+            SandboxException("403: forbidden"),
+            SandboxException("404: not found"),
+            NotFoundException("404: sandbox not found"),
+            InvalidArgumentException("400: bad template"),
+            ValueError("not an SDK error"),
+        ]
+        for exc in retryable:
+            with self.subTest(exc=exc):
+                self.assertTrue(bridge._is_retryable_create_error(exc))
+        for exc in permanent:
+            with self.subTest(exc=exc):
+                self.assertFalse(bridge._is_retryable_create_error(exc))
 
     async def test_replace_does_not_expand_fleet_routes_into_guest_network_rules(self):
         with (

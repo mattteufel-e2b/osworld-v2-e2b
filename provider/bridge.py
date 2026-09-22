@@ -20,10 +20,12 @@ import contextlib
 import json
 import logging
 import os
+import random
 import re
 import secrets
 import tempfile
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -31,6 +33,7 @@ import aiohttp
 import httpx
 from aiohttp import web
 from e2b import Sandbox, TimeoutException
+from e2b.exceptions import RateLimitException, SandboxException
 
 from e2b_policy import (
     require_campaign_id,
@@ -54,6 +57,38 @@ SETUP_UPLOAD_TRANSIENT_ERRORS = (
     aiohttp.ClientConnectionError,
     httpx.TransportError,
 )
+SANDBOX_CREATE_RETRY_ATTEMPTS = 4
+SANDBOX_CREATE_RETRY_DELAY_S = 2.0
+# The guest proxy is started in the background, so a crashed start (a port
+# already bound, a syntax error in the uploaded script) is otherwise invisible
+# until every website request in the task fails.
+GUEST_PROXY_PROBE_TIMEOUT_S = 10
+GUEST_PROXY_PROBE_INTERVAL_S = 0.5
+GUEST_PROXY_PROBE_COMMAND_TIMEOUT_S = 15
+# A leading HTTP status in an e2b SandboxException message
+# (api_exception_from_code formats every mapped error as "<status>: <message>").
+_HTTP_STATUS_PREFIX = re.compile(r"^(\d{3}):")
+
+
+def _is_retryable_create_error(exc: BaseException) -> bool:
+    """True for control-plane failures a second create can still win.
+
+    A burst of concurrent workers draws 429s and transient 5xx/transport
+    errors; those are worth a short backoff. Credentials, a bad template and a
+    missing snapshot are permanent and must fail the task immediately. e2b maps
+    429 to RateLimitException and 401 to AuthenticationException (not a
+    SandboxException at all); everything else arrives as the base
+    SandboxException or a specific, permanent subclass, so only the base class
+    is eligible -- and only when its message does not start with a 4xx status.
+    """
+    if isinstance(exc, SETUP_UPLOAD_TRANSIENT_ERRORS) or isinstance(
+        exc, RateLimitException
+    ):
+        return True
+    if type(exc) is SandboxException:
+        status = _HTTP_STATUS_PREFIX.match(str(exc))
+        return not (status and 400 <= int(status.group(1)) < 500)
+    return False
 
 
 def _env_int(name: str, default: int) -> int:
@@ -287,7 +322,55 @@ def _install_guest_proxy(sandbox: Sandbox, config: BridgeConfig) -> None:
         background=True,
         timeout=0,
     )
+    _await_guest_proxy(sandbox, ports)
     logger.info("guest Host-mapping proxy installed on :%s", ports)
+
+
+def _await_guest_proxy(sandbox: Sandbox, ports: str) -> None:
+    """Block until the backgrounded guest proxy accepts a connection.
+
+    The start above is `background=True`, so a proxy that dies on launch (a
+    bound port, an unreadable runtime file) leaves no trace until every
+    website request in the task fails. Probe its first listener from inside
+    the guest and raise instead, so the caller's replace path kills the guest
+    and the run gets a fresh one.
+    """
+    port = int(ports.split(",")[0])
+    probe = (
+        "python3 - <<'PY'\n"
+        "import socket, sys, time\n"
+        f"deadline = time.monotonic() + {GUEST_PROXY_PROBE_TIMEOUT_S}\n"
+        "while True:\n"
+        "    try:\n"
+        f"        socket.create_connection(('127.0.0.1', {port}), timeout=1).close()\n"
+        "        sys.exit(0)\n"
+        "    except OSError:\n"
+        "        if time.monotonic() >= deadline:\n"
+        "            sys.exit(1)\n"
+        f"        time.sleep({GUEST_PROXY_PROBE_INTERVAL_S})\n"
+        "PY"
+    )
+    try:
+        result = sandbox.commands.run(
+            probe,
+            user="root",
+            timeout=GUEST_PROXY_PROBE_COMMAND_TIMEOUT_S,
+        )
+        if getattr(result, "exit_code", 0) == 0:
+            return
+    except Exception as exc:
+        logger.warning("guest Host-mapping proxy probe on :%s failed: %s", port, exc)
+    tail = ""
+    try:
+        log = sandbox.commands.run(
+            "tail -n 20 /var/log/hostmap_proxy.log",
+            user="root",
+            timeout=GUEST_PROXY_PROBE_COMMAND_TIMEOUT_S,
+        )
+        tail = (getattr(log, "stdout", "") or "").strip()
+    except Exception as exc:  # the log is diagnostic; never mask the real fault
+        tail = f"<could not read /var/log/hostmap_proxy.log: {exc}>"
+    raise RuntimeError(f"guest Host-mapping proxy did not start: {tail}")
 
 
 def _guest_proxy_runtime_json(rules_json: str) -> str:
@@ -543,17 +626,40 @@ class GuestManager:
     ) -> Guest:
         def create_sync() -> Sandbox:
             template_or_snapshot = source or self._config.template
-            sandbox = Sandbox.create(
-                template_or_snapshot,
-                timeout=self._config.sandbox_timeout_s,
-                secure=True,
-                network=sandbox_network_policy(),
-                metadata={
-                    "workload": "osworld",
-                    "generation": str(generation),
-                    "campaign_id": self._config.campaign_id,
-                },
-            )
+            # 80 workers create sandboxes at once at the start of a run and
+            # after every task's strict reset; a rate-limited or transiently
+            # failed create here costs the whole task's inference spend, so
+            # spend a bounded backoff on it before giving up.
+            for attempt in range(1, SANDBOX_CREATE_RETRY_ATTEMPTS + 1):
+                try:
+                    sandbox = Sandbox.create(
+                        template_or_snapshot,
+                        timeout=self._config.sandbox_timeout_s,
+                        secure=True,
+                        network=sandbox_network_policy(),
+                        metadata={
+                            "workload": "osworld",
+                            "generation": str(generation),
+                            "campaign_id": self._config.campaign_id,
+                        },
+                    )
+                    break
+                except Exception as exc:
+                    if attempt == SANDBOX_CREATE_RETRY_ATTEMPTS or not (
+                        _is_retryable_create_error(exc)
+                    ):
+                        raise
+                    delay = SANDBOX_CREATE_RETRY_DELAY_S * attempt + random.uniform(
+                        0, 1
+                    )
+                    logger.warning(
+                        "sandbox create attempt %s/%s failed (%s); retrying in %.1fs",
+                        attempt,
+                        SANDBOX_CREATE_RETRY_ATTEMPTS,
+                        type(exc).__name__,
+                        delay,
+                    )
+                    time.sleep(delay)
             # The awaiting task can be cancelled while this thread runs (client
             # disconnect, shutdown, a timed-out Bridge._call); the thread still
             # completes and would leak the sandbox. asyncio.run() waits for
