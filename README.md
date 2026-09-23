@@ -75,7 +75,7 @@ trajectories are in `$RUN_ROOT/agent-raw`. Admitted runs stop their service flee
 See [run configuration](docs/configuration.md) for cleanup, recording, and result interpretation.
 To resume an interrupted or partially-scored run, rerun the same command with
 `RESUME_RUN_ID=<the previous RUN_ID>`; tasks that already scored are kept and only unscored
-tasks rerun.
+tasks rerun. A resume with no scored tasks reruns everything under a fresh nonce.
 
 To use the pinned upstream Claude agent, select `AGENT_KIND=claude`. It sends native
 computer-use tool calls through Anthropic Messages. For Bedrock Mantle, configure:

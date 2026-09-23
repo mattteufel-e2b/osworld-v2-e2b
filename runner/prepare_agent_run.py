@@ -46,12 +46,16 @@ def _clear(worker_dir: Path, task_id: str) -> None:
             stale.unlink()
 
 
-def prepare(manifest_path: Path, worker_dir: Path) -> str:
-    task_ids = _task_ids(manifest_path)
-    worker_dir.mkdir(parents=True, exist_ok=True)
+def _clear_all(worker_dir: Path, task_ids: list[str]) -> None:
     for task_id in task_ids:
         _clear(worker_dir, task_id)
     (worker_dir / "retries.json").unlink(missing_ok=True)
+
+
+def prepare(manifest_path: Path, worker_dir: Path) -> str:
+    task_ids = _task_ids(manifest_path)
+    worker_dir.mkdir(parents=True, exist_ok=True)
+    _clear_all(worker_dir, task_ids)
     return str(uuid.uuid4())
 
 
@@ -64,6 +68,17 @@ def resume(manifest_path: Path, worker_dir: Path) -> str:
     """
     task_ids = _task_ids(manifest_path)
     kept = [task_id for task_id in task_ids if _scored(worker_dir, task_id)]
+    if not kept:
+        # No task has scored yet -- the interrupt-then-resume common case.
+        # There is no earlier run's nonce to rejoin, so this worker dir is
+        # cleared exactly as a fresh `prepare()` would and started over.
+        _clear_all(worker_dir, task_ids)
+        nonce = str(uuid.uuid4())
+        print(
+            f"resuming {worker_dir}: no scored tasks yet; starting a fresh nonce",
+            file=sys.stderr,
+        )
+        return nonce
     nonces: set[str] = set()
     for task_id in kept:
         try:

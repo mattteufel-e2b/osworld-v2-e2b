@@ -111,7 +111,10 @@ def test_resume_rejects_disagreeing_nonces(tmp_path):
     assert (workers / "task_003.json").exists()  # a rejected resume changes nothing
 
 
-def test_resume_rejects_a_worker_dir_with_nothing_to_resume(tmp_path):
+def test_resume_starts_fresh_when_nothing_has_ever_run(tmp_path):
+    """The most common resume: interrupted before any task scored. This must
+    behave like a fresh run, not raise -- see the live-run evidence in the
+    commit that introduced this test."""
     workers = tmp_path / "workers"
     workers.mkdir()
     manifest = tmp_path / "m.json"
@@ -119,5 +122,47 @@ def test_resume_rejects_a_worker_dir_with_nothing_to_resume(tmp_path):
 
     result = _resume(workers, manifest)
 
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert len(result.stdout.strip()) == 36  # nonce
+    assert (
+        result.stderr.strip()
+        == f"resuming {workers}: no scored tasks yet; starting a fresh nonce"
+    )
+
+
+def test_resume_clears_stale_unscored_receipts_when_nothing_scored(tmp_path):
+    workers = tmp_path / "workers"
+    workers.mkdir()
+    (workers / "task_001.json").write_text(json.dumps({"error_cause": "timeout"}))
+    (workers / "task_001.log").write_text("attempt")
+    (workers / "task_001_before_retry_1.json").write_text("{}")
+    (workers / "task_001_retry_1.log").write_text("retry")
+    (workers / "retries.json").write_text("[]")
+    manifest = tmp_path / "m.json"
+    manifest.write_text(json.dumps({"tasks": [{"id": "001"}]}))
+
+    result = _resume(workers, manifest)
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert len(result.stdout.strip()) == 36
+    assert (
+        result.stderr.strip()
+        == f"resuming {workers}: no scored tasks yet; starting a fresh nonce"
+    )
+    assert sorted(p.name for p in workers.iterdir()) == []
+
+
+def test_resume_rejects_a_scored_task_with_no_recoverable_nonce(tmp_path):
+    workers = tmp_path / "workers"
+    workers.mkdir()
+    (workers / "task_001").mkdir()
+    (workers / "task_001" / "result.txt").write_text("1.0")
+    (workers / "task_001.json").write_text(json.dumps({"path_status": "OK"}))
+    manifest = tmp_path / "m.json"
+    manifest.write_text(json.dumps({"tasks": [{"id": "001"}]}))
+
+    result = _resume(workers, manifest)
+
     assert result.returncode == 2, (result.stdout, result.stderr)
     assert "nothing to resume" in result.stderr
+    assert (workers / "task_001.json").exists()  # a rejected resume changes nothing

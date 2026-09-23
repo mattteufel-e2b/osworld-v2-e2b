@@ -49,7 +49,7 @@ unset. `POOL_POLL_SECONDS`, `PROXY_WATCHDOG_SECONDS`, `FLEET_LIVENESS_SECONDS`, 
 | --- | --- | --- |
 | `AGENT_MANIFEST` | `validation/full-manifest.json` | Task manifest the campaign selects tasks from. |
 | `RUN_ID` | `<UTC timestamp>-$$` | Identifies this run; seeds the `RAW_DIR`/`OUTPUT` defaults below. |
-| `RESUME_RUN_ID` | unset | A previous `RUN_ID` to resume. Kept tasks (an existing `result.txt`) are skipped and their receipts count; unscored tasks rerun; the previous run's nonce is recovered. A task with a `result.txt` but no receipt is never rerun automatically. |
+| `RESUME_RUN_ID` | unset | A previous `RUN_ID` to resume. Kept tasks (an existing `result.txt`) are skipped and their receipts count; unscored tasks rerun; the previous run's nonce is recovered. A task with a `result.txt` but no receipt is never rerun automatically. A resume with no scored tasks reruns everything under a fresh nonce. |
 | `RAW_DIR` | `out/osworld-v2-raw/agent-full/$RUN_ID` | Per-worker trajectories, receipts, and coordinator logs. |
 | `OUTPUT` | `out/osworld-v2-evidence/full-suite/agent-$RUN_ID.json` | Campaign receipt path. |
 
