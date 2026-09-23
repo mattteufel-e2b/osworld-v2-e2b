@@ -293,7 +293,7 @@ probe_fleet_liveness() {
 # model tokens. Watch it from the background and put a replacement back on
 # 8090; the counters are the callee's to update (bash scopes them dynamically).
 proxy_watchdog() {
-    local since_probe=0 restart_backoff=0
+    local since_probe=0 restart_backoff=0 restart_status=0
     local websites_failures=0 websites_reported=0
     local gitlab_failures=0 gitlab_reported=0
     while :; do
@@ -308,13 +308,26 @@ proxy_watchdog() {
         elif ! kill -0 "$proxy_pid" 2>/dev/null; then
             echo "hostmap proxy died; restarting" >&2
             echo "hostmap proxy died; restarting" >>"$PROXY_LOG"
-            if ! start_host_proxy "agent-benchmark" "$PROXY_LOG"; then
-                # No proxy of this run is alive: the file must stop naming the
-                # dead one, which cleanup would otherwise kill once the pid has
-                # been recycled. Clearing this subshell's copy makes the next
-                # cycle attempt a restart rather than poll a corpse.
-                : >"$HOSTMAP_PROXY_PID_FILE"
-                proxy_pid=""
+            restart_status=0
+            start_host_proxy "agent-benchmark" "$PROXY_LOG" || restart_status=$?
+            if [ "$restart_status" -ne 0 ]; then
+                # The two failures need opposite handling. 2: the port was
+                # occupied, nothing of ours started, so the file must stop
+                # naming the dead proxy -- cleanup would kill that pid once it
+                # had been recycled -- and clearing this subshell's copy makes
+                # the next cycle retry rather than poll a corpse. 1: a
+                # replacement DID start (common.sh wrote its pid) and never
+                # answered; it is alive, it holds 8090, and it is this
+                # subshell's child, so the file is the only way cleanup can
+                # reach it. Keep the file and adopt the pid.
+                if [ "$restart_status" -eq 2 ]; then
+                    : >"$HOSTMAP_PROXY_PID_FILE"
+                    proxy_pid=""
+                else
+                    proxy_pid="$(cat "$HOSTMAP_PROXY_PID_FILE" 2>/dev/null)"
+                    echo "hostmap proxy restarted but never became ready;" \
+                        "pid $proxy_pid kept for cleanup" >&2
+                fi
                 restart_backoff="$PROXY_RESTART_BACKOFF_CYCLES"
                 echo "hostmap proxy restart failed; retrying in" \
                     "$((PROXY_RESTART_BACKOFF_CYCLES * PROXY_WATCHDOG_SECONDS)) s" >&2

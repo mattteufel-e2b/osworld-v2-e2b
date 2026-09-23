@@ -82,7 +82,9 @@ PY
 # cannot stall the caller past ~30 iterations. Prints the log tail on failure.
 wait_for_hostmap_proxy() {
     local pid="$1" cookie="$2" logfile="$3" _
-    for _ in $(seq 1 30); do
+    # Poll count, not an operator knob: the tests shorten it so a proxy that
+    # never answers is diagnosed in seconds rather than a minute.
+    for _ in $(seq 1 "${HOSTMAP_READY_ATTEMPTS:-30}"); do
         if ! kill -0 "$pid" 2>/dev/null; then break; fi
         # --resolve makes curl present the site name as SNI and Host so the
         # leaf certificate's SAN matches; connecting to the bare IP would fail

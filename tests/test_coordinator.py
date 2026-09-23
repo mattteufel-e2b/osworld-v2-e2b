@@ -979,8 +979,13 @@ def _watchdog_env(tmp_path: Path, proxy_case: str) -> dict[str, str]:
     return env
 
 
-def _run_until(env: dict[str, str], ready, timeout: float = 45):
-    """Drive the coordinator until `ready()` holds, then cancel it."""
+def _run_until(env: dict[str, str], ready, timeout: float = 45, after_exit=None):
+    """Drive the coordinator until `ready()` holds, then cancel it.
+
+    `after_exit` runs once the coordinator has exited and before this helper's
+    own teardown kills anything, so a test can observe what the coordinator's
+    cleanup did rather than what the teardown did.
+    """
     process = subprocess.Popen(
         ["bash", str(ROOT / "runner/run_agent_parallel.sh")],
         cwd=ROOT,
@@ -999,6 +1004,8 @@ def _run_until(env: dict[str, str], ready, timeout: float = 45):
             time.sleep(0.2)
         process.terminate()
         stdout, stderr = process.communicate(timeout=60)
+        if after_exit is not None:
+            after_exit()
     finally:
         if process.poll() is None:
             process.kill()
@@ -1118,6 +1125,77 @@ def test_refused_proxy_restart_empties_the_pid_file_and_backs_off(tmp_path):
     assert stderr.count("127.0.0.1:8090 is already occupied") == 1, stderr
     # PROXY_WATCHDOG_SECONDS=1, so five skipped cycles is five seconds.
     assert stderr.count("hostmap proxy restart failed; retrying in 5 s") == 1, stderr
+
+
+@needs_free_hostmap_port
+def test_unready_proxy_restart_keeps_its_pid_for_cleanup(tmp_path):
+    # start_host_proxy returns 1 for a replacement that started but never
+    # answered: that process is alive, holds 8090, and belongs to the watchdog
+    # subshell, so emptying the pid file would strand it -- cleanup skips an
+    # empty file and every later restart hits the occupancy check. The pid
+    # stays on disk and the watchdog adopts it, so cleanup can kill it.
+    env = _watchdog_env(
+        tmp_path,
+        '  *hostmap_proxy.py*) echo $$ >> "$PROXY_STARTS_FILE"; '
+        'if [ "$(wc -l < "$PROXY_STARTS_FILE")" -le 1 ]; then exec sleep 2; fi; '
+        "exec sleep 120 ;;",
+    )
+    ready_count = tmp_path / "ready-count"
+    _write_executable(
+        tmp_path / "bin" / "curl",
+        # The first readiness probe admits the run; the replacement's probes
+        # all fail, so its start_host_proxy returns 1 with the proxy alive.
+        f"""#!/bin/sh
+case "$*" in
+  *cookie=agent-benchmark*)
+    count=$(cat "{ready_count}" 2>/dev/null || echo 0)
+    count=$((count + 1))
+    echo "$count" > "{ready_count}"
+    [ "$count" -le 1 ] ;;
+  *) exit 0 ;;
+esac
+""",
+    )
+    env["HOSTMAP_READY_ATTEMPTS"] = "3"  # ~6s, not the production minute
+    pid_file = Path(env["RAW_DIR"]) / "hostmap-proxy.pid"
+    liveness = Path(env["RAW_DIR"]) / "fleet-liveness.log"
+    starts = Path(env["PROXY_STARTS_FILE"])
+    state: dict[str, object] = {"replacement": None, "lines": 0}
+
+    def liveness_lines() -> int:
+        return len(liveness.read_text().splitlines()) if liveness.exists() else 0
+
+    def diagnosed():
+        started = starts.read_text().split() if starts.exists() else []
+        if state["replacement"] is None:
+            if len(started) < 2:
+                return False
+            state["replacement"] = started[1]
+            # Captured inside the readiness wait, which blocks the probes.
+            state["lines"] = liveness_lines()
+            return False
+        # Probes resume only once start_host_proxy has returned and the
+        # watchdog's failure branch has run.
+        return liveness_lines() >= state["lines"] + 2
+
+    def after_exit():
+        # Before this helper's teardown gets a chance: the kill under test is
+        # the coordinator's own cleanup.
+        _assert_process_gone(int(state["replacement"]))
+
+    satisfied, stdout, stderr = _run_until(env, diagnosed, after_exit=after_exit)
+
+    assert satisfied, (stdout, stderr)
+    replacement = state["replacement"]
+    # The unready replacement is what cleanup has to kill, so it stays named.
+    assert pid_file.read_text().strip() == replacement, (stdout, stderr)
+    assert (
+        f"hostmap proxy restarted but never became ready; pid {replacement} "
+        "kept for cleanup" in stderr
+    ), stderr
+    # The backoff applies to this failure too: no third start in the window.
+    assert stderr.count("hostmap proxy restart failed; retrying in 5 s") == 1, stderr
+    assert len(starts.read_text().split()) == 2, (starts.read_text(), stderr)
 
 
 @needs_free_hostmap_port
