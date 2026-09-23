@@ -137,6 +137,7 @@ def test_claude_builder_preserves_separate_judge_transport(agents, monkeypatch):
     monkeypatch.setenv("MODEL_API_KEY", "test-model-key")
     monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://judge.test/anthropic")
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "unrelated-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "operator-key")
     settings = agents.agent_settings("claude", max_steps=37)
     agent = agents.build_agent(
         "claude",
@@ -146,13 +147,16 @@ def test_claude_builder_preserves_separate_judge_transport(agents, monkeypatch):
     )
     assert isinstance(agent, claude_module.AnthropicAgent)
     assert agent.kwargs["provider"] == "messages"
-    assert agent.kwargs["api_key"] == "test-model-key"
+    # Bearer only: an api_key here would make the SDK send X-Api-Key beside
+    # the Authorization header predict() exports, which Mantle rejects.
+    assert agent.kwargs["api_key"] is None
     assert agent.kwargs["screen_size"] == (1920, 1080)
     assert agent.kwargs["max_steps"] == 37
     assert agent.kwargs["only_n_most_recent_images"] == 10
     assert "max_trajectory_length" not in agent.kwargs
     assert os.environ["ANTHROPIC_BASE_URL"] == "https://judge.test/anthropic"
     assert os.environ["ANTHROPIC_AUTH_TOKEN"] == "unrelated-key"
+    assert os.environ["ANTHROPIC_API_KEY"] == "operator-key"
 
 
 def test_claude_preflight_does_not_import_the_optional_anthropic_sdk(tmp_path):

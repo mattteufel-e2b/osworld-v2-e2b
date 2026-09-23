@@ -188,13 +188,23 @@ def build_claude_agent(model: str, settings: dict, client_password: str):
 
         def predict(self, *args, **kwargs):
             # Judge/simulator SDK clients use the same process environment.
+            # Bearer only: Mantle rejects a request that carries both
+            # 'authorization' and 'x-api-key', and the SDK merges the two
+            # whenever an API key resolves -- from the constructor argument
+            # (kept None below) or from ANTHROPIC_API_KEY, which an operator
+            # shell may export. Drop that key for the duration of the call.
             overrides = {
                 "ANTHROPIC_BASE_URL": os.environ["MODEL_BASE_URL"],
-                "ANTHROPIC_AUTH_TOKEN": self.api_key,
+                "ANTHROPIC_AUTH_TOKEN": os.environ["MODEL_API_KEY"],
+                "ANTHROPIC_API_KEY": None,
             }
             previous = {key: os.environ.get(key) for key in overrides}
             try:
-                os.environ.update(overrides)
+                for key, value in overrides.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
                 response, actions = super().predict(*args, **kwargs)
             finally:
                 for key, value in previous.items():
@@ -218,7 +228,10 @@ def build_claude_agent(model: str, settings: dict, client_password: str):
 
     return NativeClaudeAgent(
         model=model,
-        api_key=os.environ["MODEL_API_KEY"],
+        # Upstream passes this straight to Anthropic(api_key=...), which would
+        # add an X-Api-Key header alongside the bearer token predict() exports.
+        # None leaves the SDK with bearer auth alone.
+        api_key=None,
         # Mantle accepts Anthropic Messages with bearer auth, not the SDK's
         # SigV4/Bedrock Runtime transport selected by APIProvider.BEDROCK.
         provider=APIProvider.ANTHROPIC,

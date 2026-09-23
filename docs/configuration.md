@@ -136,6 +136,9 @@ Agent credentials are separate from the upstream judge and simulator credentials
 uses OpenAI with `OPENAI_API_KEY`; select another endpoint using upstream's settings.
 The Claude adapter scopes its Anthropic endpoint and bearer token to each prediction,
 restoring the environment before any judge or simulator call, including on interruption.
+It also clears `ANTHROPIC_API_KEY` for the duration of the prediction and gives the upstream
+agent no API key of its own, so the agent request carries a bearer token alone: Bedrock Mantle
+rejects a request that arrives with both `authorization` and `x-api-key`.
 
 ### Recommended: Haiku 4.5 on Bedrock
 

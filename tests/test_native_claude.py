@@ -30,25 +30,36 @@ def test_native_agent_restores_judge_transport_after_prediction(existing, interr
             import anthropic
 
             existing, interrupt = sys.argv[1] == 'True', sys.argv[2] == 'True'
-            keys = ('ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN')
+            keys = ('ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_API_KEY')
             for key in keys:
                 os.environ.pop(key, None)
             if existing:
+                # An operator shell exporting ANTHROPIC_API_KEY must not be able
+                # to reintroduce the second auth header Mantle rejects.
                 os.environ.update(ANTHROPIC_BASE_URL='https://judge.test/anthropic',
-                                  ANTHROPIC_AUTH_TOKEN='judge-token')
+                                  ANTHROPIC_AUTH_TOKEN='judge-token',
+                                  ANTHROPIC_API_KEY='operator-key')
             before = {key: os.environ.get(key) for key in keys}
             os.environ.update(MODEL_BASE_URL='https://agent.test/anthropic', MODEL_API_KEY='agent-key')
             class Interrupted(BaseException): pass
             def predict(self, *args, **kwargs):
+                assert os.environ['ANTHROPIC_BASE_URL'] == os.environ['MODEL_BASE_URL']
+                assert os.environ['ANTHROPIC_AUTH_TOKEN'] == os.environ['MODEL_API_KEY']
+                assert 'ANTHROPIC_API_KEY' not in os.environ
+                assert self.api_key is None
+                # The contract with Mantle: bearer only, never X-Api-Key too.
                 client = anthropic.Anthropic(api_key=self.api_key)
                 assert str(client.base_url) == 'https://agent.test/anthropic/'
+                assert client.api_key is None
                 assert client.auth_token == 'agent-key'
+                assert client.auth_headers == {'Authorization': 'Bearer agent-key'}
                 client.close()
                 if interrupt: raise Interrupted()
                 return 'question', []
             AnthropicAgent.predict = predict
             agent = build_agent('claude', model='anthropic.claude-opus-5',
                                 settings=agent_settings('claude'), client_password='osworld-public-evaluation')
+            assert agent.api_key is None
             assert {key: os.environ.get(key) for key in keys} == before
             try:
                 assert agent.predict('task', {}) == ('question', [])
@@ -137,7 +148,8 @@ def test_native_agent_sends_effective_settings_and_preserves_tool_action_diction
             assert request.url.host == 'bedrock-mantle.us-east-1.api.aws'
             assert request.url.path == '/anthropic/v1/messages'
             assert request.headers['authorization'] == 'Bearer offline-test-key'
-            assert request.headers['x-api-key'] == 'offline-test-key'
+            # Mantle rejects a request carrying both auth headers.
+            assert 'x-api-key' not in request.headers
             assert request.headers['anthropic-beta'] == 'computer-use-2025-11-24'
             assert payload['system'][0]['cache_control'] == {'type': 'ephemeral'}
             assert any(block.get('cache_control') == {'type': 'ephemeral'}
