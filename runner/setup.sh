@@ -3,7 +3,7 @@
 # (examples/osworld-v2/upstream.lock.json) and wire in the E2B provider
 # (provider/provider.py + provider/manager.py + provider/bridge.py, the
 # in-process bridge) so OSWorld-V2's own run.py works with --provider_name e2b.
-# Idempotent: re-running is safe and each string patch (a)-(p) is guarded,
+# Idempotent: re-running is safe and each string patch (a)-(q) is guarded,
 # reporting "already applied" on the second run.
 #
 # Checkout states (the checkout is gitignored, so its state lives on disk only):
@@ -433,6 +433,28 @@ replace_once(
     "(n) Claude prompt caching omits obsolete beta header",
 )
 
+# (q) native Claude adapter: a permanently failing status never succeeds on
+# retry. Upstream sleeps API_RETRY_INTERVAL (5 s) between API_RETRY_TIMES (500)
+# attempts, so a 401 spent the worker's whole task deadline inside time.sleep
+# (live rehearsal 2026-09-22: "attempt 414/500: Error code: 401"). Only the
+# permanent statuses short-circuit: 400/413 stay with upstream's
+# request-too-large handling, and 429/5xx keep the full retry budget.
+replace_once(
+    "mm_agents/anthropic/main.py",
+    '                    logger.warning(f"Anthropic API error (attempt {attempt+1}/{API_RETRY_TIMES}): {error_msg}")\n'
+    '\n'
+    '                    if self._is_request_too_large_error(e):\n',
+    '                    logger.warning(f"Anthropic API error (attempt {attempt+1}/{API_RETRY_TIMES}): {error_msg}")\n'
+    '\n'
+    '                    if isinstance(e, APIStatusError) and e.status_code in (401, 403, 404):\n'
+    '                        # Authentication, permission, and not-found errors never\n'
+    '                        # succeed on retry; fail this prediction closed instead of\n'
+    '                        # sleeping through the task deadline.\n'
+    '                        raise\n'
+    '                    if self._is_request_too_large_error(e):\n',
+    "(q) Claude permanent 4xx errors fail closed",
+)
+
 EOF
 }
 
@@ -524,7 +546,7 @@ touch "$DEST/desktop_env/providers/e2b/__init__.py"
 # The bridge imports e2b_policy from the checkout root (run.py's cwd).
 cp "$POLICY_FILE" "$DEST/e2b_policy.py"
 
-# ---- string patches (a)-(p): register + classify the provider, force strict
+# ---- string patches (a)-(q): register + classify the provider, force strict
 #      reset, accept --provider_name e2b in the M3 multi-env runner, and the
 #      disclosed agent transport / parser / controller execution patches ----
 apply_adapter_patches "$DEST"

@@ -87,7 +87,7 @@ def _apply_patches(dest: Path) -> None:
         )
         + 3
     ]
-    subprocess.run(
+    return subprocess.run(
         ["bash", "-c", body + f'\napply_adapter_patches "{dest}"'],
         check=True,
         capture_output=True,
@@ -114,6 +114,23 @@ PINNED_ANTHROPIC_KEY_TABLE = (
     '                    "super": "command",\n'
     '                    "escape": "esc"\n'
     "                }\n"
+)
+PINNED_CLAUDE_RETRY = (
+    '                    logger.warning(f"Anthropic API error '
+    '(attempt {attempt+1}/{API_RETRY_TIMES}): {error_msg}")\n'
+    "\n"
+    "                    if self._is_request_too_large_error(e):\n"
+)
+PATCHED_CLAUDE_RETRY = (
+    '                    logger.warning(f"Anthropic API error '
+    '(attempt {attempt+1}/{API_RETRY_TIMES}): {error_msg}")\n'
+    "\n"
+    "                    if isinstance(e, APIStatusError) and e.status_code in (401, 403, 404):\n"
+    "                        # Authentication, permission, and not-found errors never\n"
+    "                        # succeed on retry; fail this prediction closed instead of\n"
+    "                        # sleeping through the task deadline.\n"
+    "                        raise\n"
+    "                    if self._is_request_too_large_error(e):\n"
 )
 PINNED_INFEASIBLE = (
     '    if "[INFEASIBLE]" in response:\n        return "[INFEASIBLE]", ["FAIL"]\n'
@@ -145,6 +162,7 @@ PIN_ANCHORS = {
     "mm_agents/anthropic/main.py": (
         "            betas.append(PROMPT_CACHING_BETA_FLAG)\n",
         '                    "super_l": "win",\n                    "super": "command",\n',
+        PINNED_CLAUDE_RETRY,
     ),
     "mm_agents/m3/parser.py": (
         '                "super_l": "win",\n                "super": "command",\n',
@@ -550,14 +568,18 @@ def test_native_claude_patches_preserve_every_other_byte_and_are_idempotent(
     pristine = subprocess.check_output(
         ["git", "-C", str(ROOT / "OSWorld-V2"), "show", f"{PIN}:{relative}"], text=True
     )
-    expected = pristine.replace(
-        "            betas.append(PROMPT_CACHING_BETA_FLAG)\n",
-        "            # Prompt caching is generally available; keep cache_control without the obsolete beta.\n",
-        1,
-    ).replace(
-        '                    "super_l": "win",\n                    "super": "command",\n',
-        '                    "super_l": "win",\n                    "super": "win",\n',
-        1,
+    expected = (
+        pristine.replace(
+            "            betas.append(PROMPT_CACHING_BETA_FLAG)\n",
+            "            # Prompt caching is generally available; keep cache_control without the obsolete beta.\n",
+            1,
+        )
+        .replace(
+            '                    "super_l": "win",\n                    "super": "command",\n',
+            '                    "super_l": "win",\n                    "super": "win",\n',
+            1,
+        )
+        .replace(PINNED_CLAUDE_RETRY, PATCHED_CLAUDE_RETRY, 1)
     )
     assert (patched_checkout / relative).read_text() == expected
     _apply_patches(patched_checkout)
@@ -753,10 +775,11 @@ def test_setup_maps_claude_super_key_to_x11_win(tmp_path):
     )
     main = dest / "mm_agents" / "anthropic" / "main.py"
     main.parent.mkdir(parents=True)
-    # Patch (n) shares this file, so the seed must carry its anchor too.
+    # Patches (n) and (q) share this file, so the seed must carry their anchors.
     main.write_text(
         PINNED_ANTHROPIC_KEY_TABLE
         + "            betas.append(PROMPT_CACHING_BETA_FLAG)\n"
+        + PINNED_CLAUDE_RETRY
     )
     _apply_patches(dest)
     patched = main.read_text()
@@ -872,3 +895,150 @@ def test_m3_adaptive_thinking_omits_fixed_budget(patched_checkout, mode):
     )
     assert body["temperature"] == 1
     assert "top_p" not in body
+
+
+def test_setup_fails_permanent_claude_api_errors_closed(tmp_path):
+    dest = tmp_path / "OSWorld-V2"
+    _seed_minimal_checkout(
+        dest,
+        PINNED_PARSER_HEAD + PINNED_KEY_TABLE + PINNED_INFEASIBLE,
+        PINNED_CONTROLLER,
+    )
+    main = dest / "mm_agents" / "anthropic" / "main.py"
+    main.parent.mkdir(parents=True)
+    # Patches (n) and (p) share this file, so the seed must carry their anchors.
+    main.write_text(
+        PINNED_ANTHROPIC_KEY_TABLE
+        + "            betas.append(PROMPT_CACHING_BETA_FLAG)\n"
+        + PINNED_CLAUDE_RETRY
+    )
+    first = _apply_patches(dest)
+    assert "(q) Claude permanent 4xx errors fail closed: patched" in first.stdout
+    patched = main.read_text()
+    assert PATCHED_CLAUDE_RETRY in patched
+    # Only the permanent statuses short-circuit; the rest of the handler stays.
+    assert "429" not in patched and "400" not in patched and "413" not in patched
+    assert "self._is_request_too_large_error(e)" in patched
+    again = _apply_patches(dest)
+    assert (
+        "(q) Claude permanent 4xx errors fail closed: already applied" in again.stdout
+    )
+    assert patched == main.read_text()
+
+
+# Drives the patched upstream predict() against a stubbed SDK client that only
+# ever raises, and reports how many times the first client was called and how
+# long the retry loop slept. Argument 1 is the patched main.py, argument 2 the
+# transient error to compare the permanent 401 against.
+_CLAUDE_RETRY_PROBE = """
+import importlib.util, io, json, sys
+from pathlib import Path
+from types import SimpleNamespace
+
+sys.path.insert(0, str(Path("OSWorld-V2").resolve()))
+import anthropic, httpx
+from PIL import Image
+import mm_agents.anthropic  # the package the patched module's relative imports need
+from mm_agents.anthropic.utils import APIProvider
+
+spec = importlib.util.spec_from_file_location(
+    "mm_agents.anthropic.main_patched", sys.argv[1]
+)
+native = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = native
+spec.loader.exec_module(native)
+
+sleeps = []
+native.time = SimpleNamespace(sleep=sleeps.append)
+native.API_RETRY_TIMES = 3  # 500 would take 40 minutes to prove
+
+request = httpx.Request("POST", "https://model.test/v1/messages")
+errors = {
+    "auth": lambda: anthropic.AuthenticationError(
+        "request must not include both 'authorization' and 'x-api-key' headers",
+        response=httpx.Response(401, request=request),
+        body=None,
+    ),
+    "status_529": lambda: anthropic.APIStatusError(
+        "overloaded", response=httpx.Response(529, request=request), body=None
+    ),
+    "connection": lambda: anthropic.APIConnectionError(request=request),
+}
+
+png = io.BytesIO()
+Image.new("RGB", (1920, 1080)).save(png, format="PNG")
+report = {}
+for label in ("auth", sys.argv[2]):
+    clients = []
+
+    def build_client(**kwargs):
+        calls = []
+
+        def create(**call_kwargs):
+            calls.append(call_kwargs)
+            raise errors[label]()
+
+        client = SimpleNamespace(
+            calls=calls, beta=SimpleNamespace(messages=SimpleNamespace(create=create))
+        )
+        client.with_options = lambda **kwargs: client
+        clients.append(client)
+        return client
+
+    native.Anthropic = build_client
+    del sleeps[:]
+    agent = native.AnthropicAgent(
+        model="anthropic.claude-opus-5",
+        provider=APIProvider.ANTHROPIC,
+        api_key=None,
+        screen_size=(1920, 1080),
+    )
+    result = agent.predict("do the task", {"screenshot": png.getvalue()})
+    report["auth" if label == "auth" else "transient"] = {
+        "attempts": len(clients[0].calls),
+        "sleeps": list(sleeps),
+        "clients": len(clients),
+        "result": list(result),
+    }
+print(json.dumps(report))
+"""
+
+
+@pytest.mark.parametrize("transient", ["status_529", "connection"])
+def test_permanent_claude_api_errors_fail_closed_without_burning_the_deadline(
+    patched_checkout, transient
+):
+    # Live evidence: "Anthropic API error (attempt 414/500): Error code: 401"
+    # every 5 s until the worker's 2400 s deadline fired inside time.sleep.
+    python = ROOT / "OSWorld-V2/.venv/bin/python"
+    if not python.exists():
+        pytest.skip("requires upstream runtime")
+    result = subprocess.run(
+        [
+            str(python),
+            "-c",
+            _CLAUDE_RETRY_PROBE,
+            str(patched_checkout / "mm_agents/anthropic/main.py"),
+            transient,
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    report = json.loads(result.stdout)
+    # A 401 never succeeds on retry: one attempt, no sleep, prediction failed.
+    assert report["auth"] == {
+        "attempts": 1,
+        "sleeps": [],
+        "clients": 2,  # upstream still tries its backup-key client once
+        "result": [None, None],
+    }
+    # Overload and transport errors keep upstream's retry behaviour.
+    assert report["transient"] == {
+        "attempts": 3,
+        "sleeps": [5, 5],
+        "clients": 2,
+        "result": [None, None],
+    }
