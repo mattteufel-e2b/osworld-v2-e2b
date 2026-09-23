@@ -28,17 +28,34 @@ def _sum_model_usage(records: list[dict]) -> dict | None:
     as "this campaign spent nothing" rather than "this was never measured".
     """
     fields = ("calls", "input_tokens", "output_tokens", "unmeasured_calls")
+    cache_fields = ("cache_creation_input_tokens", "cache_read_input_tokens")
     totals = {
-        role: dict.fromkeys(fields, 0) for role in ("agent", "judge", "simulator")
+        role: dict.fromkeys(fields + cache_fields, 0)
+        for role in ("agent", "judge", "simulator")
     }
     measured_any = False
     for record in records:
         usage = record.get("model_usage")
-        if not isinstance(usage, dict):
-            continue
-        measured_any = True
+        if isinstance(usage, dict):
+            measured_any = True
+        else:
+            usage = {}
         for role, role_totals in totals.items():
             bucket = usage.get(role)
+            # Missing old telemetry must not turn a partial cache count into
+            # a campaign total. A documented zero-call bucket contributes zero.
+            for field in cache_fields:
+                if (
+                    isinstance(bucket, dict)
+                    and type(bucket.get("calls")) is int
+                    and bucket["calls"] == 0
+                ):
+                    continue
+                value = bucket.get(field) if isinstance(bucket, dict) else None
+                if type(value) is not int or value < 0:
+                    role_totals[field] = None
+                elif role_totals[field] is not None:
+                    role_totals[field] += value
             if not isinstance(bucket, dict):
                 continue
             for field in fields:
@@ -51,6 +68,9 @@ def _sum_model_usage(records: list[dict]) -> dict | None:
         if role_totals["calls"] - role_totals["unmeasured_calls"] <= 0:
             role_totals["input_tokens"] = None
             role_totals["output_tokens"] = None
+        if role_totals["calls"] == 0:
+            for field in cache_fields:
+                role_totals[field] = None
     return totals
 
 
@@ -86,6 +106,10 @@ def aggregate(
     records: list[dict] = []
     accepted_records: list[dict] = []
     invalid: dict[str, list[str]] = {}
+    # Diagnostics, never gate inputs: what every rollout scored, including the
+    # ones the gate rejected, so a failed campaign is still readable.
+    diagnostic_scores: list[float] = []
+    unscored_task_ids: list[str] = []
     attested = 0
     expected_thinking_budget = thinking_budget if thinking_budget else None
 
@@ -95,7 +119,12 @@ def aggregate(
             record = json.loads(path.read_text())
         except (OSError, json.JSONDecodeError):
             invalid[task_id] = ["missing-or-invalid-receipt"]
+            unscored_task_ids.append(task_id)
             continue
+        if _valid_score(record.get("score")):
+            diagnostic_scores.append(float(record["score"]))
+        else:
+            unscored_task_ids.append(task_id)
         reasons: list[str] = []
         eval_attempts = record.get("eval_model_call_attempts")
         eval_successes = record.get("eval_model_successes")
@@ -217,6 +246,16 @@ def aggregate(
         "scored_tasks": len(scores),
         "mean_score": (sum(scores) / len(scores)) if scores else None,
         "partial_score": (sum(scores) / len(scores)) if scores else None,
+        # Every valid score, gate-accepted or not. mean_score above is the
+        # campaign's number; these only tell the operator what happened, and
+        # the prefix keeps them from reading as variants of `scored_tasks`.
+        "diagnostic_scored_task_count": len(diagnostic_scores),
+        "diagnostic_mean_of_scored": (
+            sum(diagnostic_scores) / len(diagnostic_scores)
+            if diagnostic_scores
+            else None
+        ),
+        "diagnostic_unscored_task_ids": unscored_task_ids,
         "binary_successes": sum(score == 1.0 for score in scores),
         "binary_accuracy": (
             sum(score == 1.0 for score in scores) / len(scores) if scores else None

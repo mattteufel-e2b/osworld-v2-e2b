@@ -1,0 +1,106 @@
+{
+  "campaign_id": "osworld-v2-native-parity-20260920",
+  "template": "osworld-v2-gnome:cd4a1a63-eb56-418f-9ac3-60fbbf2b838e",
+  "source_action": {
+    "task_id": "079",
+    "step": 76,
+    "compiled_command_sha256": "673a454ca98a22e89db220d0744b18c37269adde407b7a1ce6e0e010d608d158"
+  },
+  "model_calls": 0,
+  "unfixed_terminal_control": {
+    "target_verified": true,
+    "http_status": 500,
+    "elapsed_s": 240.299,
+    "diagnostic_timeout_s": 240,
+    "timeout_confirmed_from_private_response": true,
+    "clipboard_backend": "copy_xclip",
+    "pyperclip_version": "1.11.0",
+    "xclip_version": "0.13-2",
+    "isolated_operation_times_s": [
+      {
+        "copy_s": 0.010058626999999376,
+        "paste_hotkey_s": 0.004499968999997606,
+        "enter_s": 0.0028251329999982033
+      },
+      {
+        "copy_s": 0.003684825000000558,
+        "paste_hotkey_s": 0.0037491440000003706,
+        "enter_s": 0.002649652999998864
+      },
+      {
+        "copy_s": 0.0036672099999996988,
+        "paste_hotkey_s": 0.003924801000000144,
+        "enter_s": 0.0026861579999994945
+      }
+    ],
+    "action_process_exited_while_xclip_held_server_pipes": true
+  },
+  "fixed_control": {
+    "synthetic": {
+      "elapsed_s": 0.801,
+      "request_count": 1,
+      "http_statuses": [
+        200
+      ],
+      "returncodes": [
+        0
+      ]
+    },
+    "original_action": {
+      "elapsed_s": 36.759,
+      "request_count": 1,
+      "http_statuses": [
+        200
+      ],
+      "returncodes": [
+        0
+      ]
+    },
+    "checks": {
+      "synthetic_http_success": true,
+      "ordinary_stdout_retained": true,
+      "synthetic_clipboard_exact": true,
+      "terminal_target_verified": true,
+      "exact_http_success": true,
+      "exact_action_under_guest_deadline": true,
+      "original_action_preserved": true,
+      "last_copied_line_exact": true,
+      "screenshots_decoded": true
+    },
+    "patched_step_source_sha256": "931acad912a3e97ab72335b3aabe00d9c601c28c9588b81cf2fba9369fca2c4b",
+    "passed": true
+  },
+  "preserved_terminal_behavior": {
+    "paste_binding": "'<Control><Shift>v'",
+    "native_shortcut": "Ctrl+V",
+    "captured_action_bytes_before_and_after": 72,
+    "captured_action_sha256_before_and_after": "96f0289119b49fadb9837cc5224ac04ec245009f394abe40c29c1c76365672d2",
+    "terminal_capture_matches_source_input": false,
+    "classification": "upstream native shortcut limitation; not repaired"
+  },
+  "repair_scope": "E2B native Unicode type actions prepend per-action clipboard copy helper; only xclip child stdout/stderr go to DEVNULL. Original prompts, native action parsing, delays, action dictionary and ordinary command output are preserved.",
+  "reference_boundary": {
+    "shared_upstream_execution_path": true,
+    "e2b_only_divergence_established": false,
+    "sample_rollouts_preceded_repair": true,
+    "reference_ami_inventory_verified": false
+  },
+  "cleanup": {
+    "guests_created": 3,
+    "all_deleted": true,
+    "first_control_target_valid": false,
+    "first_control_limitation": "GNOME overview retained focus; terminal capture not valid for that first control"
+  },
+  "sources": {
+    "server": "https://github.com/xlang-ai/osworld-server/blob/a3cc3f0c64e463f020d1a44780307e9b46cbcab1/src/http_routes.py#L130",
+    "upstream_pyperclip": "https://github.com/xlang-ai/osworld_image/blob/d0ad458c0655bddea4e628437019f153718de947/ansible/group_vars/all.yml#L31",
+    "upstream_xclip": "https://github.com/xlang-ai/osworld_image/blob/d0ad458c0655bddea4e628437019f153718de947/ansible/roles/packages/tasks/main.yml#L44",
+    "terminal_shortcut": "https://help.gnome.org/gnome-terminal/txt-copy-paste.html",
+    "native_unicode_translation": "OSWorld-V2/mm_agents/anthropic/main.py:357"
+  },
+  "private_receipt_hashes": {
+    "typing-control.json": "410bdfe8ee1863cba9bb152a4e9de0e1c2d4f958522800d228ed3dd5c735087a",
+    "typing-control-2.json": "a6e3340a0763bde3f36ecf4b03f964d58cbb1efa5d5b1ff05b3b7e4879d62977",
+    "typing-control-fixed.json": "e15340d17545d66a51dbf4935a721cf759b02d99fb44a0ff2dc20b01066afd5e"
+  }
+}

@@ -1,0 +1,10 @@
+[Unit]
+Description=noVNC websockify front end for x11vnc; disabled by default
+After=x11vnc.service
+
+[Service]
+ExecStart=/usr/bin/websockify --web /usr/share/novnc 6080 localhost:5900
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

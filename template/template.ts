@@ -9,7 +9,7 @@ import { Template, waitForPort } from 'e2b'
 // same Ubuntu release, GNOME family, screen geometry, user, major applications,
 // and OSWorld control interfaces. Relative to the V1 template it adds the V2
 // guest server (FastAPI/uvicorn, xlang-ai/osworld-server), the V2 expanded
-// application set (MuseScore 3, Shotcut, FreeCAD, Zotero, REAPER), and a
+// application set (MuseScore 4, Shotcut, FreeCAD, Zotero, REAPER), and a
 // userspace PulseAudio null sink for the V2 audio tasks. The V2 guest user
 // password is `osworld-public-evaluation` (the V2 harness su/sudo credential).
 // VS Code is pinned to the reference image's 1.91.1 via Microsoft's permanent
@@ -79,6 +79,12 @@ export const template = Template({ fileContextPath: filesDir })
     'socat',
     'iproute2',
     'ffmpeg',
+    // ---- VNC stack for upstream's --enable_vnc path (units disabled) -------
+    'x11vnc',
+    'novnc',
+    'websockify',
+    // ---- certutil for per-campaign CA trust in Chrome's NSS db -------------
+    'libnss3-tools',
     // ---- audio: userspace PulseAudio + virtual sink -----------------------
     // The E2B guest kernel ships no ALSA device (no /proc/asound, snd-dummy
     // absent), so OSWorld 2.0's audio apps (REAPER/MuseScore/Shotcut) route
@@ -141,13 +147,16 @@ export const template = Template({ fileContextPath: filesDir })
     'apt-mark hold code',
   ])
   // ---- OSWorld 2.0 expanded application set (apt) -------------------------
-  // MuseScore 3, Shotcut, FreeCAD, and OpenBoard ship in Ubuntu 22.04's
-  // universe repo.
+  // Shotcut and OpenBoard ship in Ubuntu 22.04's universe repo. MuseScore 4
+  // is installed separately below as a pinned AppImage (jammy's apt MuseScore
+  // package rejects task 067's score). FreeCAD is deliberately absent here: the
+  // apt package blocks the KiCad 10 PPA install, so it ships as the 1.1.3
+  // AppImage below (see the KiCad block).
   // Each immutable template build freezes whatever version apt installed;
   // apt-mark hold keeps the guest from drifting (same pattern as Chrome).
   .runCmd([
-    'apt-get install -y musescore3 shotcut freecad openboard',
-    'apt-mark hold musescore3 shotcut freecad openboard',
+    'apt-get install -y shotcut openboard',
+    'apt-mark hold shotcut openboard',
     // Task 093 hard-codes the upstream image's snap launcher and snap package
     // probe. Preserve that narrow observable contract without installing the
     // privileged snapd daemon. Executing through this lowercase symlink also
@@ -198,6 +207,114 @@ export const template = Template({ fileContextPath: filesDir })
     "printf '[Desktop Entry]\\nName=REAPER\\nExec=/usr/local/bin/reaper\\nType=Application\\nStartupWMClass=REAPER\\nCategories=AudioVideo;Audio;\\n' > /usr/share/applications/reaper.desktop",
   ])
   .copy('reaper-launcher.sh', '/usr/local/bin/reaper', { mode: 0o755 })
+  // ---- MuseScore 4 (tasks 067/071 invoke `musescore`) ---------------------
+  // Task 067's score was written by MuseScore Studio 4.6.5, which the jammy
+  // apt MuseScore 3 package rejects at export. Pinned AppImage from the
+  // GitHub release; sha256 from the release's checksums.sha256.txt. Extracted
+  // at build time because the guest has no FUSE.
+  .runCmd([
+    'apt-get install -y libjack-jackd2-0',
+    'curl -fsSL -o /tmp/musescore.AppImage "https://github.com/musescore/MuseScore/releases/download/v4.6.5/MuseScore-Studio-4.6.5.253511702-x86_64.AppImage"',
+    'echo "193daa0ea18bcfa90a47145a842275b8069b7b2b8d153e562b15fab5fe50fcaf  /tmp/musescore.AppImage" | sha256sum -c -',
+    'chmod +x /tmp/musescore.AppImage',
+    'mkdir -p /opt/musescore && cd /opt/musescore && /tmp/musescore.AppImage --appimage-extract >/dev/null',
+    'rm -f /tmp/musescore.AppImage',
+    "printf '[Desktop Entry]\\nName=MuseScore 4\\nExec=/usr/local/bin/musescore %%F\\nType=Application\\nStartupWMClass=MuseScore4\\nCategories=AudioVideo;Audio;\\nMimeType=application/x-musescore;application/vnd.recordare.musicxml+xml;\\n' > /usr/share/applications/musescore4.desktop",
+  ])
+  .copy('musescore-launcher.sh', '/usr/local/bin/musescore', { mode: 0o755 })
+  // ---- WPS Office (tasks 049/060/077/079/087/090/096 invoke `wpp`; 063/066/
+  // 076/080/091 invoke `wps`) -------------------------------------------------
+  // Kingsoft ships only the current build (older build numbers return 403), so
+  // the .deb is sha256-pinned at the recorded build and apt-mark held. The
+  // sha256 was computed from the download itself twice - once inside a scratch
+  // sandbox, once from the build host - and the two hashes agree; that
+  // agreement is the proof the pin is right. 318,892,996 bytes is the size of
+  // the file written in the sandbox; the build host reported the same figure as
+  // the Content-Length of a `curl -sSIL`, not from a file on disk. libtiff5 is
+  // required by the bundled PDF engine (libpdfmain.so links libtiff.so.5).
+  // --no-install-recommends keeps ttf-mscorefonts-installer out (it fetches
+  // from SourceForge at install time behind an interactive EULA); Carlito and
+  // Caladea are the metric-compatible open fonts. Proprietary: the customer
+  // accepts the Kingsoft EULA at https://www.wps.com/eula/ .
+  .runCmd([
+    'curl -fsSL -o /tmp/wps-office.deb "https://wdl1.pcfg.cache.wpscdn.com/wpsdl/wpsoffice/download/linux/11723/wps-office_11.1.0.11723.XA_amd64.deb"',
+    'echo "fe6326210f69d94efdbf2728914d293036be391b93a614f58cd0e1ff1d4923b3  /tmp/wps-office.deb" | sha256sum -c -',
+    'apt-get install -y libtiff5 fonts-crosextra-carlito fonts-crosextra-caladea',
+    'apt-get install -y --no-install-recommends /tmp/wps-office.deb',
+    'rm -f /tmp/wps-office.deb',
+    'apt-mark hold wps-office',
+    'test -x /usr/bin/wpp && test -x /usr/bin/wps && test -x /usr/bin/et',
+  ])
+  // ---- Blender 4.5 LTS (task 092 invokes `blender`) -----------------------
+  // jammy's apt blender is 3.0.1; the reference desktop has a current
+  // Blender. Vendor tarball, sha256 from the release's .sha256 file.
+  .runCmd([
+    'apt-get install -y libxi6 libxxf86vm1 libxfixes3 libxrender1 libgl1 libxkbcommon0 libsm6',
+    'curl -fsSL -o /tmp/blender.tar.xz "https://download.blender.org/release/Blender4.5/blender-4.5.14-linux-x64.tar.xz"',
+    'echo "9ba871ff2ecd36526b77432745980b7e6664ecd0c7ca11c48849073dcfe06da3  /tmp/blender.tar.xz" | sha256sum -c -',
+    'mkdir -p /opt/blender',
+    'tar -xJf /tmp/blender.tar.xz -C /opt/blender --strip-components=1',
+    'rm -f /tmp/blender.tar.xz',
+    'ln -sf /opt/blender/blender /usr/local/bin/blender',
+    "printf '[Desktop Entry]\\nName=Blender\\nExec=/usr/local/bin/blender %%f\\nType=Application\\nStartupWMClass=Blender\\nCategories=Graphics;3DGraphics;\\nMimeType=application/x-blender;\\n' > /usr/share/applications/blender.desktop",
+  ])
+  // ---- KiCad 10 (tasks 107/108 invoke `kicad`) ----------------------------
+  // Task 107's setup adds ppa:kicad/kicad-10.0-releases and installs kicad at
+  // runtime unless `command -v kicad` already succeeds. Preinstalling from the
+  // same PPA short-circuits that install, which is what makes the task work at
+  // all here: the PPA's OpenCASCADE 7.6 declares
+  //   Package: libocct-foundation-7.6
+  //   Breaks: libocct-foundation-7.4, libocct-foundation-7.5
+  // and jammy's apt FreeCAD 0.19 pulls the 7.5 set, so on a guest carrying apt
+  // FreeCAD the task's own `apt-get install -y kicad` dies with APT exit 100:
+  //   freecad : Depends: freecad-python3 but it is not going to be installed
+  //   E: Error, pkgProblemResolver::Resolve generated breaks, this may be
+  //      caused by held packages.
+  // (probe: out/osworld-v2-raw/template-probe/kicad-apt-conflict.txt, run on
+  // build 0d796343 where `freecad` was apt-installed and held). With apt
+  // FreeCAD gone the same install succeeds and `command -v kicad` resolves, so
+  // FreeCAD ships as the AppImage below instead of from apt.
+  // PPAs are mutable, so the installed version is apt-mark held and the
+  // immutable template build pins it across sandboxes (same as Chrome).
+  .runCmd([
+    'apt-get install -y --no-install-recommends software-properties-common',
+    'add-apt-repository -y ppa:kicad/kicad-10.0-releases',
+    'apt-get update',
+    'apt-get install -y kicad',
+    'apt-mark hold kicad',
+    'test -x /usr/bin/kicad',
+  ])
+  // ---- FreeCAD 1.1.3 AppImage (tasks 103/104 invoke `freecad`) ------------
+  // The AppImage bundles conda-forge OCCT 7.8.1 under its own prefix, so it
+  // has no apt OpenCASCADE dependency and cannot collide with the KiCad PPA's
+  // libocct 7.6 above. sha256 from the release's own
+  // FreeCAD_1.1.3-Linux-x86_64-py311.AppImage-SHA256.txt, re-checked against
+  // the downloaded file. Extracted at build time because the guest has no
+  // FUSE (same as MuseScore 4).
+  .runCmd([
+    'curl -fsSL -o /tmp/freecad.AppImage "https://github.com/FreeCAD/FreeCAD/releases/download/1.1.3/FreeCAD_1.1.3-Linux-x86_64-py311.AppImage"',
+    'echo "3a853eb69ee595f779f2255dbf80a765926981d8ff68903cefee4dfb03a8f5ef  /tmp/freecad.AppImage" | sha256sum -c -',
+    'chmod +x /tmp/freecad.AppImage',
+    'mkdir -p /opt/freecad && cd /opt/freecad && /tmp/freecad.AppImage --appimage-extract >/dev/null',
+    'rm -f /tmp/freecad.AppImage',
+    // Tasks 103/104 grade with an extractor that imports numpy, and their
+    // setups apt-install python3-numpy for the system interpreter that apt
+    // FreeCAD used. The AppImage runs its own bundled py311 instead, which
+    // cannot see system site-packages, and the extractor swallows a missing
+    // numpy into {"error": "numpy_unavailable"} rather than failing. The
+    // bundle does ship it (numpy 1.26.4, scipy 1.16.3, conda-forge py311.14 -
+    // probe: out/osworld-v2-raw/template-probe/freecad-appimage-numpy.txt);
+    // assert it at build time so a future re-pin that drops it fails loudly.
+    "/opt/freecad/squashfs-root/AppRun freecadcmd -c 'import numpy; print(\"NUMPY_OK\", numpy.__version__)' 2>&1 | grep -q NUMPY_OK",
+    "printf '[Desktop Entry]\\nName=FreeCAD\\nExec=/usr/local/bin/freecad %%F\\nType=Application\\nStartupWMClass=FreeCAD\\nCategories=Graphics;Science;Engineering;\\nMimeType=application/x-extension-fcstd;\\n' > /usr/share/applications/freecad.desktop",
+  ])
+  .copy('freecad-launcher.sh', '/usr/local/bin/freecad', { mode: 0o755 })
+  // Tasks 103/104 grade by running `freecadcmd` (task_103.py:281,
+  // task_104.py:214), which jammy's apt FreeCAD used to supply. The AppImage's
+  // AppRun execs usr/bin/$1 when that name exists there, and it ships
+  // usr/bin/freecadcmd, so the launcher forwards its own invoked name and one
+  // file serves both commands.
+  .runCmd('ln -sfn /usr/local/bin/freecad /usr/local/bin/freecadcmd')
   // ---- create OSWorld's uid-1000 `user` account ---------------------------
   .runCmd([
     'id user >/dev/null 2>&1 || useradd -m -u 1000 -s /bin/bash user',
@@ -206,6 +323,10 @@ export const template = Template({ fileContextPath: filesDir })
     'echo "user:osworld-public-evaluation" | chpasswd',
     'mkdir -p /home/user/.local/share/keyrings /home/user/.config/vlc',
     'touch /home/user/.local/share/keyrings/login.keyring /home/user/.Xauthority',
+    // Chrome on Linux trusts extra CAs only through the user's NSS db. Create it
+    // empty at build so the bridge can `certutil -A` the campaign CA at start.
+    'mkdir -p /home/user/.pki/nssdb',
+    'certutil -N -d sql:/home/user/.pki/nssdb --empty-password',
     // One Chrome profile, two views: the google-chrome shim launches with
     // --user-data-dir=google-chrome-cdp (Chrome >=136 disables the debug port
     // on the default path, even passed explicitly - probed on Chrome 150),
@@ -248,17 +369,56 @@ export const template = Template({ fileContextPath: filesDir })
     'libreoffice-registrymodifications.xcu',
     '/home/user/.config/libreoffice/4/user/registrymodifications.xcu',
   )
-  // ---- MuseScore 3 first-run suppression (baked config) -------------------
-  // Fresh MuseScore 3 opens a modal "Startup Wizard", then a "Start Center"
-  // score picker, then a "Tour" popup - all agent-blocking. This ini was
-  // produced by MuseScore itself after setting Program Start = "Start empty"
-  // and unchecking show-start-center / show-tours / show-splash in
-  // Preferences, then captured verbatim. The decisive key is
-  // ui/.../sessionStart = EMPTY (@Variant), which is what actually stops the
-  // Start Center; the boolean flags alone do not. Same doctrine as the baked
-  // LibreOffice/VLC first-run configs. Path org/app = MuseScore/MuseScore3.
+  // ---- MuseScore 4 first-run suppression (captured config) ---------------
+  // MuseScore4.ini is the file MuseScore Studio 4.6.5 itself wrote on a
+  // scratch sandbox of build 472f8e35 after its startup dialogs were answered
+  // once and it was quit with Ctrl+Q, copied verbatim. A diff of the ini
+  // before and after that session isolates three decisive keys:
+  //   `hasCompletedFirstLaunchSetup=true` skips the first-launch setup wizard
+  //     (language / playback / cloud);
+  //   `welcomeDialogShowOnStartup=false` is what "Don't show welcome dialog on
+  //     startup" on the "Enjoy free cloud storage" carousel writes;
+  //   `checkForUpdate=false` is Preferences > Update > "Check to see if a new
+  //     version of MuseScore Studio is available", and it is what stops the
+  //     modal "A new version of MuseScore Studio is available!" that otherwise
+  //     lands on top of the score a minute or so after launch.
+  // The first key was already here and was doing its job - no setup wizard was
+  // ever seen. The other two were found by the application-launcher smoke,
+  // which caught the update modal sitting over task 067's rendered score.
+  // `[cloud] clientId` is the per-install identifier MuseScore generated in
+  // that session; it is baked like WPS's `common\infoGUID` above, so every
+  // sandbox of this build shares it.
   .makeDir('/home/user/.config/MuseScore')
-  .copy('MuseScore3.ini', '/home/user/.config/MuseScore/MuseScore3.ini')
+  .copy('MuseScore4.ini', '/home/user/.config/MuseScore/MuseScore4.ini')
+  // ---- FreeCAD 1.1 first-run suppression (captured config) ---------------
+  // Observed on a scratch sandbox of build 472f8e35: a fresh `freecad` draws a
+  // "Welcome to FreeCAD" first-start block (Language / Unit System /
+  // Navigation Style / Theme / Done) over its Start page. It is painted inside
+  // the application window rather than in a window of its own, so `wmctrl`
+  // shows nothing unusual and only a screenshot catches it.
+  // freecad-user.cfg carries two preferences under
+  // BaseApp/Preferences/Mod/Start, and it needs both:
+  //   FirstStart2024 = 0          suppresses the block
+  //   Migration2024Complete = 1   stops FreeCAD deleting the key above
+  // The second one is not obvious and was proved by an A/B on a scratch
+  // sandbox of this image, same file with and without it. Without it, FreeCAD
+  // runs its 2024 settings migration on startup, and that migration REWRITES
+  // the Start group - the user.cfg it leaves behind has ShowOnStartup,
+  // ShowExamples, CloseStart, CustomFolder and Migration2024Complete in it and
+  // no FirstStart2024 at all. The key is gone before it is read, so the
+  // suppression silently does nothing and the Welcome block is drawn. With
+  // Migration2024Complete already set the migration does not run, the written
+  // cfg still carries FirstStart2024 = 0, and FreeCAD opens on its ordinary
+  // Start page (New File / Examples).
+  // The 2024 suffix on the first key matters too: `FirstStart`, `FirstTime`
+  // and `ShowOnStartup` were each set through FreeCAD's own parameter API on a
+  // live guest and none of them suppressed the block.
+  // Everything else in the original capture was window geometry, dock state
+  // and per-workbench colours, so none of it is baked; FreeCAD writes its own
+  // defaults for all of it on first launch, as it does for system.cfg and
+  // FreeCAD.conf.
+  .makeDir('/home/user/.config/FreeCAD/v1-1')
+  .copy('freecad-user.cfg', '/home/user/.config/FreeCAD/v1-1/user.cfg')
   // ---- REAPER first-run suppression (baked config) ------------------------
   // Fresh (unregistered) REAPER opens three windows on launch: the main
   // window, an "About REAPER" evaluation/license nag, and an "Error opening
@@ -271,6 +431,99 @@ export const template = Template({ fileContextPath: filesDir })
   // product's own window title, not a modal.
   .makeDir('/home/user/.config/REAPER')
   .copy('reaper.ini', '/home/user/.config/REAPER/reaper.ini')
+  // ---- WPS Office first-run suppression (baked config) --------------------
+  // Observed on a scratch sandbox of the current immutable guest with the .deb
+  // above installed: a fresh `wpp` opens exactly two things before the
+  // application is usable. First a modal titled "Kingsoft Office Software
+  // License Agreement and Privacy Policy" whose "I Confirm" button stays
+  // disabled until the "Have read and agreed to ..." checkbox is ticked.
+  // Dismissing it once reveals a second window titled "System Check":
+  // "Some formula symbols might not be displayed correctly due to missing
+  // fonts Symbol, Wingdings...", with a "Do not report again" checkbox.
+  // wps-office.conf carries the keys that survive from the Office.conf WPS
+  // itself wrote after both dialogs were dismissed once and WPS was quit
+  // cleanly. Two were decisive, established by diffing that file before and
+  // after: `common\AcceptedEULA=true` (EULA modal) and
+  // `common\system_check\no_necessary_symbol_fonts=false` (System Check).
+  // `[kdcsdk] NotFirstOpen=true` marks the suite as already started once and is
+  // kept with them. The rest of the capture - the 39-entry symbol palette, the
+  // wpp window/task-pane geometry, the session timestamps (`lastwppact`,
+  // `LastClearBKTime`, the kfpccomb probe dates) and the per-install
+  // `common\infoGUID`, all of which WPS regenerates - is not baked.
+  // Honest caveat: this suppresses the missing-font *warning*, it does not
+  // supply Symbol/Wingdings - those fonts are still absent, so documents that
+  // use them fall back to a substitute face.
+  .makeDir('/home/user/.config/Kingsoft')
+  .copy('wps-office.conf', '/home/user/.config/Kingsoft/Office.conf')
+  // ---- Blender first-run suppression (config Blender writes itself) ------
+  // Observed on a scratch sandbox of build 0eecdb03: a fresh `blender` opens
+  // a "Quick Setup" panel (Language / Theme / Keymap / Mouse Select /
+  // Spacebar Action, Continue) in front of the default scene, and once that
+  // is answered it still opens the ordinary splash ("New File / Getting
+  // Started") over the viewport on every launch. Both live in
+  // ~/.config/blender/4.5/config/userpref.blend: Quick Setup runs only while
+  // that file is absent, and the splash is its `show_splash` view preference.
+  // That file is a 173 KB binary .blend, so rather than commit an opaque blob
+  // Blender writes it here itself in background mode - the same file its GUI
+  // would write - and the one setting that differs from factory defaults
+  // stays readable on this line. Verified on that guest: with the file in
+  // place `blender` opens straight onto the default cube, no panel.
+  // Running it under HOME=/home/user also leaves a ~/.cache behind (Blender
+  // creates ~/.cache/thumbnails/{fail,large}), which the GNOME session would
+  // otherwise create itself, 0700, at first login. Do not drop the cleanup
+  // below as tidying. The discarded build c324b7e4 shipped that directory and
+  // came up with a colord polkit modal - "Authentication Required /
+  // Authentication is required to create a color managed device" - standing
+  // over the whole desktop from session start, before any application
+  // launched, on every sandbox of it; 0eecdb03, which has no ~/.cache in the
+  // image, and every build since this cleanup was added have been clean.
+  // Honest limit on that: the first version of this cleanup removed
+  // ~/.cache/blender, which Blender never creates, and then `rmdir`d ~/.cache
+  // with `|| true`, so it was a no-op and builds 472f8e35 and cf428cd4 shipped
+  // the directory anyway without the modal returning. The mechanism is
+  // therefore not proven, only the correlation. What is enforced here is the
+  // state 0eecdb03 had: `rm -rf` takes the whole directory whatever put files
+  // in it, and `test ! -d` fails the build rather than shipping it again.
+  .runCmd([
+    'HOME=/home/user blender --background --factory-startup --python-expr "import bpy; bpy.context.preferences.view.show_splash = False; bpy.ops.wm.save_userpref()"',
+    'test -s /home/user/.config/blender/4.5/config/userpref.blend',
+    'rm -rf /home/user/.cache',
+    'test ! -d /home/user/.cache',
+    'chown -R user:user /home/user/.config/blender',
+  ])
+  // ---- KiCad 10 first-run suppression (captured config) ------------------
+  // Observed on a scratch sandbox of build 0eecdb03: a fresh `kicad` opens a
+  // modal "KiCad Setup" wizard - "KiCad is starting for the first time, or
+  // some of its configuration files are missing" - and the project passed on
+  // the command line never opens behind it. Escape and Cancel both leave the
+  // wizard on screen. kicad-config/ carries the keys that survive from what
+  // KiCad itself wrote after that wizard was stepped through to Finish on that
+  // guest; the per-editor files it writes at exit (eeschema/pcbnew/cvpcb/
+  // 3d_viewer/...) are session state, not first-run state, and are left out.
+  // The decisive thing is the set, not one key:
+  //   kicad_common.json's presence (with its `meta.version`) is what tells
+  //     KiCad its 10.0 settings path already exists, which is the condition
+  //     the Setup wizard is raised on, plus `do_not_show_again` for the
+  //     prompts the wizard answers;
+  //   the three library tables (sym/fp/design-block) stop the "Configure
+  //     Global ... Library Table" dialogs behind it;
+  //   `system.working_dir = /home/user` in kicad_common.json is the directory
+  //     KiCad's file dialogs open on. It records whatever cwd KiCad was
+  //     started in, and the first capture - made through the guest server's
+  //     /setup/launch - had recorded that server's own cwd,
+  //     /opt/osworld-server, a directory `user` cannot write and which tasks
+  //     107 and 108 save files from;
+  //   `system.check_for_kicad_updates` and `pcm.check_for_updates` in
+  //     kicad.json, both false, keep KiCad from raising the same class of nag
+  //     over a long run that MuseScore's update modal raised here.
+  // Narrower guesses were tested on that guest and the wizard came back:
+  // `first_run_shown` in kicad.json is still false after the wizard finishes,
+  // so flipping it does nothing, and the three library tables on their own are
+  // not enough either. Window geometry, AUI perspectives, grid/zoom tables,
+  // the file history and the wxWidgets `dialog.controls.Preferences` blob are
+  // all in the capture and none of them are baked - KiCad rewrites them.
+  .makeDir('/home/user/.config/kicad/10.0')
+  .copy('kicad-config', '/home/user/.config/kicad/10.0')
   // ---- system-wide dconf defaults: a11y + interface + DPI/scaling ---------
   // Matches the OSWorld reference GNOME session: toolkit-accessibility on (so
   // GTK/Qt apps expose AT-SPI trees), Adwaita cursor/theme, 1.0 text scaling
@@ -284,11 +537,19 @@ export const template = Template({ fileContextPath: filesDir })
     // 96 DPI via Xresources so Xft-based apps size text consistently at 1080p.
     "printf 'Xft.dpi: 96\\n' > /home/user/.Xresources",
   ])
+  // Tasks 079/087 render exported slide PDFs with pdftoppm.
+  .runCmd('apt-get install -y poppler-utils')
   // ---- OSWorld server payload + session scripts ---------------------------
   .makeDir('/opt/osworld-server')
   .copy('server', '/opt/osworld-server')
   .copy('session_inner.sh', '/opt/osworld-server/session_inner.sh', { mode: 0o755 })
   .copy('start.sh', '/opt/osworld-server/start.sh', { mode: 0o755 })
+  // VNC units upstream's setup controller expects to be present (`systemctl
+  // --user stop novnc.service x11vnc.service || true` in
+  // OSWorld-V2/desktop_env/controllers/setup.py). The human-in-the-loop VNC
+  // path is deferred, so the units are installed but never enabled.
+  .copy('x11vnc.service', '/etc/systemd/user/x11vnc.service')
+  .copy('novnc.service', '/etc/systemd/user/novnc.service')
   .runCmd('python3 -m pip install --no-cache-dir -r /opt/osworld-server/requirements.txt')
   .runCmd([
     'ln -sf /usr/bin/python3 /usr/bin/python || true',

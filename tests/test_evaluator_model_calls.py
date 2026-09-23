@@ -176,7 +176,14 @@ class _Resp:
 def _anthropic_messages():
     class Messages:  # stands in for anthropic.resources.messages.Messages
         def create(self, **_body):
-            return _Resp(_Usage(input_tokens=10, output_tokens=3))
+            return _Resp(
+                _Usage(
+                    input_tokens=10,
+                    output_tokens=3,
+                    cache_creation_input_tokens=40,
+                    cache_read_input_tokens=900,
+                )
+            )
 
     return Messages
 
@@ -187,6 +194,80 @@ def _openai_completions():
             return _Resp(_Usage(prompt_tokens=7, completion_tokens=2))
 
     return Completions
+
+
+def test_anthropic_cache_tokens_are_separate_and_summed_across_calls():
+    tracker = _tracker_class()()
+    create = tracker._capture(
+        lambda _client: _Resp(
+            _Usage(
+                input_tokens=2,
+                output_tokens=3,
+                cache_creation_input_tokens=40,
+                cache_read_input_tokens=900,
+            )
+        )
+    )
+    create(None)
+    create(None)
+    assert tracker.usage["agent"] == {
+        "calls": 2,
+        "input_tokens": 4,
+        "output_tokens": 6,
+        "cache_creation_input_tokens": 80,
+        "cache_read_input_tokens": 1800,
+        "unmeasured_calls": 0,
+    }
+
+
+@pytest.mark.parametrize("missing", [None, True, -1])
+def test_unknown_cache_usage_is_not_a_partial_or_zero_total(missing):
+    tracker = _tracker_class()()
+    responses = iter(
+        [
+            _Resp(
+                _Usage(
+                    input_tokens=2,
+                    output_tokens=3,
+                    cache_creation_input_tokens=40,
+                    cache_read_input_tokens=900,
+                )
+            ),
+            _Resp(
+                _Usage(
+                    input_tokens=2,
+                    output_tokens=3,
+                    cache_creation_input_tokens=0,
+                    cache_read_input_tokens=missing,
+                )
+            ),
+        ]
+    )
+    create = tracker._capture(lambda _client: next(responses))
+    create(None)
+    create(None)
+    assert tracker.usage["agent"]["cache_creation_input_tokens"] == 40
+    assert tracker.usage["agent"]["cache_read_input_tokens"] is None
+    assert tracker.usage["agent"]["input_tokens"] == 4
+
+
+def test_openai_prompt_tokens_keep_their_semantics_and_anthropic_cache_fields_unknown():
+    tracker = _tracker_class()()
+    create = tracker._capture(
+        lambda _client: _Resp(
+            _Usage(
+                prompt_tokens=700,
+                completion_tokens=20,
+                prompt_tokens_details=_Usage(cached_tokens=500),
+            )
+        )
+    )
+    create(None)
+    usage = tracker.usage["agent"]
+    assert usage["input_tokens"] == 700
+    assert usage["output_tokens"] == 20
+    assert usage["cache_creation_input_tokens"] is None
+    assert usage["cache_read_input_tokens"] is None
 
 
 def test_sdk_usage_is_attributed_by_role():
@@ -224,18 +305,24 @@ def test_sdk_usage_is_attributed_by_role():
         "calls": 1,
         "input_tokens": 10,
         "output_tokens": 3,
+        "cache_creation_input_tokens": 40,
+        "cache_read_input_tokens": 900,
         "unmeasured_calls": 0,
     }
     assert usage["judge"] == {
         "calls": 1,
         "input_tokens": 10,
         "output_tokens": 3,
+        "cache_creation_input_tokens": 40,
+        "cache_read_input_tokens": 900,
         "unmeasured_calls": 0,
     }
     assert usage["simulator"] == {
         "calls": 1,
         "input_tokens": 7,
         "output_tokens": 2,
+        "cache_creation_input_tokens": None,
+        "cache_read_input_tokens": None,
         "unmeasured_calls": 0,
     }
 
@@ -257,6 +344,8 @@ def test_usage_reports_zero_calls_with_null_tokens_for_every_role(monkeypatch):
             "calls": 0,
             "input_tokens": None,
             "output_tokens": None,
+            "cache_creation_input_tokens": None,
+            "cache_read_input_tokens": None,
             "unmeasured_calls": 0,
         }
         for role in ("agent", "judge", "simulator")
@@ -284,6 +373,8 @@ def test_response_without_usage_counts_as_unmeasured():
         "calls": 1,
         "input_tokens": None,
         "output_tokens": None,
+        "cache_creation_input_tokens": None,
+        "cache_read_input_tokens": None,
         "unmeasured_calls": 1,
     }
 
@@ -303,6 +394,8 @@ def test_streaming_call_is_counted_but_not_measured():
         "calls": 1,
         "input_tokens": None,
         "output_tokens": None,
+        "cache_creation_input_tokens": None,
+        "cache_read_input_tokens": None,
         "unmeasured_calls": 1,
     }
 

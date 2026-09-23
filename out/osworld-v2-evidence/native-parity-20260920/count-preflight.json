@@ -1,0 +1,28 @@
+{
+  "campaign_id": "osworld-v2-native-parity-20260920",
+  "checked_at_utc": "2026-09-21T04:08:21.309273+00:00",
+  "model": "anthropic.claude-opus-5",
+  "endpoint": "https://bedrock-mantle.us-east-1.api.aws/anthropic/v1/messages/count_tokens",
+  "probes": [
+    {
+      "authentication": "x-api-key",
+      "http_status": 403,
+      "input_tokens": null
+    },
+    {
+      "authentication": "Bearer",
+      "http_status": 403,
+      "input_tokens": null,
+      "not_authorized": true
+    }
+  ],
+  "required_iam_action": "bedrock-mantle:CountTokens",
+  "required_resource_type": "project",
+  "aws_documented_counting_charge_usd": 0,
+  "source": "https://docs.aws.amazon.com/bedrock/latest/userguide/count-tokens.html",
+  "inference_calls": 0,
+  "permission_changes": 0,
+  "running_guard_changes": 0,
+  "candidate_created": false,
+  "reservation_policy": "unchanged_full_context_fail_closed"
+}

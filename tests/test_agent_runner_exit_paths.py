@@ -33,6 +33,7 @@ def _fake_checkout(tmp_path: Path, run_single_body: str) -> Path:
             class DesktopEnv:
                 def __init__(self, **kwargs):
                     self.provider = _Provider()
+                    self.action_space = kwargs['action_space']
                 def close(self):
                     pass
             """
@@ -64,7 +65,7 @@ def _fake_checkout(tmp_path: Path, run_single_body: str) -> Path:
         (checkout / name).write_text((ROOT / "runner" / name).read_text())
     (checkout / "agents.py").write_text(
         "AGENT_KINDS = {'prompt': None}\n"
-        "def agent_settings(kind, **kw):\n    return {'kind': kind}\n"
+        "def agent_settings(kind, **kw):\n    return {'kind': kind, 'action_space': 'pyautogui'}\n"
         "def build_agent(kind, **kw):\n    return object()\n"
     )
     tasks = tmp_path / "tasks"
@@ -108,6 +109,95 @@ def _run(
         stderr=subprocess.PIPE,
     )
     return process, receipt
+
+
+def test_agent_kind_and_model_are_required_with_no_defaults(tmp_path):
+    # A dropped --agent-kind/--model used to fall back to prompt/gpt-4o and
+    # burn budget on the wrong agent; the coordinator must always pass both.
+    checkout = _fake_checkout(tmp_path, "pass")
+    receipt = tmp_path / "receipt.json"
+    cmd = [
+        sys.executable,
+        str(ROOT / "runner" / "agent_runner.py"),
+        "--task-id",
+        "001",
+        "--domain",
+        "test",
+        "--tasks-dir",
+        str(tmp_path / "tasks"),
+        "--result-dir",
+        str(tmp_path / "raw"),
+        "--output",
+        str(receipt),
+        "--max-steps",
+        "3",
+    ]
+    env = {**os.environ, "OSWORLD_RUN_NONCE": "nonce", "PYTHONPATH": str(checkout)}
+    result = subprocess.run(cmd, cwd=checkout, env=env, text=True, capture_output=True)
+    assert result.returncode == 2
+    assert "--agent-kind" in result.stderr
+    assert "--model" in result.stderr
+    assert not receipt.exists()
+
+
+def test_native_claude_worker_records_effective_settings_and_uses_native_actions(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("MODEL_BASE_URL", "https://model.test/anthropic")
+    monkeypatch.setenv("MODEL_API_KEY", "offline-test")
+    checkout = _fake_checkout(
+        tmp_path,
+        """
+        from pathlib import Path
+        assert env.action_space == 'claude_computer_use'
+        assert agent.kwargs['max_steps'] == max_steps == 37
+        assert agent.kwargs['only_n_most_recent_images'] == 6
+        assert agent.kwargs['max_tokens'] == 16000
+        Path(result_dir, 'result.txt').write_text('0.5')
+        """,
+    )
+    (checkout / "agents.py").write_text((ROOT / "runner" / "agents.py").read_text())
+    package = checkout / "mm_agents"
+    (package / "anthropic").mkdir(parents=True)
+    (package / "__init__.py").write_text("")
+    (package / "anthropic" / "__init__.py").write_text("")
+    for path, name in [
+        (package / "agent.py", "PromptAgent"),
+        (package / "m3.py", "M3Agent"),
+        (package / "anthropic" / "main.py", "AnthropicAgent"),
+    ]:
+        path.write_text(
+            f"class {name}:\n    def __init__(self, **kwargs):\n        self.kwargs = kwargs\n"
+        )
+    (package / "anthropic" / "utils.py").write_text(
+        "from types import SimpleNamespace\n"
+        "class APIProvider:\n    ANTHROPIC = 'anthropic'\n"
+        "def get_claude_runtime_profile(model):\n    return SimpleNamespace(thinking_mode='adaptive')\n"
+    )
+    process, receipt = _run(
+        tmp_path,
+        checkout,
+        [
+            "--agent-kind",
+            "claude",
+            "--model",
+            "anthropic.claude-opus-5",
+            "--max-steps",
+            "37",
+            "--max-tokens",
+            "8192",
+            "--max-trajectory-length",
+            "6",
+        ],
+    )
+    _wait_for_exit(process)
+    stdout, stderr = process.communicate()
+    assert process.returncode == 0, stdout + stderr
+    result = json.loads(receipt.read_text())
+    assert result["agent_settings"]["max_tokens"] == 16000
+    assert result["agent_settings"]["max_steps"] == 37
+    assert result["agent_settings"]["only_n_most_recent_images"] == 6
+    assert result["agent_settings"]["action_space"] == "claude_computer_use"
 
 
 def _wait_for_exit(process: subprocess.Popen) -> None:

@@ -3,8 +3,8 @@
 # (examples/osworld-v2/upstream.lock.json) and wire in the E2B provider
 # (provider/provider.py + provider/manager.py + provider/bridge.py, the
 # in-process bridge) so OSWorld-V2's own run.py works with --provider_name e2b.
-# Idempotent: re-running is safe and each of the four string patches is
-# grep-guarded, reporting "already applied" on the second run.
+# Idempotent: re-running is safe and each string patch (a)-(q) is guarded,
+# reporting "already applied" on the second run.
 #
 # Checkout states (the checkout is gitignored, so its state lives on disk only):
 #   * "applied"  — setup.sh's patches present (register+classify e2b provider,
@@ -53,6 +53,11 @@ PATCHED_TRACKED=(
     desktop_env/desktop_env.py
     desktop_env/providers/__init__.py
     scripts/python/run_multienv_m3.py
+    mm_agents/m3/parser.py
+    mm_agents/m3/agent.py
+    mm_agents/anthropic/main.py
+    desktop_env/controllers/python.py
+    desktop_env/controllers/website.py
 )
 VENDORED=(
     "desktop_env/providers/e2b/provider.py:$PROVIDER_DIR/provider.py"
@@ -180,6 +185,276 @@ if m3.exists():
         m3.write_text(src.replace(m3_anchor, m3_patched, 1))
         print("(d) run_multienv_m3.py: patched (accepts --provider_name e2b)")
 
+# (e) M3 parser: `super` is the X11 Super key ("win"), not macOS "command" ----
+# The active `key` branch shadows the module's own _NORMALIZE_KEY table; on
+# Linux PyAutoGUI has no "command" key and silently drops the press (sample
+# 2026-09-15, task 103). Narrow: one entry, neighbours unchanged.
+parser = dest / "mm_agents/m3/parser.py"
+if parser.exists():
+    src = parser.read_text()
+    key_anchor = '                "super_l": "win",\n                "super": "command",\n'
+    key_patched = '                "super_l": "win",\n                "super": "win",\n'
+    if key_patched in src:
+        print("(e) m3/parser.py super key: already applied")
+    else:
+        count = src.count(key_anchor)
+        assert count == 1, f"m3/parser.py key_conversion super entry found {count}x, need exactly 1 (OSWorld-V2 moved?)"
+        parser.write_text(src.replace(key_anchor, key_patched, 1))
+        print("(e) m3/parser.py: patched (super -> win on Linux)")
+
+# (p) native Claude adapter: same X11 Super key repair as (e) ----------------
+# mm_agents/anthropic/main.py keeps its own key_conversion table (20-space
+# indent, inside the tool-use handler). On Linux PyAutoGUI has no "command"
+# key, so every `super`/`super+<x>` the Claude agent emits was silently
+# dropped. Narrow: one entry, neighbours unchanged.
+anthropic_main = dest / "mm_agents/anthropic/main.py"
+if anthropic_main.exists():
+    src = anthropic_main.read_text()
+    claude_key_anchor = '                    "super_l": "win",\n                    "super": "command",\n'
+    claude_key_patched = '                    "super_l": "win",\n                    "super": "win",\n'
+    if claude_key_patched in src:
+        print("(p) anthropic/main.py super key: already applied")
+    else:
+        count = src.count(claude_key_anchor)
+        assert count == 1, f"anthropic/main.py key_conversion super entry found {count}x, need exactly 1 (OSWorld-V2 moved?)"
+        anthropic_main.write_text(src.replace(claude_key_anchor, claude_key_patched, 1))
+        print("(p) anthropic/main.py: patched (super -> win on Linux)")
+
+# (f) M3 parser: the [INFEASIBLE] terminal marker counts only outside the
+# model's thinking block. M3Agent._call_llm prepends thinking as
+# <mm:think>...</mm:think>; a marker mentioned while reasoning overrode an
+# actual tool call in the same response (sample 2026-09-15, task 067).
+if parser.exists():
+    src = parser.read_text()
+    inf_anchor = '    if "[INFEASIBLE]" in response:\n        return "[INFEASIBLE]", ["FAIL"]\n'
+    inf_patched = (
+        '    if "[INFEASIBLE]" in _M3_THINK_BLOCK.sub("", response):\n'
+        '        return "[INFEASIBLE]", ["FAIL"]\n'
+    )
+    if inf_patched in src:
+        print("(f) m3/parser.py infeasible marker: already applied")
+    else:
+        count = src.count(inf_anchor)
+        assert count == 1, f"m3/parser.py [INFEASIBLE] check found {count}x, need exactly 1 (OSWorld-V2 moved?)"
+        src = src.replace(inf_anchor, inf_patched, 1)
+        # Module constant next to the existing `import re` (unique line).
+        import_anchor = "import re\n"
+        count = src.count(import_anchor)
+        assert count == 1, f"m3/parser.py `import re` found {count}x, need exactly 1"
+        src = src.replace(import_anchor, import_anchor + '_M3_THINK_BLOCK = re.compile(r"<mm:think>.*?</mm:think>", re.S)\n', 1)
+        parser.write_text(src)
+        print("(f) m3/parser.py: patched ([INFEASIBLE] ignored inside <mm:think>)")
+
+# (g) controller: wait for the guest's verdict on an agent action -----------
+# The guest kills an action at its own 120 s deadline and answers 500 with
+# subprocess's TimeoutExpired text. Upstream's 90 s client timeout returned None
+# before that verdict arrived, so typing continued for up to 30 s under the next
+# action (sample 2026-09-15, tasks 093/059/079/082). Only the /execute action
+# path changes; setup and script timeouts are untouched.
+controller = dest / "desktop_env/controllers/python.py"
+if controller.exists():
+    src = controller.read_text()
+    deadline_anchor = "data=payload, timeout=90)"
+    deadline_patched = "data=payload, timeout=130)"
+    if deadline_patched in src:
+        print("(g) controllers/python.py action deadline: already applied")
+    else:
+        count = src.count(deadline_anchor)
+        assert count == 1, f"controllers/python.py execute_python_command timeout found {count}x, need exactly 1 (OSWorld-V2 moved?)"
+        controller.write_text(src.replace(deadline_anchor, deadline_patched, 1))
+        print("(g) controllers/python.py: patched (action deadline 130 s covers the guest's 120 s kill)")
+
+# (h) controller: the guest's own timeout verdict is final, never retried ----
+# With (g) the client waits 130 s, so the guest's 500 for a 120 s kill now
+# reaches the client instead of a client-side ReadTimeout arriving first.
+# Retrying would replay a partially applied action, so `break` falls through to
+# upstream's own `return None` -- the same outcome upstream produces on a
+# client-side ReadTimeout, with no replay. Evaluator code paths are unchanged:
+# callers still see None, never a 200 carrying empty output.
+if controller.exists():
+    src = controller.read_text()
+    retry_anchor = (
+        "                else:\n"
+        '                    logger.error("Failed to execute command. Status code: %d", response.status_code)\n'
+        '                    logger.info("Retrying to execute command.")\n'
+    )
+    retry_patched = (
+        "                else:\n"
+        '                    logger.error("Failed to execute command. Status code: %d", response.status_code)\n'
+        '                    if response.status_code == 500 and "timed out after" in response.text:\n'
+        "                        # The guest killed the action at its own deadline (upstream's\n"
+        "                        # TimeoutExpired message). Retrying would replay a partially\n"
+        "                        # applied action, so give up exactly as a client timeout does.\n"
+        "                        break\n"
+        '                    logger.info("Retrying to execute command.")\n'
+    )
+    if retry_patched in src:
+        print("(h) controllers/python.py guest-timeout retry: already applied")
+    else:
+        count = src.count(retry_anchor)
+        assert count == 1, f"controllers/python.py execute_python_command non-200 branch found {count}x, need exactly 1 (OSWorld-V2 moved?)"
+        controller.write_text(src.replace(retry_anchor, retry_patched, 1))
+        print("(h) controllers/python.py: patched (no retry after the guest's own timeout)")
+
+# (i)-(k) Inference-run contracts: failures propagate, fleet HTTPS is explicit,
+# and one text action incurs one PyAutoGUI pause instead of one per character.
+def replace_once(relative, before, after, label):
+    path = dest / relative
+    if not path.exists():
+        return
+    src = path.read_text()
+    if after in src:
+        print(f"{label}: already applied")
+        return
+    assert src.count(before) == 1, f"{label}: expected one anchor (OSWorld-V2 moved?)"
+    path.write_text(src.replace(before, after, 1))
+    print(f"{label}: patched")
+
+# Shared upstream execution-path repair, applied only to E2B native actions.
+# xclip's background selection owner inherits PIPE handles from pyperclip;
+# /execute then waits for EOF even after the typing process has exited. Give
+# only that clipboard child null output streams, leaving ordinary output intact.
+# Native Ctrl+V parsing is deliberately unchanged (including terminal behavior).
+clipboard_prefix = (
+    "import pyperclip as _osworld_clipboard\n"
+    "import subprocess as _osworld_subprocess\n"
+    "def _osworld_clipboard_copy(text, primary=False):\n"
+    "    _osworld_subprocess.run(['xclip', '-selection', 'p' if primary else 'c'], "
+    "input=text.encode('utf-8'), stdout=_osworld_subprocess.DEVNULL, "
+    "stderr=_osworld_subprocess.DEVNULL)\n"
+    "_osworld_clipboard.copy = _osworld_clipboard_copy\n"
+)
+# Native wait tools must not run inside the guest's 120 s command deadline.
+# Keep duration, action history, observation and one normal action pause. An
+# over-long wait is capped at NATIVE_WAIT_MAX_SECONDS so one tool call cannot
+# spend the sandbox lifetime (and the worker slot) doing nothing.
+replace_once(
+    "desktop_env/desktop_env.py",
+    "                elif type(action) == dict:\n"
+    "                    self.controller.execute_python_command(action['command'])\n",
+    "                elif type(action) == dict:\n"
+    '                    native_computer = (self.provider_name == "e2b"\n'
+    '                        and self.action_space == "claude_computer_use" and action.get("name") == "computer")\n'
+    '                    execution_actions = action.get("e2b_actions", [action]) if native_computer else [action]\n'
+    "                    for execution_action in execution_actions:\n"
+    "                        if (native_computer\n"
+    '                                and execution_action.get("input", {}).get("action") == "wait"):\n'
+    "                            import math\n"
+    '                            duration = execution_action["input"].get("duration")\n'
+    "                            if duration is None:\n"
+    "                                duration = 0.5\n"
+    "                            if (type(duration) not in (int, float)\n"
+    "                                    or not math.isfinite(duration) or duration < 0):\n"
+    '                                raise ValueError("Native wait duration must be finite and nonnegative")\n'
+    "                            NATIVE_WAIT_MAX_SECONDS = 600\n"
+    "                            if duration > NATIVE_WAIT_MAX_SECONDS:\n"
+    '                                logger.warning("Native wait of %s s clamped to %s s", duration, NATIVE_WAIT_MAX_SECONDS)\n'
+    "                            time.sleep(min(duration, NATIVE_WAIT_MAX_SECONDS) or 0.5)\n"
+    "                        elif (native_computer\n"
+    '                                and execution_action.get("input", {}).get("action") == "type"\n'
+    '                                and isinstance(execution_action["input"].get("text"), str)\n'
+    '                                and not execution_action["input"]["text"].isascii()):\n'
+    f"                            command = {clipboard_prefix!r} + execution_action['command']\n"
+    "                            self.controller.execute_python_command(command)\n"
+    "                        else:\n"
+    "                            self.controller.execute_python_command(execution_action['command'])\n",
+    "(o) native Claude wait and clipboard execution",
+)
+
+replace_once(
+    "mm_agents/m3/agent.py",
+    '                raw_response = {"error": str(e)}\n'
+    '                if attempt < self.max_llm_retries:\n'
+    '                    continue\n'
+    '                break\n',
+    '                raw_response = {"error": str(e)}\n'
+    '                if attempt < self.max_llm_retries:\n'
+    '                    continue\n'
+    '                self._save_api_log(request_body, raw_response, retry_attempts=retry_attempts)\n'
+    '                raise\n',
+    "(i) M3 exhausted transport errors propagate",
+)
+replace_once(
+    "desktop_env/controllers/website.py",
+    '    https_url = f"https://{host}"\n',
+    '    if os.environ.get("OSWORLD_WEBSITE_SCHEME") == "https":\n'
+    '        return "https://"\n'
+    '    https_url = f"https://{host}"\n',
+    "(j) campaign fleet scheme",
+)
+if parser.exists():
+    src = parser.read_text()
+    typed = '            code.append(f"pyautogui.write({text!r}, interval=0.001)")\n'
+    if typed not in src:
+        start = '            for char in text:\n'
+        end = '    elif action == "scroll":\n'
+        assert src.count(start) == src.count(end) == 1, "(k) M3 typing anchors moved"
+        before = src[src.index(start):src.index(end)]
+        replace_once("mm_agents/m3/parser.py", before, typed, "(k) M3 typing")
+
+replace_once(
+    "mm_agents/m3/agent.py",
+    '            if not pyautogui_code and response_text.strip():\n',
+    '            if not pyautogui_code:\n',
+    "(l) M3 empty responses use the configured retries",
+)
+replace_once(
+    "mm_agents/m3/agent.py",
+    'out of retries, no-op',
+    'out of retries, failing',
+    "(l) M3 parse-failure diagnostic",
+)
+replace_once(
+    "mm_agents/m3/agent.py",
+    '        if pyautogui_code == ["CALL_USER"]:\n',
+    '        if not pyautogui_code:\n'
+    '            self._save_api_log(request_body, raw_response, retry_attempts=retry_attempts or None)\n'
+    '            raise ValueError("M3 response contained no executable action")\n'
+    '\n'
+    '        if pyautogui_code == ["CALL_USER"]:\n',
+    "(l) M3 empty or malformed actions fail closed",
+)
+
+replace_once(
+    "mm_agents/m3/agent.py",
+    '            body["thinking"] = {"type": "adaptive"}\n'
+    '            if self.thinking_budget:\n'
+    '                body["thinking"]["budget_tokens"] = self.thinking_budget\n'
+    '        elif self.thinking_budget:\n',
+    '            body["thinking"] = {"type": "adaptive"}\n'
+    '        elif self.thinking_budget:\n',
+    "(m) adaptive thinking omits unsupported fixed budget",
+)
+
+replace_once(
+    "mm_agents/anthropic/main.py",
+    '            betas.append(PROMPT_CACHING_BETA_FLAG)\n',
+    '            # Prompt caching is generally available; keep cache_control without the obsolete beta.\n',
+    "(n) Claude prompt caching omits obsolete beta header",
+)
+
+# (q) native Claude adapter: a permanently failing status never succeeds on
+# retry. Upstream sleeps API_RETRY_INTERVAL (5 s) between API_RETRY_TIMES (500)
+# attempts, so a 401 spent the worker's whole task deadline inside time.sleep
+# (live rehearsal 2026-09-22: "attempt 414/500: Error code: 401"). Only the
+# permanent statuses short-circuit: 400/413 stay with upstream's
+# request-too-large handling, and 429/5xx keep the full retry budget.
+replace_once(
+    "mm_agents/anthropic/main.py",
+    '                    logger.warning(f"Anthropic API error (attempt {attempt+1}/{API_RETRY_TIMES}): {error_msg}")\n'
+    '\n'
+    '                    if self._is_request_too_large_error(e):\n',
+    '                    logger.warning(f"Anthropic API error (attempt {attempt+1}/{API_RETRY_TIMES}): {error_msg}")\n'
+    '\n'
+    '                    if isinstance(e, APIStatusError) and e.status_code in (401, 403, 404):\n'
+    '                        # Authentication, permission, and not-found errors never\n'
+    '                        # succeed on retry; fail this prediction closed instead of\n'
+    '                        # sleeping through the task deadline.\n'
+    '                        raise\n'
+    '                    if self._is_request_too_large_error(e):\n',
+    "(q) Claude permanent 4xx errors fail closed",
+)
+
 EOF
 }
 
@@ -271,8 +546,9 @@ touch "$DEST/desktop_env/providers/e2b/__init__.py"
 # The bridge imports e2b_policy from the checkout root (run.py's cwd).
 cp "$POLICY_FILE" "$DEST/e2b_policy.py"
 
-# ---- string patches: register + classify the provider, force strict reset,
-#      accept --provider_name e2b in the M3 multi-env runner ------------------
+# ---- string patches (a)-(q): register + classify the provider, force strict
+#      reset, accept --provider_name e2b in the M3 multi-env runner, and the
+#      disclosed agent transport / parser / controller execution patches ----
 apply_adapter_patches "$DEST"
 
 echo

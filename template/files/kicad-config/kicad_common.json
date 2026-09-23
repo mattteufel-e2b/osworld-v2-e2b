@@ -1,0 +1,16 @@
+{
+  "do_not_show_again": {
+    "data_collection_prompt": true,
+    "env_var_overwrite_warning": false,
+    "migrate_wrl_prompt": false,
+    "scaled_3d_models_warning": false,
+    "update_check_prompt": true,
+    "zone_fill_warning": false
+  },
+  "meta": {
+    "version": 6
+  },
+  "system": {
+    "working_dir": "/home/user"
+  }
+}

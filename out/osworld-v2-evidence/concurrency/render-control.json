@@ -1,0 +1,528 @@
+{
+  "template": "osworld-v2-gnome:cd4a1a63-eb56-418f-9ac3-60fbbf2b838e",
+  "campaign_id": "osworld-v2-concurrency-20260920",
+  "started_at": "2026-09-20T20:52:54.837679+00:00",
+  "purpose": "No-model functional rendering of unchanged task inputs using evaluator conversion commands; does not measure agent performance or visual reference fidelity.",
+  "timeout_seconds": 600,
+  "model_calls": 0,
+  "tasks": [
+    {
+      "task_id": "079",
+      "input": "tasks/assets/task_079/nexachain_pitch_template.pptx",
+      "input_bytes": 3350366,
+      "input_sha256": "77b43b79d49a43f0f7575e05a0938dabe7711ff1e6b39ceb8b7cae45e300e7a3",
+      "evaluator_source": "OSWorld-V2/evaluation_examples/task_class/task_079.py",
+      "evaluator_source_sha256": "31518573db0de2082a3da7ad031d531177d7cb345c2d03c0ad5e941a51ce55c5",
+      "expected_pages": 26,
+      "dpi": 100,
+      "pipeline": "Evaluator export_script evaluated with isolated input/output paths; temporary PDF retained only until guest deletion for pdfinfo validation.",
+      "conversion_exit_code": 0,
+      "conversion_seconds": 22.999,
+      "pdf_pages": 26,
+      "pdf_bytes": 2548370,
+      "pdf_sha256": "5bf2a541b1f87d26c35eb8513e3df633cf6ab9b1c2c5119ca284022b744d18c2",
+      "png_count": 26,
+      "images": [
+        {
+          "name": "slide_1.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 687989,
+          "sha256": "d739e2f384fdac36703805b7af696446c1cbb0241d561825c543077d9231a989"
+        },
+        {
+          "name": "slide_2.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 123629,
+          "sha256": "697029e06a078225255b691d213298a0caeff3167a526f1b3bfe46daafcdb770"
+        },
+        {
+          "name": "slide_3.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 153252,
+          "sha256": "0c47ac99968614c1ff5b1d296d4fdacff8633a27febf9d6907ed481afa1fd385"
+        },
+        {
+          "name": "slide_4.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 129290,
+          "sha256": "9ec2e702107cf6c80aa1302fbd7aa968aafdeb4494a0eb60db25f28c1689cd85"
+        },
+        {
+          "name": "slide_5.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 141450,
+          "sha256": "6ca6afa197d5aaf6083f4eb270fef57b1458503f35f74a3656ec93c98b992491"
+        },
+        {
+          "name": "slide_6.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 134647,
+          "sha256": "7ebe4b65d842ae8e28327dfac3293d2630190f6046316a411631d916a6c68eee"
+        },
+        {
+          "name": "slide_7.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 144032,
+          "sha256": "c93c9d03da52a76a3ebeb0f95914081d6aefef4220ef150291efe95d91e6b99a"
+        },
+        {
+          "name": "slide_8.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 140686,
+          "sha256": "f9118ae46a545aa3ee283a9395f137cb5292b7cab2c5d85e6f9324fae3bd9eda"
+        },
+        {
+          "name": "slide_9.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 203425,
+          "sha256": "ffe342f8bf651df9e5d9aa049824dc6164c23b15ea095579b71b4b9e76c3a31f"
+        },
+        {
+          "name": "slide_10.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 121907,
+          "sha256": "8eb6c10f140cd6b1da0f6898cb475a72d7d4f9f1000ef7b46eb59b3c80cae16b"
+        },
+        {
+          "name": "slide_11.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 132275,
+          "sha256": "9c0f6f47d38c0acd297a8de77fe6ba57c5c9c82a66ddec9adaecf931619edbf7"
+        },
+        {
+          "name": "slide_12.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 136172,
+          "sha256": "62285eb2a0d4880068254b5e3f38bca1c096e3e94923d25de2c0bfed5127ae2d"
+        },
+        {
+          "name": "slide_13.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 560189,
+          "sha256": "0c6ad54416f0368f19a6f65903e0b691be9f9cf00b65a3372b6fe9b3acf41045"
+        },
+        {
+          "name": "slide_14.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 128446,
+          "sha256": "a44181906d0235088f891ec3ff40836378663d973ba8a6b1d2b9229a4bc8fb5b"
+        },
+        {
+          "name": "slide_15.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 261409,
+          "sha256": "0a0d07f6a06fa92b43716090ad150a79fead0cb0ae1966902eb6e21c2effbda8"
+        },
+        {
+          "name": "slide_16.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 96225,
+          "sha256": "6d334cc2518dcd8161ed3449c8af5ddb50d77ddcf44f636080d88e690e46fe10"
+        },
+        {
+          "name": "slide_17.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 143775,
+          "sha256": "a9df515fd70340e899d8a13f0049a8c92e07afb6cfb7e831e59c97236bb987db"
+        },
+        {
+          "name": "slide_18.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 165370,
+          "sha256": "ce22271fc5f696cf7a198be9acaee439bea72cbd5eada1a9a682652c4d066fb1"
+        },
+        {
+          "name": "slide_19.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 114069,
+          "sha256": "aa3e1f145f728b9e331f5a28c9d994ead139ecfdd142afec4c9a9c9be5b52054"
+        },
+        {
+          "name": "slide_20.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 629951,
+          "sha256": "3c2f739910e6405e67d98060ac42b2fe1e9d53a7b46c00d75fbeb974cf422066"
+        },
+        {
+          "name": "slide_21.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 542964,
+          "sha256": "488dd0b68b5080061b2af6f2eb18eea847ae3302d404de9b9cfa77b84d7b81cc"
+        },
+        {
+          "name": "slide_22.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 157024,
+          "sha256": "daf7f68ec6ff7cf5dc839525019a743f6d636fd323b472cff46829e812262df4"
+        },
+        {
+          "name": "slide_23.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 115700,
+          "sha256": "f91f3c9d4300f10cdaef9cae777b303c1d8924aa2fb59b6f5b95a43f154f4daa"
+        },
+        {
+          "name": "slide_24.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 112703,
+          "sha256": "d5c71a1136e9f463af229cb01ac842066addc1a7e32011f63412ac05093aa155"
+        },
+        {
+          "name": "slide_25.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 56567,
+          "sha256": "bee6a79ee6742772e0579a32b63aa451d03874bf80cc4f334a08149d393cafb8"
+        },
+        {
+          "name": "slide_26.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 141549,
+          "sha256": "3d9b9d16b87dd6ac4adeebbe1537e80784adaac1f13fd8045ea008f6af533fa9"
+        }
+      ],
+      "passed": true
+    },
+    {
+      "task_id": "087",
+      "input": "tasks/assets/task_087/special_relativity_input.pptx",
+      "input_bytes": 862945,
+      "input_sha256": "fab74baf23da512de77ab721fe1260b4735837b19470d62ba9bb964466f04625",
+      "evaluator_source": "OSWorld-V2/evaluation_examples/task_class/task_087.py",
+      "evaluator_source_sha256": "0efe53224f412a07174e087ec5ad54ae4e5f8f5aeb90ec2e75d08a95ebcb5539",
+      "expected_pages": 19,
+      "dpi": 100,
+      "pipeline": "Evaluator export_script evaluated with isolated input/output paths; temporary PDF retained only until guest deletion for pdfinfo validation.",
+      "conversion_exit_code": 0,
+      "conversion_seconds": 8.331,
+      "pdf_pages": 19,
+      "pdf_bytes": 1791438,
+      "pdf_sha256": "3e1fe05e730e7c7cd86136fb29b8294dd44d67b9998a9f179be273a6e7b1522e",
+      "png_count": 19,
+      "images": [
+        {
+          "name": "slide_1.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 400985,
+          "sha256": "6bbd8390e802fa34f7b2fc3d0fe3cb8ef32d697f70968a890890a153172c1af8"
+        },
+        {
+          "name": "slide_2.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 16248,
+          "sha256": "65e13f62f4980f6980c7f3a2aed1d438cbe3c59bc027374e6735fb196e83c72c"
+        },
+        {
+          "name": "slide_3.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 305470,
+          "sha256": "926333021d50f241190766ac2214a50116e29b4d7f9411c4e43e61b08ca7758e"
+        },
+        {
+          "name": "slide_4.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 20202,
+          "sha256": "116c9338771c965c2505648b38072274c6362beb095ee590a877717ef7546130"
+        },
+        {
+          "name": "slide_5.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 10832,
+          "sha256": "481bb525fb889d4625c8d3e4fca051e144849d4a9e7d95e5e09f637253226e24"
+        },
+        {
+          "name": "slide_6.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 46617,
+          "sha256": "91c70819d886c09355df83c664b5b9024c65efb6a02379f9045c09758af9c9a9"
+        },
+        {
+          "name": "slide_7.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 85630,
+          "sha256": "a188f79a88b85252d3da08c07ffd3f09e36f44f93bbc67fe41dfdc1f0e1f7a4e"
+        },
+        {
+          "name": "slide_8.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 63810,
+          "sha256": "0361c06fbe0a55ea0df72e15d216183fdfef20bf6baba22ebfe431b0f075a599"
+        },
+        {
+          "name": "slide_9.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 34339,
+          "sha256": "be3f8e6fc0b5c102dbef83dda90e26baeaf8b3947066d4add5f108812c69c007"
+        },
+        {
+          "name": "slide_10.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 37474,
+          "sha256": "97aa0f5814c05a4209510158ee93cddc0a11d0ece8e75807ac640e54ab153bec"
+        },
+        {
+          "name": "slide_11.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 309951,
+          "sha256": "ecbc8e026115e72b7bcde7c481a2f528d9ffeb1eb014175636b1cfb6c7b71868"
+        },
+        {
+          "name": "slide_12.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 22574,
+          "sha256": "342c5fc5e2f146b66b4f31b6c2676c6ce2bcdb99d28e42cd183c4064dfc9c59f"
+        },
+        {
+          "name": "slide_13.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 15256,
+          "sha256": "5030f435c6e524d6196bbc20c55dda4d79e55122fd6b2393b680b93390a0c9a5"
+        },
+        {
+          "name": "slide_14.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 43779,
+          "sha256": "9ceaed8b077524c092e424b85aafba0eca51a2dc868f5d5832b9a75b3ea2b1cc"
+        },
+        {
+          "name": "slide_15.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 28647,
+          "sha256": "42653fadf49a2b9da5af2f655b2deab44f4a690e05958fd615251efc3ea6281a"
+        },
+        {
+          "name": "slide_16.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 36638,
+          "sha256": "ec2949746f237ed130ee2e18090b66be89c4a71422e98e9c4290eee4a0a89330"
+        },
+        {
+          "name": "slide_17.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 42444,
+          "sha256": "71853bdc21cc60e59a26e07bbfacd2c30646c448f0a2f32b8903e429f13a6d74"
+        },
+        {
+          "name": "slide_18.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 71315,
+          "sha256": "9df762cb36e153441d0be403024f0f2c23e4f25a921d8f8c853cb0d0c1500e5a"
+        },
+        {
+          "name": "slide_19.png",
+          "format": "PNG",
+          "width": 1334,
+          "height": 750,
+          "mode": "RGB",
+          "decoded": true,
+          "bytes": 301482,
+          "sha256": "faff6ee8a6456fbf94ee330b3788216dabc16cdd32f9e77fb2f0b36dfa19b321"
+        }
+      ],
+      "passed": true
+    }
+  ],
+  "cleanup": {
+    "attempted": true,
+    "success": true
+  },
+  "sandbox_id": "ihot9l8kl0phj024vgj7q",
+  "converters": {
+    "soffice": {
+      "path": "/usr/bin/soffice",
+      "version": [
+        "LibreOffice 7.3.7.2 30(Build:2)"
+      ]
+    },
+    "pdftoppm": {
+      "path": "/usr/bin/pdftoppm",
+      "version": [
+        "pdftoppm version 22.02.0"
+      ]
+    },
+    "pdfinfo": {
+      "path": "/usr/bin/pdfinfo",
+      "version": [
+        "pdfinfo version 22.02.0"
+      ]
+    }
+  },
+  "elapsed_seconds": 35.488,
+  "finished_at": "2026-09-20T20:53:30.325199+00:00",
+  "passed": true
+}

@@ -5,7 +5,7 @@ upstream desktop environment to E2B while keeping OSWorld's tasks, agents, and e
 It includes a desktop template, the E2B provider with its in-process sandbox bridge, service
 fleets, and an optional parallel coordinator.
 
-The port is experimental. See the [verified results and known limitations](docs/pr-1-verification.md).
+The port is experimental. See the [verified results and known limitations](FIDELITY.md).
 
 ## Quick start
 
@@ -62,15 +62,45 @@ export OSWORLD_EVAL_MODEL_BASE_URL=https://bedrock-mantle.us-east-1.api.aws/anth
 export OSWORLD_EVAL_MODEL_API_KEY_ENV=AWS_MANTLE
 export OSWORLD_USER_SIM_MODEL=anthropic.claude-haiku-4-5
 export AWS_MANTLE="..."                    # judge and user simulator
+export OPENAI_API_KEY="${OPENAI_API_KEY:-bedrock-legacy-presence-only}" # task 092 presence check
 
 AGENT_MANIFEST="$RUN_ROOT/full-manifest.json" PARALLEL_CONCURRENCY=80 MAX_STEPS=500 \
-    AGENT_TASK_TIMEOUT_SECONDS=28800 RAW_DIR="$RUN_ROOT/agent-raw" \
+    RAW_DIR="$RUN_ROOT/agent-raw" \
     OUTPUT="$RUN_ROOT/agent-full.json" runner/run_agent_parallel.sh
 ```
 
-Concurrency defaults to and is capped at **80**. Results are in `$RUN_ROOT/agent-full.json`;
+Concurrency defaults to **80** and is capped at **120**; the per-task deadline defaults to
+28800 seconds (8 hours), so it is omitted above. Results are in `$RUN_ROOT/agent-full.json`;
 trajectories are in `$RUN_ROOT/agent-raw`. Admitted runs stop their service fleets on exit.
 See [run configuration](docs/configuration.md) for cleanup, recording, and result interpretation.
+To resume an interrupted or partially-scored run, rerun the same command with
+`RESUME_RUN_ID=<the previous RUN_ID>`; tasks that already scored are kept and only unscored
+tasks rerun. A resume with no scored tasks reruns everything under a fresh nonce.
+
+To use the pinned upstream Claude agent, select `AGENT_KIND=claude`. It sends native
+computer-use tool calls through Anthropic Messages. For Bedrock Mantle, configure:
+
+```bash
+export AGENT_KIND=claude MODEL=anthropic.claude-opus-5 MAX_STEPS=500
+export SLEEP_AFTER_EXECUTION=0             # pinned Claude launcher default
+export MODEL_BASE_URL=https://bedrock-mantle.us-east-1.api.aws/anthropic
+export MODEL_API_KEY="..."                 # your Mantle bearer key
+```
+
+Use the coordinator command above with these agent settings. Claude uses adaptive max
+effort, at least 16,000 output tokens, ten recent images with upstream's chunked removal,
+and model-default sampling. The worker's `--max-trajectory-length` controls image retention;
+`--temperature` and `--top-p` overrides are rejected. Receipts record the effective token
+limit and the run's step budget. Only models with an adaptive-thinking profile in the
+pinned agent are accepted; its fixed desktop password is `osworld-public-evaluation`.
+Upstream prompts, inference settings, and action parsing are preserved. Setup removes the
+obsolete `prompt-caching-2024-07-31` beta header, which Mantle rejects; prompt caching's
+`cache_control` fields and the computer-use beta remain. [Anthropic documents that prompt
+caching requires no beta header](https://platform.claude.com/docs/en/release-notes/overview#december-17th-2024).
+A thin wrapper raises upstream's failure sentinel instead of treating it as a user question. The upstream
+500-attempt retry loop remains; use `AGENT_TASK_TIMEOUT_SECONDS` (or the worker's
+`--deadline-seconds`) to bound failures. This configuration does not establish reproduction
+of the published Opus 5 batch-tool score.
 
 Run `services/stop.py --campaign-id "$OSWORLD_CAMPAIGN_ID" [--dry-run]` to remove exactly
 that campaign's fleets and any leftover guests, such as after a hard-killed run.
@@ -90,13 +120,14 @@ The coordinator also starts the host hostmap proxy for you; on this path start i
 or task setup and evaluators on the host cannot reach `*.127.0.0.1.nip.io:8090`.
 
 ```bash
-export WEBSITE_HOST_SUFFIX=127.0.0.1.nip.io:8090 GITLAB_URL=http://gitlab.127.0.0.1.nip.io:8090
-export GITLAB_PRIVATE_TOKEN="$(cat services/.gitlab-token)"
-export HOSTMAP_PROXY_SCRIPT="$PWD/services/hostmap_proxy.py" OSWORLD_FLEET_RULES="$PWD/services/.runtime.json"
-export OSWORLD_FILE_BASE_URL="$PWD/tasks/assets"
+# The same helper the coordinator uses: it only defines variables and functions, and
+# exports the whole fleet wiring -- site suffix, GitLab URL and token, asset base, and the
+# campaign CA/leaf paths (docs/runtime.md#fleet-origins-and-trust) -- from the runtime file
+# the launchers already wrote, so this shell's HTTPS clients and the proxy both trust it.
+source runner/common.sh && export_fleet_wiring
 cp tasks/task_*.py OSWorld-V2/evaluation_examples/task_class/
 
-HOSTMAP_PORT=8090 FLEET_RUNTIME_FILE="$PWD/services/.runtime.json" \
+HOSTMAP_PORT=8090 HOSTMAP_TLS_PORTS=8090 FLEET_RUNTIME_FILE="$OSWORLD_FLEET_RULES" \
     uv run --python 3.12 --with e2b==2.34.0 python services/hostmap_proxy.py &
 
 cd OSWorld-V2
@@ -129,10 +160,36 @@ Register your agent in [`runner/agents.py`](runner/agents.py), implementing upst
 You can also use the included `prompt` agent with an OpenAI-compatible endpoint.
 See [agent configuration and examples](docs/configuration.md#bring-your-own-agent).
 
+## Licences you maintain
+
+You build the guest image yourself; this repository redistributes none of these binaries.
+The template installs the following components whose terms you are responsible for:
+
+| Component | Version | Licence |
+|---|---|---|
+| Google Chrome | `153.0.8010.47-1` in build `00124a57-267c-45e7-93d1-ca0ff196e4b8`; each build freezes whatever the Google repo served, recorded in the build's own `template/results/template-build.json` and committed for this build at `out/osworld-v2-evidence/template/template-build-00124a57-267c-45e7-93d1-ca0ff196e4b8.json` | [Google Chrome Terms of Service](https://www.google.com/chrome/terms/) |
+| WPS Office for Linux | 11.1.0.11723 | [Kingsoft EULA](https://www.wps.com/eula/) (proprietary) |
+| REAPER | 7.79 | [Evaluation licence](https://www.reaper.fm/purchase.php); a paid licence is required for continued use |
+| Visual Studio Code | 1.91.1 | [Microsoft Software License](https://code.visualstudio.com/license); Microsoft's `.deb` build is proprietary, not the MIT-licensed `vscode` source |
+
+Open-source components installed from vendor releases or Ubuntu 22.04: MuseScore Studio 4.6.5 (GPL-3.0),
+Blender 4.5.14 (GPL-2.0-or-later), KiCad 10.0 (GPL-3.0-or-later, via the KiCad PPA; `apt-get install -y kicad` runs with recommends,
+so it also pulls `kicad-libraries` — the symbol, footprint and 3D-model data, which is
+[CC-BY-SA-4.0 with the KiCad library exception](https://www.kicad.org/libraries/license/), a
+separate obligation from the application's GPL), FreeCAD 1.1.3
+(LGPL-2.1), Zotero 7.0.15 (AGPL-3.0), Shotcut (GPL-3.0), OpenBoard (GPL-3.0), LibreOffice (MPL-2.0),
+x11vnc (GPL-2.0), noVNC (MPL-2.0), websockify (LGPL-3.0), and task 082's Docker Compose v2 CLI plugin
+(Apache-2.0). Also from Ubuntu 22.04's archive: GIMP (GPL-3.0-or-later), VLC (GPL-2.0-or-later),
+Thunderbird (MPL-2.0) and Evince (GPL-2.0-or-later), alongside the GNOME desktop, fonts, PulseAudio
+and the X/screenshot tooling the evaluators call; every archive package's authoritative terms are its
+own `/usr/share/doc/<package>/copyright` file inside the guest. The upstream
+guest server (`xlang-ai/osworld-server`) publishes no licence and is fetched at build time, never
+redistributed (see `docs/runtime.md`).
+
 ## Documentation
 
 - [Agent, judge, and run configuration](docs/configuration.md)
 - [Runtime, resources, networking, and snapshots](docs/runtime.md)
 - [Maintainer validation](maintainer/README.md)
-- [Verification evidence](FIDELITY.md) and [known issues](docs/pr-1-verification.md)
+- [Verification evidence and known issues](FIDELITY.md)
 - [Architecture walkthrough](docs/architecture.md)

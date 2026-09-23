@@ -1,0 +1,52 @@
+{
+  "campaign_id": "osworld-v2-native-parity-20260920",
+  "task_id": "task_087",
+  "audit_status": "completed",
+  "score": 0.64,
+  "path_status": "OK",
+  "steps_taken": 171,
+  "agent_calls": 172,
+  "evaluator_ran": true,
+  "finished_at_utc": "2026-09-21T04:02:18.950624+00:00",
+  "audited_at_utc": "2026-09-21T04:03:42.782147+00:00",
+  "presentation": {
+    "sha256": "d58fe01cccadde2b2ea42fe515bbba7c891611cd794d6eec1b2c5e2ea6568c7a",
+    "bytes": 829252,
+    "slides": 19,
+    "downloaded_at_utc": "2026-09-21T04:02:08.891958+00:00",
+    "fresh_within_run": true,
+    "parses": true
+  },
+  "rendered_slides": {
+    "expected": 19,
+    "decoded": 19,
+    "all_fresh_within_run": true,
+    "dimensions": [1334, 750],
+    "first_download_at_utc": "2026-09-21T04:02:09.205730+00:00",
+    "last_download_at_utc": "2026-09-21T04:02:12.854978+00:00",
+    "ordered_slide_hash_manifest_sha256": "56d30be1bf44ea1686f399106447c39f33bbbb37e71e0b8d3f096bf05646ebe3"
+  },
+  "judge": {
+    "attempts": 3,
+    "successes": 3,
+    "source_visual_call_sites": 3,
+    "all_corresponding_reference_images_decode": true
+  },
+  "baseline": {
+    "cached_input_present_and_parses": true,
+    "slides": 19,
+    "sha256": "fab74baf23da512de77ab721fe1260b4735837b19470d62ba9bb964466f04625",
+    "cache_predates_run": true,
+    "path_matches_evaluator_destination": true,
+    "existing_cache_reused_by_getter": true,
+    "baseline_subtraction_supported_by_code_and_valid_cache": true,
+    "positive_runtime_log_confirmation": false,
+    "baseline_rendering_required": false
+  },
+  "warnings": {
+    "task_level_evaluator_messages_present_in_available_logs": false,
+    "baseline_subtraction_warning_observed": false,
+    "warning_coverage_limitation": "Task-level evaluator logs are absent; warning absence cannot be independently established.",
+    "launcher_warning": "uv ignored a mismatched VIRTUAL_ENV and used the project environment."
+  }
+}
