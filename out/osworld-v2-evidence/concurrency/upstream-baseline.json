@@ -1,0 +1,20 @@
+{
+  "source": "https://osworld-v2.xlang.ai/static/data/leaderboard/official-results.json?v=leaderboard-v21-v1",
+  "observed_date": "2026-09-20",
+  "target": {
+    "model": "Claude Opus 5",
+    "modelFamily": "Claude",
+    "reasoning": "max",
+    "toolSetting": "batch tool",
+    "stepBudget": 500,
+    "releaseVersion": "v2026.08.08",
+    "datasetScope": "full",
+    "binaryAccuracy": 31.43,
+    "partialScore": 68.31,
+    "estimatedCostUsd": null,
+    "official": true
+  },
+  "pinned_launcher_model": "claude-sonnet-4-6",
+  "tested_available_model": "anthropic.claude-opus-5",
+  "exact_published_batch_configuration_reproduced": false
+}

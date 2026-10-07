@@ -35,6 +35,36 @@ def _minimal_inputs(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     return osworld, tasks, manifest, services
 
 
+def _write_tls_material(services: Path, campaign_id: str) -> dict:
+    """Stand-in campaign CA/leaf material matching the shape
+    campaign_tls.ensure_campaign_tls writes into the `tls` runtime section:
+    absolute path strings, leaf key and CA key privately-permissioned. The CA
+    key deliberately has no field of its own in the runtime dict -- preflight
+    derives it as ca_cert's sibling `ca.key`, so it must exist on disk here."""
+    tls_dir = services / ".campaign-tls"
+    tls_dir.mkdir(parents=True, exist_ok=True)
+    ca_cert = tls_dir / "ca.crt"
+    ca_key = tls_dir / "ca.key"
+    leaf_cert = tls_dir / "leaf.crt"
+    leaf_key = tls_dir / "leaf.key"
+    bundle = tls_dir / "bundle.crt"
+    ca_cert.write_text("test-ca-cert\n")
+    leaf_cert.write_text("test-leaf-cert\n")
+    bundle.write_text("test-bundle\n")
+    ca_key.write_text("test-ca-key\n")
+    ca_key.chmod(0o600)
+    leaf_key.write_text("test-leaf-key\n")
+    leaf_key.chmod(0o600)
+    return {
+        "campaign_id": campaign_id,
+        "hosts": ["mailhub.127.0.0.1.nip.io", "gitlab.127.0.0.1.nip.io"],
+        "ca_cert": str(ca_cert),
+        "leaf_cert": str(leaf_cert),
+        "leaf_key": str(leaf_key),
+        "bundle": str(bundle),
+    }
+
+
 def test_all_runners_fail_before_launching_when_service_runtime_is_missing(tmp_path):
     osworld, tasks, manifest, services = _minimal_inputs(tmp_path)
     fake_bin = tmp_path / "bin"
@@ -63,6 +93,7 @@ def test_all_runners_fail_before_launching_when_service_runtime_is_missing(tmp_p
         "MODEL_BASE_URL": "https://example.test/v1",
         "MODEL": "test-model",
         "REQUIRE_NO_MODEL_COVERAGE": "0",
+        "AGENT_KIND": "prompt",
     }
 
     for relative in (
@@ -163,6 +194,7 @@ def test_preflight_rejects_busy_canonical_task_082_host_port(tmp_path, monkeypat
             "url": "http://gitlab.127.0.0.1.nip.io:8090",
             "private_token": private_token,
         },
+        "tls": _write_tls_material(services, "test-campaign"),
     }
     runtime_path = services / ".runtime.json"
     runtime_path.write_text(json.dumps(runtime))
@@ -237,6 +269,7 @@ def _admissible_inputs(tmp_path, monkeypatch):
             "url": "http://gitlab.127.0.0.1.nip.io:8090",
             "private_token": "test-private-token",
         },
+        "tls": _write_tls_material(services, "test-campaign"),
     }
     (services / ".runtime.json").write_text(json.dumps(runtime))
     (services / ".runtime.json").chmod(0o600)
@@ -278,6 +311,70 @@ def _admissible_inputs(tmp_path, monkeypatch):
         ],
     )
     return preflight
+
+
+def test_preflight_requires_tls_section(tmp_path, monkeypatch):
+    preflight = _admissible_inputs(tmp_path, monkeypatch)
+    services = tmp_path / "services"
+    runtime_path = services / ".runtime.json"
+    runtime = json.loads(runtime_path.read_text())
+    del runtime["tls"]
+    runtime_path.write_text(json.dumps(runtime))
+    monkeypatch.setenv("OSWORLD_EVAL_MODEL_API_KEY", "judge-key")
+
+    with pytest.raises(SystemExit, match="missing tls object"):
+        preflight.main()
+
+
+@pytest.mark.parametrize(
+    "mode,placeholder", [("live", False), ("live", True), ("stub", False)]
+)
+def test_task_092_requires_legacy_video_judge_gate(
+    tmp_path, monkeypatch, mode, placeholder
+):
+    preflight = _admissible_inputs(tmp_path, monkeypatch)
+    manifest = tmp_path / "manifest.json"
+    data = json.loads(manifest.read_text())
+    data["tasks"] = [{"id": "092", "domain": "test"}]
+    manifest.write_text(json.dumps(data))
+    (tmp_path / "tasks/task_092.py").write_text("TASK = {}\n")
+    monkeypatch.setenv("OSWORLD_EVAL_MODEL_MODE", mode)
+    monkeypatch.setenv("OSWORLD_EVAL_MODEL_PROVIDER", "anthropic")
+    monkeypatch.setenv("OSWORLD_EVAL_MODEL_API_KEY", "bedrock-key")
+    if placeholder:
+        monkeypatch.setenv("OPENAI_API_KEY", "bedrock-legacy-presence-only")
+    if mode == "live" and not placeholder:
+        with pytest.raises(SystemExit, match="092.*OPENAI_API_KEY"):
+            preflight.main()
+    else:
+        assert preflight.main() == 0
+
+
+def test_preflight_rejects_world_readable_campaign_leaf_key(tmp_path, monkeypatch):
+    preflight = _admissible_inputs(tmp_path, monkeypatch)
+    services = tmp_path / "services"
+    runtime = json.loads((services / ".runtime.json").read_text())
+    leaf_key = Path(runtime["tls"]["leaf_key"])
+    leaf_key.chmod(0o644)
+    monkeypatch.setenv("OSWORLD_EVAL_MODEL_API_KEY", "judge-key")
+
+    with pytest.raises(SystemExit, match="must not be group/world accessible"):
+        preflight.main()
+
+
+def test_preflight_rejects_missing_campaign_ca_key(tmp_path, monkeypatch):
+    # ca_key has no field of its own in the runtime `tls` section (the CA key
+    # path is deliberately not published); preflight derives it as ca_cert's
+    # sibling `ca.key`. A missing sibling must fail cleanly, not stack-trace.
+    preflight = _admissible_inputs(tmp_path, monkeypatch)
+    services = tmp_path / "services"
+    runtime = json.loads((services / ".runtime.json").read_text())
+    ca_key = Path(runtime["tls"]["ca_cert"]).with_name("ca.key")
+    ca_key.unlink()
+    monkeypatch.setenv("OSWORLD_EVAL_MODEL_API_KEY", "judge-key")
+
+    with pytest.raises(SystemExit, match="campaign CA key"):
+        preflight.main()
 
 
 @pytest.mark.parametrize("tool", ["ffprobe", "identify"])

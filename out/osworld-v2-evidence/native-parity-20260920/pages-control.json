@@ -1,0 +1,41 @@
+{
+  "purpose": "Live GitLab CI/Pages functional control; not a benchmark score",
+  "campaign_id": "osworld-v2-native-parity-20260920",
+  "template": "osworld-v2-gnome:cd4a1a63-eb56-418f-9ac3-60fbbf2b838e",
+  "model_calls": 0,
+  "started_at": 1789959774.143191,
+  "checks": {
+    "ci_pipeline": true,
+    "advertised_url_host_fetch": true,
+    "guest_chrome_https": true
+  },
+  "online_runner_ids": [
+    1
+  ],
+  "project_id": 3,
+  "commit_sha": "915f45f36782fda6500039fc100270f2a1b122c6",
+  "pipeline": {
+    "id": 2,
+    "status": "success",
+    "sha": "915f45f36782fda6500039fc100270f2a1b122c6"
+  },
+  "jobs": [
+    {
+      "id": 3,
+      "name": "deploy-pages",
+      "status": "success",
+      "failure_reason": null
+    }
+  ],
+  "pages_url": "https://parity-pages-15539e53-9d3af4.gitlab.127.0.0.1.nip.io:8090",
+  "sandbox_id": "irfxgxiboh1gbvm7idhc8",
+  "browser": {
+    "secure": true,
+    "url": "https://parity-pages-15539e53-9d3af4.gitlab.127.0.0.1.nip.io/",
+    "marker_present": true
+  },
+  "passed": true,
+  "guest_clean_stop": true,
+  "project_delete_status": 202,
+  "finished_at": 1789959802.237974
+}

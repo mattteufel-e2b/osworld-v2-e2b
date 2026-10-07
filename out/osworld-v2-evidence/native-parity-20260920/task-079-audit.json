@@ -1,0 +1,80 @@
+{
+  "campaign_id": "osworld-v2-native-parity-20260920",
+  "task_id": "task_079",
+  "audit_status": "budget_interrupted_unscored",
+  "path_status": "ERROR",
+  "error_type": "AgentInterrupted",
+  "score": null,
+  "evaluator_ran": false,
+  "steps_taken": 265,
+  "agent_calls": 265,
+  "finished_at_utc": "2026-09-21T04:39:38.582576+00:00",
+  "audited_at_utc": "2026-09-21T04:40:25.983865+00:00",
+  "stop": {
+    "reason": "Operator interrupted the owned worker after permanent budget admission rejection; upstream was retrying the rejected request.",
+    "budget_rejections_observed": 4,
+    "score_meaning": "Unscored interrupted rollout; no benchmark score or success/failure evaluation is inferred."
+  },
+  "expected_output_snapshot": {
+    "bytes": 3350366,
+    "sha256": "77b43b79d49a43f0f7575e05a0938dabe7711ff1e6b39ceb8b7cae45e300e7a3",
+    "captured_at_utc": "2026-09-21T04:39:27.929162+00:00",
+    "slides": 26,
+    "parses": true,
+    "byte_identical_to_cached_input": true
+  },
+  "latest_alternate_snapshot": {
+    "filename": "final2.pptx",
+    "bytes": 3358918,
+    "sha256": "e5c552270e16b67348e526455c03b1397793435e39a290595e3cebb254e4d188",
+    "captured_at_utc": "2026-09-21T04:39:29.042113+00:00",
+    "slides": 26,
+    "parses": true,
+    "changed_slide_xml_count": 26,
+    "slides_with_changed_top_level_text": 25,
+    "delivered_to_expected_path": false,
+    "progress_source_steps": [
+      239,
+      247,
+      249,
+      253,
+      259
+    ]
+  },
+  "preservation": {
+    "pptx_files_captured": 5,
+    "all_hashes_verified_and_decks_parse": true,
+    "raw_files_remain_private": true
+  },
+  "final_evaluator_artifacts": {
+    "fresh_slide_images": 0,
+    "expected_slide_count_if_evaluated": 26,
+    "render_decode_audit": "Not available because evaluation did not run."
+  },
+  "judge": {
+    "attempts": 0,
+    "successes": 0,
+    "coverage": "Not run."
+  },
+  "recovered_errors": {
+    "cdp_http_500": 2,
+    "action_http_500": 3,
+    "server_request_ordinals_matching_trajectory_steps": [
+      76,
+      189,
+      195
+    ],
+    "native_120_second_wait_steps": [
+      189,
+      195
+    ],
+    "clipboard_typing_step": 76,
+    "original_server_log_has_error_bodies_or_timestamps": false,
+    "subsequent_controls": [
+      "wait-control.json",
+      "native-clipboard-control.json"
+    ],
+    "rollout_used_pre_fix_behavior": true,
+    "full_rollout_rerun_after_fixes": false
+  }
+}

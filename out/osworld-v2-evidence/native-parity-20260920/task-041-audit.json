@@ -1,0 +1,49 @@
+{
+  "campaign_id": "osworld-v2-native-parity-20260920",
+  "task_id": "041",
+  "result": {
+    "path_status": "OK",
+    "score": 0.8215,
+    "steps_taken": 135,
+    "wall_clock_s": 1784.6,
+    "transport_ok": true,
+    "evaluator_ran": true,
+    "eval_model_call_attempts": 1,
+    "eval_model_successes": 1,
+    "user_sim_call_attempts": 0,
+    "user_sim_successes": 0
+  },
+  "deployment_observations": [
+    {"step": 113, "check": "CI pipeline", "observed_status": "success"},
+    {"step": 119, "check": "Correct job trace", "observed_status": "uploading artifacts for successful job"},
+    {"step": 121, "check": "Pages root and index.html", "responses": [{"resource": "/", "http_status": 200, "bytes": 27815}, {"resource": "/index.html", "http_status": 200, "bytes": 27815}]},
+    {
+      "step": 123,
+      "check": "Deployed static assets",
+      "responses": [
+        {"resource": "static/css/index.css", "http_status": 200, "bytes": 14848, "content_type": "text/css; charset=utf-8"},
+        {"resource": "static/js/index.js", "http_status": 200, "bytes": 4427, "content_type": "application/javascript"},
+        {"resource": "static/images/figure1.png", "http_status": 200, "bytes": 261503, "content_type": "image/png"}
+      ]
+    },
+    {"step": 125, "check": "Pages browser preview", "pages_host_visible": true, "expected_paper_title_visible": true, "browser_error_visible": false},
+    {"step": 135, "check": "Final browser content", "expected_paper_title_visible": true, "browser_error_visible": false}
+  ],
+  "evidence_method": "Local screenshot inspection and text recognition at the listed trajectory steps; raw screenshots remain private.",
+  "recovered_setup_cdp_500_attempts": 4,
+  "initial_pages_404_recovered": true,
+  "remaining_environment_bug_demonstrated": false,
+  "grading_limitations": [
+    "Only the final aggregate score and model-call counts were retained; repository and deployed HTML grader component outputs were not found in the retained local artifacts.",
+    "The evaluator runs its HTML grader in a temporary directory that is removed on exit and cleans up the task user after evaluation.",
+    "A read-only project-presence request after evaluation returned HTTP 404, so the final repository and deployed HTML could not be recovered through that project. This post-evaluation result is consistent with cleanup and is not evidence of a failed deployment during the task.",
+    "One successful judge API call establishes transport success, not its YES/NO verdict; the verdict was not recovered.",
+    "The 0.1785 score shortfall cannot be assigned to exact rubric components from the retained evidence. Deployment success does not prove full rubric compliance."
+  ],
+  "evidence_files": [
+    {"path": "out/osworld-v2-raw/native-parity-20260920/agent-raw/workers/task_041.json", "sha256": "6cddcb706bb54efaae89954a5bf86eee3803affefb6df48157ad4dc7e656871c"},
+    {"path": "out/osworld-v2-raw/native-parity-20260920/agent-raw/workers/task_041/traj.jsonl", "sha256": "f27ed5fd39285a07082cde29920c9ddd968f657a2f99a353ef2b0982c6b9c376"},
+    {"path": "out/osworld-v2-raw/native-parity-20260920/agent-raw/workers/task_041/runtime.log", "sha256": "2ee385ff462314e66bbcf6eb04b11a2f2f8dfe3b51a6419d67f5aae4ac205d34"}
+  ],
+  "sanitization": "Status, counts, source locations and hashes only; no credentials, task prompts, screenshots, rubric formulas or model responses."
+}

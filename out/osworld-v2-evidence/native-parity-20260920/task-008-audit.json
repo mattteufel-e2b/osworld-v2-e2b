@@ -1,0 +1,80 @@
+{
+  "campaign_id": "osworld-v2-native-parity-20260920",
+  "task_id": "008",
+  "captured_at": 1789964214.573662,
+  "submitted_reports": 1,
+  "submitted_attachments": 3,
+  "attachments": [
+    {
+      "name": "purpose_of_travel.docx",
+      "bytes": 500925,
+      "sha256": "936398e89302fdb68999bfe498d79c1e6d50ad4a7890085e51a4f6d433200148",
+      "zip_integrity": "pass",
+      "embedded_images": 4,
+      "decoded_images": 4,
+      "image_dimensions": [[1075, 1251], [1920, 760], [1920, 1044], [1920, 700]]
+    },
+    {
+      "name": "accommodation.docx",
+      "bytes": 577885,
+      "sha256": "f5a53525941b14a28ddab006d18a9ceff731b398547af87dd6ac432e9fda5993",
+      "zip_integrity": "pass",
+      "embedded_images": 4,
+      "decoded_images": 4,
+      "image_dimensions": [[1920, 1010], [1920, 1044], [1920, 1010], [1920, 1044]]
+    },
+    {
+      "name": "transportation.docx",
+      "bytes": 2476548,
+      "sha256": "f96f9a8aa01115226f7eb7f3be8ba0396980bb3abd2446007a9bcf52118ad7a7",
+      "zip_integrity": "pass",
+      "embedded_images": 8,
+      "decoded_images": 8,
+      "image_dimensions": [[1075, 1500], [1075, 1500], [1920, 1010], [1920, 1044], [1075, 1500], [1075, 1486], [1648, 640], [1920, 1044]]
+    }
+  ],
+  "model_calls_for_audit": 0,
+  "website_writes_for_audit": 0,
+  "limitations": [
+    "Artifact structure and successful fetch do not prove full content compliance.",
+    "The evaluator score includes non-document report fields; the exact cause of the 0.0909 shortfall was not independently isolated."
+  ],
+  "result": {
+    "path_status": "OK",
+    "score": 0.9091,
+    "steps_taken": 447,
+    "wall_clock_s": 4294.1,
+    "evaluator_ran": true,
+    "transport_ok": true,
+    "eval_model_call_attempts": 17,
+    "eval_model_successes": 17
+  },
+  "final_state_captured_at": 1789964290.370523,
+  "final_state_snapshot_sha256": "fab94748f7cc07f48bfc5770760ea9a717ba345879c0138dbba9b6c116c464af",
+  "evaluator_cache": [
+    {"name": "637b6f5b6f8940f1994bba663f7af1bf__transportation.docx", "bytes": 2476548, "sha256": "f96f9a8aa01115226f7eb7f3be8ba0396980bb3abd2446007a9bcf52118ad7a7", "fresh_within_run": true, "zip_integrity": true},
+    {"name": "7897f4ee836846cb84924ce14f5060ab__purpose_of_travel.docx", "bytes": 500925, "sha256": "936398e89302fdb68999bfe498d79c1e6d50ad4a7890085e51a4f6d433200148", "fresh_within_run": true, "zip_integrity": true},
+    {"name": "9a0f0475e8874350861f4a2cfb52c990__accommodation.docx", "bytes": 577885, "sha256": "f5a53525941b14a28ddab006d18a9ceff731b398547af87dd6ac432e9fda5993", "fresh_within_run": true, "zip_integrity": true},
+    {"name": "accommodation_1.png", "bytes": 151049, "sha256": "3a9ff39d7c883a0cad68bcd270c386c5479673a24e968548d3c82cccd4198e2e", "fresh_within_run": true, "image_decoded": true},
+    {"name": "accommodation_2.png", "bytes": 143306, "sha256": "c020cc3e6cc99bc3db3776d4904f370f4822e89e4ae4ec31a534167e29c4c1c1", "fresh_within_run": true, "image_decoded": true},
+    {"name": "accommodation_3.png", "bytes": 148636, "sha256": "b7fc6b46ee96550895ae7016429f21988a1e9c12512d30f31cb89755d56354b8", "fresh_within_run": true, "image_decoded": true},
+    {"name": "accommodation_4.png", "bytes": 143617, "sha256": "ce77b2fea0f57a4f6a67fb9d006312e859a3a06479a2a12a12d10aad0764dcc9", "fresh_within_run": true, "image_decoded": true},
+    {"name": "purpose_of_travel_1.png", "bytes": 139294, "sha256": "c3887b69f9b175e0f5a2133bbfc07969503b615389b9300cec5f05423351e2f1", "fresh_within_run": true, "image_decoded": true},
+    {"name": "purpose_of_travel_2.png", "bytes": 110321, "sha256": "7b625151c7c6b1d2ca4f3c5dc968efe26f18e7ebaee69c53880a99810e3d0136", "fresh_within_run": true, "image_decoded": true},
+    {"name": "purpose_of_travel_3.png", "bytes": 136399, "sha256": "c7f8efbed8d33414465ced7a0eef053f13b03a47db770dc9940897d2aee6b377", "fresh_within_run": true, "image_decoded": true},
+    {"name": "purpose_of_travel_4.png", "bytes": 115950, "sha256": "106c09b33f5c2587aeabbbcda88dbb990d357d4fb9485e3cb4bd40396a724285", "fresh_within_run": true, "image_decoded": true},
+    {"name": "transportation_1.png", "bytes": 249218, "sha256": "f59c66d9436ff36a5177492945a7298381a45394c8a704adbcb46fa750a7eb15", "fresh_within_run": true, "image_decoded": true},
+    {"name": "transportation_2.png", "bytes": 232552, "sha256": "5939f332e42c6b83f89f2239ceea02681eb15631a02a0998b5b87b9b5135202a", "fresh_within_run": true, "image_decoded": true},
+    {"name": "transportation_3.png", "bytes": 108250, "sha256": "bfe5564334ec21bc43781250ed0d8fc6c559d9087f1394972e1ed213bc5d8a7a", "fresh_within_run": true, "image_decoded": true},
+    {"name": "transportation_4.png", "bytes": 146483, "sha256": "f027e37bddd527bd818e41587d2b5ecc1a9229ac951180d2f83582370ff8a6e9", "fresh_within_run": true, "image_decoded": true},
+    {"name": "transportation_5.png", "bytes": 250871, "sha256": "e7fe40eea18554b38420a53709dab00d0ee676db8e870e972c60e06be32ccd8b", "fresh_within_run": true, "image_decoded": true},
+    {"name": "transportation_6.png", "bytes": 247042, "sha256": "99fac0ec28b13bddebc7dc2d50d196ee6e6afbd4343f009b01dd278f240e4571", "fresh_within_run": true, "image_decoded": true},
+    {"name": "transportation_7.png", "bytes": 1203913, "sha256": "cb61943589f6fff0a9f17ffd39fc81e71c11a2e376d5283c17621fcd4bc55368", "fresh_within_run": true, "image_decoded": true},
+    {"name": "transportation_8.png", "bytes": 145556, "sha256": "c70ffc7ed562e7fae6a7b648812e9c306e08e81548fab5fa8307a88abdf28576", "fresh_within_run": true, "image_decoded": true}
+  ],
+  "judge_content_matches": "12/12 as reported in evaluator stdout",
+  "recovered_setup_cdp_500_attempts": 2,
+  "action_http_500_count": 0,
+  "source_receipt_sha256": "4ab55d0a44c748bc4eccb577daa71f0ef085e6ae8c637bdd0be21dbfb6392721",
+  "source_log_sha256": "d180ca16ed8c4f1d300c40a3e8108ce432571a3202c6f114aab10c7a3c6e67b2"
+}

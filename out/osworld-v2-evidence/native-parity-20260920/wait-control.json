@@ -1,0 +1,22 @@
+{
+  "campaign_id": "osworld-v2-native-parity-20260920",
+  "template": "osworld-v2-gnome:cd4a1a63-eb56-418f-9ac3-60fbbf2b838e",
+  "model_calls": 0,
+  "requested_duration_s": 240,
+  "started_at": 1789963508.575117,
+  "checks": {
+    "before_screenshot_decoded": true,
+    "full_wait_duration": true,
+    "after_screenshot_decoded": true,
+    "no_guest_command_during_wait": true,
+    "original_action_preserved": true,
+    "one_step": true,
+    "ordinary_action_uses_controller": true
+  },
+  "patched_desktop_env_sha256": "41e06b7652311a04e526b90ce011614f7b2e6c20cf44fd313399ca43581caa59",
+  "sandbox_id": "iqzrcod1re46m0ttyp31r",
+  "elapsed_s": 240.291,
+  "passed": true,
+  "guest_clean_stop": true,
+  "finished_at": 1789963751.911011
+}

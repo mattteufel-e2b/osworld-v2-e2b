@@ -20,10 +20,12 @@ import contextlib
 import json
 import logging
 import os
+import random
 import re
 import secrets
 import tempfile
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -31,6 +33,7 @@ import aiohttp
 import httpx
 from aiohttp import web
 from e2b import Sandbox, TimeoutException
+from e2b.exceptions import RateLimitException, SandboxException
 
 from e2b_policy import (
     require_campaign_id,
@@ -54,6 +57,53 @@ SETUP_UPLOAD_TRANSIENT_ERRORS = (
     aiohttp.ClientConnectionError,
     httpx.TransportError,
 )
+SANDBOX_CREATE_RETRY_ATTEMPTS = 4
+SANDBOX_CREATE_RETRY_DELAY_S = 2.0
+# Connect-phase failures only: the request never reached the control plane, so
+# no sandbox can exist behind them. A read/write/pool timeout is deliberately
+# absent -- that request was sent, and a retry after one may leave the guest it
+# provisioned running unnamed until its own timeout.
+SANDBOX_CREATE_TRANSIENT_ERRORS = (
+    httpx.ConnectError,
+    httpx.ConnectTimeout,
+    aiohttp.ClientConnectionError,
+)
+# The guest proxy is started in the background, so a crashed start (a port
+# already bound, a syntax error in the uploaded script) is otherwise invisible
+# until every website request in the task fails.
+GUEST_PROXY_PROBE_TIMEOUT_S = 10
+GUEST_PROXY_PROBE_INTERVAL_S = 0.5
+GUEST_PROXY_PROBE_COMMAND_TIMEOUT_S = 15
+# A leading HTTP status in an e2b SandboxException message
+# (api_exception_from_code formats every mapped error as "<status>: <message>").
+_HTTP_STATUS_PREFIX = re.compile(r"^(\d{3}):")
+
+
+def _is_retryable_create_error(exc: BaseException) -> bool:
+    """True for control-plane failures a second create can still win.
+
+    A burst of concurrent workers draws 429s and connect-phase failures; those
+    are worth a short backoff. Credentials, a bad template and a missing
+    snapshot are permanent and must fail the task immediately. e2b maps 429 to
+    RateLimitException and 401 to AuthenticationException (not a
+    SandboxException at all); everything else arrives as the base
+    SandboxException or a specific, permanent subclass, so only the base class
+    is eligible -- and only when its message does not start with a 4xx status.
+
+    A timeout waiting for the answer (TimeoutException, httpx read/write/pool
+    timeouts, builtin TimeoutError) is permanent here, unlike on the upload
+    path: the create request was already sent, so a retry can orphan a
+    provisioned sandbox whose id this worker never learns and never kills. One
+    failed task is cheaper than a guest running to its own timeout unowned.
+    """
+    if isinstance(exc, SANDBOX_CREATE_TRANSIENT_ERRORS) or isinstance(
+        exc, RateLimitException
+    ):
+        return True
+    if type(exc) is SandboxException:
+        status = _HTTP_STATUS_PREFIX.match(str(exc))
+        return not (status and 400 <= int(status.group(1)) < 500)
+    return False
 
 
 def _env_int(name: str, default: int) -> int:
@@ -73,7 +123,12 @@ class BridgeConfig:
     guest_proxy_script: str | None = None
     fleet_rules: str | None = None
     website_host_suffix: str = "127.0.0.1.nip.io"
-    guest_proxy_ports: str = "80,8090"
+    guest_proxy_ports: str = "80,443,8090"
+    # Subset of guest_proxy_ports that terminates TLS once a campaign CA/leaf
+    # pair is present (see _install_guest_proxy). Not env-configurable: the
+    # port split is a property of the guest proxy's own listener setup, not a
+    # per-run knob.
+    guest_proxy_tls_ports: str = "443,8090"
     retain_snapshots: bool = False
 
     @classmethod
@@ -96,7 +151,7 @@ class BridgeConfig:
             guest_proxy_script=env.get("HOSTMAP_PROXY_SCRIPT") or None,
             fleet_rules=env.get("OSWORLD_FLEET_RULES") or None,
             website_host_suffix=env.get("WEBSITE_HOST_SUFFIX", "127.0.0.1.nip.io"),
-            guest_proxy_ports=env.get("GUEST_HOSTMAP_PORTS", "80,8090"),
+            guest_proxy_ports=env.get("GUEST_HOSTMAP_PORTS", "80,443,8090"),
             retain_snapshots=env.get("OSWORLD_RETAIN_SNAPSHOTS") == "1",
         )
 
@@ -141,13 +196,26 @@ class Guest:
 
 def _install_guest_proxy(sandbox: Sandbox, config: BridgeConfig) -> None:
     """Upload the stdlib Host-mapping proxy + fleet routing file into the guest
-    and start it as root on :80 and :8090. No-op unless both env vars are
-    configured, so the pure boundary-layer path is untouched. Runs in a worker
-    thread."""
+    and start it as root on :80 (and :443/:8090 once a campaign CA is present).
+    No-op unless both env vars are configured, so the pure boundary-layer path
+    is untouched. Runs in a worker thread.
+
+    When the runtime file carries a `tls` section (see campaign_tls.py), the
+    campaign's leaf cert/key and CA cert are uploaded and the CA is installed
+    into both the guest's system trust store and Chrome's NSS database *before*
+    the proxy starts, so Chrome finds it already trusted at launch. Only
+    ca.crt/leaf.crt/leaf.key ever leave the host -- the CA private key
+    (`ca_key`, deliberately absent from the `tls` runtime section) never
+    reaches the guest. The whole /opt/hostmap-tls tree is root-owned (leaf.key
+    additionally mode 0600) so the agent-controlled `user` account -- the one
+    driving Chrome -- can never read the leaf private key; the root-owned
+    guest proxy is the only thing that ever touches it.
+    """
     if not (config.guest_proxy_script and config.fleet_rules):
         return
     script = Path(config.guest_proxy_script).read_text()
-    rules = _guest_proxy_runtime_json(Path(config.fleet_rules).read_text())
+    raw_runtime_json = Path(config.fleet_rules).read_text()
+    rules = _guest_proxy_runtime_json(raw_runtime_json)
     sandbox.files.write("/opt/hostmap_proxy.py", script)
     sandbox.files.write("/opt/fleet_runtime.json", rules)
     sandbox.commands.run(
@@ -155,6 +223,80 @@ def _install_guest_proxy(sandbox: Sandbox, config: BridgeConfig) -> None:
         user="root",
         timeout=15,
     )
+
+    runtime = json.loads(raw_runtime_json)
+    tls = runtime.get("tls") if isinstance(runtime.get("tls"), dict) else None
+    tls_env = ""
+    if tls and tls.get("leaf_cert"):
+        for guest_name, runtime_key in (
+            ("leaf.crt", "leaf_cert"),
+            ("leaf.key", "leaf_key"),
+            ("ca.crt", "ca_cert"),
+        ):
+            # user="root" here (not the SDK's own default) so the upload
+            # itself never creates so much as a transient window where
+            # /opt/hostmap-tls or its contents are owned by the
+            # agent-controlled `user` account. The chown below is still
+            # explicit, on top of this, rather than relying on that default.
+            sandbox.files.write(
+                f"/opt/hostmap-tls/{guest_name}",
+                Path(tls[runtime_key]).read_text(),
+                user="root",
+                request_timeout=60,
+            )
+        # Trust install runs before the proxy starts below, so Chrome (started
+        # later, after the guest server responds ready) always sees the CA
+        # already installed. A missing certutil/nssdb or a failed
+        # update-ca-certificates must fail loudly here rather than silently
+        # leave Chrome untrusting: neither command backgrounds or swallows its
+        # exit code, so sandbox.commands.run's default foreground wait() raises
+        # CommandExitException on any non-zero exit and this function propagates it.
+        #
+        # chown is explicit -- not left to whatever the write above defaulted
+        # to -- so the whole tree, leaf.key included, is unambiguously
+        # root-owned: a mode of 0600 protects nothing if the agent-controlled
+        # `user` account still owns the file.
+        sandbox.commands.run(
+            "chown root:root /opt/hostmap-tls /opt/hostmap-tls/leaf.crt "
+            "/opt/hostmap-tls/leaf.key /opt/hostmap-tls/ca.crt && "
+            "chmod 0700 /opt/hostmap-tls && chmod 0600 /opt/hostmap-tls/leaf.key && "
+            "install -m 0644 /opt/hostmap-tls/ca.crt "
+            "/usr/local/share/ca-certificates/osworld-campaign.crt && "
+            "update-ca-certificates >/dev/null",
+            user="root",
+            timeout=60,
+        )
+        # Chrome on Linux reads NSS, not just the system store, so the CA also
+        # goes into the browser's own database. The template ships
+        # libnss3-tools and a seeded /home/user/.pki/nssdb; if either were
+        # missing, the SDK's CommandExitException already fails the session
+        # loudly rather than leaving Chrome untrusting.
+        #
+        # certutil runs as `user` (it must write the user-owned NSS database
+        # at /home/user/.pki/nssdb -- a root-run certutil would leave
+        # root-owned files there), so it reads the CA from the world-readable
+        # copy the command above already installed at
+        # /usr/local/share/ca-certificates/osworld-campaign.crt (mode 0644),
+        # not from /opt/hostmap-tls/ca.crt: the chmod 0700 above deliberately
+        # makes that directory unreadable to `user`, so certutil would fail
+        # with EACCES trying to open a path under it.
+        sandbox.commands.run(
+            'certutil -d sql:/home/user/.pki/nssdb -A -t "C,," '
+            "-n osworld-campaign "
+            "-i /usr/local/share/ca-certificates/osworld-campaign.crt",
+            user="user",
+            timeout=30,
+        )
+        tls_env = (
+            f"HOSTMAP_TLS_PORTS={config.guest_proxy_tls_ports} "
+            "HOSTMAP_TLS_CERT=/opt/hostmap-tls/leaf.crt "
+            "HOSTMAP_TLS_KEY=/opt/hostmap-tls/leaf.key "
+        )
+    # Without TLS material there is nothing listening on 443 to answer, so
+    # fall back to the pre-TLS port list rather than binding a port config
+    # advertises but the proxy can't yet serve securely.
+    ports = config.guest_proxy_ports if tls_env else "80,8090"
+
     # nip.io resolves site hosts to 127.0.0.1 from inside E2B sandboxes; if a
     # guest's DNS blocks it, fall back to enumerated /etc/hosts entries (the site
     # list is enumerable from the uploaded runtime file). Strip any :port from the
@@ -174,14 +316,76 @@ def _install_guest_proxy(sandbox: Sandbox, config: BridgeConfig) -> None:
                 user="root",
                 timeout=15,
             )
+    # Task 041 hardcodes a public GitLab host as a sslip.io address that
+    # resolves publicly (not to loopback), so the nip.io probe above can never
+    # detect it -- this alias must be routed to the guest proxy unconditionally,
+    # not gated on that probe's outcome. grep-gated on its own first alias so
+    # repeated installs of the same guest stay idempotent.
+    aliases = [str(a) for a in (runtime.get("gitlab") or {}).get("aliases") or []]
+    if aliases:
+        entry = "127.0.0.1 " + " ".join(aliases)
+        sandbox.commands.run(
+            f"grep -q '{aliases[0]}' /etc/hosts || echo '{entry}' >> /etc/hosts",
+            user="root",
+            timeout=15,
+        )
+
     sandbox.commands.run(
-        f"HOSTMAP_PORT={config.guest_proxy_ports} FLEET_RUNTIME_FILE=/opt/fleet_runtime.json "
+        f"HOSTMAP_PORT={ports} {tls_env}FLEET_RUNTIME_FILE=/opt/fleet_runtime.json "
         "python3 /opt/hostmap_proxy.py > /var/log/hostmap_proxy.log 2>&1",
         user="root",
         background=True,
         timeout=0,
     )
-    logger.info("guest Host-mapping proxy installed on :%s", config.guest_proxy_ports)
+    _await_guest_proxy(sandbox, ports)
+    logger.info("guest Host-mapping proxy installed on :%s", ports)
+
+
+def _await_guest_proxy(sandbox: Sandbox, ports: str) -> None:
+    """Block until the backgrounded guest proxy accepts a connection.
+
+    The start above is `background=True`, so a proxy that dies on launch (a
+    bound port, an unreadable runtime file) leaves no trace until every
+    website request in the task fails. Probe its first listener from inside
+    the guest and raise instead, so the caller's replace path kills the guest
+    and the run gets a fresh one.
+    """
+    port = int(ports.split(",")[0])
+    probe = (
+        "python3 - <<'PY'\n"
+        "import socket, sys, time\n"
+        f"deadline = time.monotonic() + {GUEST_PROXY_PROBE_TIMEOUT_S}\n"
+        "while True:\n"
+        "    try:\n"
+        f"        socket.create_connection(('127.0.0.1', {port}), timeout=1).close()\n"
+        "        sys.exit(0)\n"
+        "    except OSError:\n"
+        "        if time.monotonic() >= deadline:\n"
+        "            sys.exit(1)\n"
+        f"        time.sleep({GUEST_PROXY_PROBE_INTERVAL_S})\n"
+        "PY"
+    )
+    try:
+        result = sandbox.commands.run(
+            probe,
+            user="root",
+            timeout=GUEST_PROXY_PROBE_COMMAND_TIMEOUT_S,
+        )
+        if getattr(result, "exit_code", 0) == 0:
+            return
+    except Exception as exc:
+        logger.warning("guest Host-mapping proxy probe on :%s failed: %s", port, exc)
+    tail = ""
+    try:
+        log = sandbox.commands.run(
+            "tail -n 20 /var/log/hostmap_proxy.log",
+            user="root",
+            timeout=GUEST_PROXY_PROBE_COMMAND_TIMEOUT_S,
+        )
+        tail = (getattr(log, "stdout", "") or "").strip()
+    except Exception as exc:  # the log is diagnostic; never mask the real fault
+        tail = f"<could not read /var/log/hostmap_proxy.log: {exc}>"
+    raise RuntimeError(f"guest Host-mapping proxy did not start: {tail}")
 
 
 def _guest_proxy_runtime_json(rules_json: str) -> str:
@@ -196,7 +400,12 @@ def _guest_proxy_runtime_json(rules_json: str) -> str:
     safe = {
         "websites": {
             key: websites[key]
-            for key in ("traffic_token", "host_suffix", "public_host_suffix")
+            for key in (
+                "traffic_token",
+                "host_suffix",
+                "public_host_suffix",
+                "asset_url_map",
+            )
             if key in websites
         }
         | {
@@ -210,7 +419,14 @@ def _guest_proxy_runtime_json(rules_json: str) -> str:
         },
         "gitlab": {
             key: gitlab[key]
-            for key in ("traffic_token", "host", "url", "ingress_host", "port")
+            for key in (
+                "traffic_token",
+                "host",
+                "url",
+                "ingress_host",
+                "port",
+                "aliases",
+            )
             if key in gitlab
         },
     }
@@ -230,6 +446,7 @@ def _fleet_hostnames(rules_json: str, default_suffix: str) -> list[str]:
     gl = runtime.get("gitlab") or {}
     if gl.get("host"):
         hosts.append(gl["host"])
+    hosts.extend(str(alias) for alias in gl.get("aliases") or [])
     return hosts
 
 
@@ -424,17 +641,40 @@ class GuestManager:
     ) -> Guest:
         def create_sync() -> Sandbox:
             template_or_snapshot = source or self._config.template
-            sandbox = Sandbox.create(
-                template_or_snapshot,
-                timeout=self._config.sandbox_timeout_s,
-                secure=True,
-                network=sandbox_network_policy(),
-                metadata={
-                    "workload": "osworld",
-                    "generation": str(generation),
-                    "campaign_id": self._config.campaign_id,
-                },
-            )
+            # 80 workers create sandboxes at once at the start of a run and
+            # after every task's strict reset; a rate-limited or transiently
+            # failed create here costs the whole task's inference spend, so
+            # spend a bounded backoff on it before giving up.
+            for attempt in range(1, SANDBOX_CREATE_RETRY_ATTEMPTS + 1):
+                try:
+                    sandbox = Sandbox.create(
+                        template_or_snapshot,
+                        timeout=self._config.sandbox_timeout_s,
+                        secure=True,
+                        network=sandbox_network_policy(),
+                        metadata={
+                            "workload": "osworld",
+                            "generation": str(generation),
+                            "campaign_id": self._config.campaign_id,
+                        },
+                    )
+                    break
+                except Exception as exc:
+                    if attempt == SANDBOX_CREATE_RETRY_ATTEMPTS or not (
+                        _is_retryable_create_error(exc)
+                    ):
+                        raise
+                    delay = SANDBOX_CREATE_RETRY_DELAY_S * attempt + random.uniform(
+                        0, 1
+                    )
+                    logger.warning(
+                        "sandbox create attempt %s/%s failed (%s); retrying in %.1fs",
+                        attempt,
+                        SANDBOX_CREATE_RETRY_ATTEMPTS,
+                        type(exc).__name__,
+                        delay,
+                    )
+                    time.sleep(delay)
             # The awaiting task can be cancelled while this thread runs (client
             # disconnect, shutdown, a timed-out Bridge._call); the thread still
             # completes and would leak the sandbox. asyncio.run() waits for

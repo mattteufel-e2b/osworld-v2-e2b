@@ -7,9 +7,11 @@ Run these commands in Bash from the repository root after completing the
 ## Tasks, limits, and results
 
 Add repeated `--task-id` arguments to `runner/render_manifest.py` to select tasks.
-`PARALLEL_CONCURRENCY` defaults to and is capped at 80; optional retry concurrency defaults
-to and is capped at four. The per-task deadline defaults to four hours. Use
-`AGENT_TASK_TIMEOUT_SECONDS=28800` for full 500-turn runs, which can exceed four hours.
+`PARALLEL_CONCURRENCY` defaults to 80 and is capped at 120; optional retry concurrency
+defaults to and is capped at four. The per-task deadline now defaults to 28800 seconds
+(8 hours), budgeting a full 500-step rollout with headroom; set `AGENT_TASK_TIMEOUT_SECONDS`
+to something shorter for a canary. See [Coordinator knobs](#coordinator-knobs) for every
+environment variable the launch command reads.
 
 The campaign receipt is written to the launch command's `OUTPUT` path. The
 `AGENT RECEIPT GATE: PASS`/`FAIL` line reports whether every task has a complete, attested,
@@ -17,10 +19,126 @@ uniquely-sandboxed record. A passing receipt does not mean the agent solved ever
 `REQUIRE_NO_MODEL_COVERAGE=0` is the default; a preceding no-model run is optional and
 belongs to the [maintainer validation workflow](../maintainer/README.md).
 
+Token receipts retain each provider's input/output semantics. Anthropic cache-write and
+cache-read tokens are reported separately and must be included in cost estimates;
+`input_tokens` alone excludes them. Missing cache telemetry is `null`, including in
+aggregates that contain older receipts without these counters.
+
+## Coordinator knobs
+
+Every environment variable `runner/run_agent_parallel.sh` reads, its default, and what it
+does. A default of "none (required)" means the launch command exits 2 if the variable is
+unset. `POOL_POLL_SECONDS`, `PROXY_WATCHDOG_SECONDS`, `FLEET_LIVENESS_SECONDS`, and
+`ATTEMPT_SUFFIX` are internal to the coordinator and are not operator knobs.
+
+### Required
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `MODEL_API_KEY` | none (required) | API key for the agent model endpoint. |
+| `MODEL_BASE_URL` | none (required) | Base URL for the agent model endpoint. |
+| `MODEL` | none (required) | Agent model id, forwarded as `--model`. |
+| `AGENT_KIND` | none (required) | `prompt`, `m3`, or `claude`; forwarded as `--agent-kind`. |
+| `GUEST_TEMPLATE` | none (required) | Immutable `name:build_id` guest template reference (`runner/common.sh`). |
+| `OSWORLD_CAMPAIGN_ID` | none (required) | Campaign id tagging every sandbox this run creates (`runner/common.sh`). |
+| `E2B_API_KEY` | none (required) | E2B account key; read from `.env.local` when unset (`runner/common.sh`). |
+
+### Run identity and paths
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `AGENT_MANIFEST` | `validation/full-manifest.json` | Task manifest the campaign selects tasks from. |
+| `RUN_ID` | `<UTC timestamp>-$$` | Identifies this run; seeds the `RAW_DIR`/`OUTPUT` defaults below. |
+| `RESUME_RUN_ID` | unset | A previous `RUN_ID` to resume. Kept tasks (an existing `result.txt`) are skipped and their receipts count; unscored tasks rerun; the previous run's nonce is recovered. A task with a `result.txt` but no receipt is never rerun automatically. A resume with no scored tasks reruns everything under a fresh nonce. |
+| `RAW_DIR` | `out/osworld-v2-raw/agent-full/$RUN_ID` | Per-worker trajectories, receipts, and coordinator logs. |
+| `OUTPUT` | `out/osworld-v2-evidence/full-suite/agent-$RUN_ID.json` | Campaign receipt path. |
+
+### Scheduling
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `PARALLEL_CONCURRENCY` | 80 (cap 120) | Rolling-pool worker slots; a new task starts as soon as one frees, instead of waiting on a fixed batch. |
+| `RUN_TASK_082_CONCURRENT` | 1 | Set to 0 to run task 082 solo, reserving the literal host port 3000. |
+| `AGENT_START_STAGGER_SECONDS` | 0.25 | Delay between launching consecutive workers in a pool. |
+| `TEARDOWN_FLEETS_ON_EXIT` | 1 | Set to 0 to keep the service fleets running after an admitted run exits. |
+
+### Deadlines and retries
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `AGENT_TASK_TIMEOUT_SECONDS` | 28800 | Per-task wall-clock deadline, forwarded as `--deadline-seconds`. |
+| `GUEST_READY_TIMEOUT_S` | 180 | Seconds to wait for a guest to become ready. |
+| `AGENT_RETRY_ATTEMPTS` | 0 | Retry waves for infrastructure/path failures; completed low-scoring tasks are never resampled. |
+| `AGENT_RETRY_CONCURRENCY` | 4 (cap 4) | Worker slots during a retry wave. |
+
+### Agent generation
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `MAX_STEPS` | 500 | Rollout step budget, forwarded as `--max-steps`. |
+| `SLEEP_AFTER_EXECUTION` | unset (upstream default 3.0s); auto 0 when `AGENT_KIND=claude` and unset | Pause after each native action, forwarded as `--sleep-after-execution` only when set. |
+| `MAX_TOKENS` | unset (upstream default) | Forwarded as `--max-tokens` only when set. |
+| `TEMPERATURE` | unset (upstream default) | Forwarded as `--temperature` only when set. |
+| `TOP_P` | unset (upstream default) | Forwarded as `--top-p` only when set. |
+| `MAX_TRAJECTORY_LENGTH` | unset (upstream default) | Forwarded as `--max-trajectory-length` only when set. |
+| `ENABLE_RECORDING` | 0 | Set to 1 to record `recording.mp4` per task, forwarded as `--enable-recording`. |
+| `M3_THINKING_MODE` | unset | Optional M3 thinking mode, included in the campaign receipt when set. |
+| `M3_THINKING_BUDGET` | none (required when `AGENT_KIND=m3`) | Positive integer thinking-token budget for M3. |
+| `M3_MAX_LLM_RETRIES` | none (required when `AGENT_KIND=m3`) | Non-negative retry count for M3's own LLM calls. |
+
+### Judge retries
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `OSWORLD_EVAL_MODEL_RETRY_ATTEMPTS` | 8 | Judge/simulator retry attempts on a failed call, exported when unset. |
+| `OSWORLD_EVAL_MODEL_RETRY_DELAY` | 10 | Seconds between judge/simulator retries, exported when unset. |
+
+### Maintainer-only
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `REQUIRE_NO_MODEL_COVERAGE` | 0 | Gate the run on a prior no-model coverage receipt; see [maintainer validation](../maintainer/README.md). |
+| `NO_MODEL_RECEIPT` | none (required when `REQUIRE_NO_MODEL_COVERAGE=1`) | Path to that no-model receipt. |
+
+## Comparing with upstream Claude
+
+The public [pinned sample launcher](https://github.com/xlang-ai/OSWorld-V2/blob/d578d2d4e0dc82b43e270fdaa7fa89d9708cd154/scripts/bash/run_multienv_claude.sh)
+uses Sonnet 4.6 for agent, judge, and simulator. The tested Bedrock key lists Opus 5 but not
+Sonnet 4.6. `AGENT_KIND=claude MODEL=anthropic.claude-opus-5` uses the pinned native Claude
+agent and a model with an official result on our **August 8** task release: 31.43% binary,
+68.31% partial, max effort, batch tool, 500 steps. The [official result data](https://osworld-v2.xlang.ai/static/data/leaderboard/official-results.json?v=leaderboard-v21-v1)
+also lists newer 2.1 scores; those use a different task release.
+
+The published aggregate is a comparison target, not proof of environment parity. Its exact
+batch configuration, judge/simulator settings, action pauses, and checkpoint settings must
+match before attributing a score difference to E2B. For `AGENT_KIND=claude` the coordinator
+already defaults `SLEEP_AFTER_EXECUTION` to 0, matching the pinned Claude launcher; other
+agent kinds keep upstream's three-second action pause unless `SLEEP_AFTER_EXECUTION` is set.
+That launcher also enables inline checkpoints at 150/300. The coordinator does not expose those checkpoints. Use matched
+per-task reference trajectories or rerun the same agent configuration on the reference VM
+for a controlled environment comparison. Haiku judging and short samples do not reproduce
+the published baseline.
+
+Native Claude `computer` waits use the worker clock on E2B, preserving the requested
+duration before the next observation. This avoids the guest command's 120-second deadline
+without changing the agent's prompts, action history, or ordinary command limits.
+Native Unicode typing also isolates the clipboard helper's output streams so its background
+process cannot keep a completed command's response open. Ordinary command output remains
+captured. The `claude` adapter applies both repairs to batch members in order, retaining
+the original batch in the trajectory and one observation and action pause per batch.
+These execution repairs address behavior also present in the pinned upstream
+runtime and should be applied consistently to a matched reference run. The upstream
+Ctrl+V paste shortcut is preserved; GNOME Terminal normally requires Ctrl+Shift+V.
+
 ## Judge and user simulator configuration
 
 Agent credentials are separate from the upstream judge and simulator credentials. The default
 uses OpenAI with `OPENAI_API_KEY`; select another endpoint using upstream's settings.
+The Claude adapter scopes its Anthropic endpoint and bearer token to each prediction,
+restoring the environment before any judge or simulator call, including on interruption.
+It also clears `ANTHROPIC_API_KEY` for the duration of the prediction and gives the upstream
+agent no API key of its own, so the agent request carries a bearer token alone: Bedrock Mantle
+rejects a request that arrives with both `authorization` and `x-api-key`.
 
 ### Recommended: Haiku 4.5 on Bedrock
 
@@ -60,6 +178,17 @@ overrides them. `OSWORLD_USER_SIM_MODEL_NAME` and `OSWORLD_USER_SIM_MODEL_BASE_U
 Literal API keys take precedence over key-variable names; use `OSWORLD_USER_SIM_API_KEY`
 when overriding a literal judge key.
 
+Task 092 has a legacy `OPENAI_API_KEY` presence check before its provider-neutral video
+judge. With Bedrock judging, keep that check nonempty using a placeholder; the explicit
+judge provider, endpoint, and key above still select Bedrock:
+
+```bash
+export OPENAI_API_KEY="${OPENAI_API_KEY:-bedrock-legacy-presence-only}"
+```
+
+Without this variable, upstream silently skips the video judge, worth 0.20 of the score.
+Live-run preflight rejects this configuration when task 092 is selected.
+
 Some task judges allow only 5–16 output tokens. Use a model that can return a verdict at that
 budget; reasoning can consume it before a verdict appears. Task-specific token limits take
 precedence over the judge environment setting. The agent's thinking budget is independent of
@@ -68,8 +197,14 @@ controls even with reasoning disabled; its successful agent image calls do not v
 a judge.
 
 Each per-task receipt records `model_usage` per role (`agent`, `judge`, `simulator`): each role
-carries `calls`, `input_tokens`, `output_tokens`, and `unmeasured_calls`. The campaign receipt
-sums those per-task roles under `summary.model_usage`.
+carries `calls`, `input_tokens`, `output_tokens`, `cache_creation_input_tokens`,
+`cache_read_input_tokens`, and `unmeasured_calls`. The campaign receipt sums those per-task
+roles under `summary.model_usage`, preserving unknown cache telemetry as `null`.
+
+Agent usage is measured for the `m3` and `claude` kinds through the Anthropic standard and
+beta Messages SDK clients, including separate cache-read and cache-write counts. The `prompt` kind
+sends requests with `requests` and reports `agent.calls = 0` with `input_tokens`/`output_tokens`
+`null`; judge and simulator usage is measured regardless of agent kind.
 
 Before creating rollout guests, the coordinator checks a text answer, reads random digits from
 an image, and checks the selected tasks' LLM simulator configurations through upstream's own
@@ -99,6 +234,16 @@ The coordinator writes one `{attempt, task_ids}` entry per retry wave, and the c
 republishes that ledger verbatim as `execution.retry_waves`. Point `RAW_DIR` at a fresh directory
 for every campaign: a previous run's `result.txt` under the same directory counts as a scored
 attempt and suppresses the retry of a task this run never scored.
+
+Alongside `workers/`, `RAW_DIR` holds three coordinator-owned files: `hostmap-proxy.log` (the
+host proxy's stdout/stderr, appended across resumes, never truncated), `hostmap-proxy.pid`
+(the live proxy pid, rewritten whenever the watchdog restarts it), and `fleet-liveness.log`
+(one line per liveness probe of the website and GitLab fleets). A background watchdog
+restarts the host proxy if it dies and probes fleet liveness on its own schedule; after three
+consecutive failed probes of the same fleet it prints one `FLEET LIVENESS: <fleet> unreachable
+for 3 probes; see fleet-liveness.log` warning to stderr (not repeated every probe) and keeps
+running. A liveness warning does not abort the run; the workers' own receipts still decide
+whether the campaign gate passes.
 
 `run_agent_parallel.sh` stops both service fleets when an admitted run exits. A run rejected
 before admission (preflight, lifetime) leaves them running so the rejection can be acted on with

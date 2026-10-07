@@ -64,6 +64,8 @@ async function main() {
     metadata: { workload: 'osworld-v2-template-build-smoke' },
   })
   let rootCapacityBytes = 0
+  let rootUsedBytes = 0
+  let applicationInventory: string[] = []
   let appliedNetworkPolicy: unknown = null
   try {
     const sandboxInfo = await sandbox.getInfo()
@@ -99,6 +101,88 @@ async function main() {
           `< ${MIN_ROOT_CAPACITY_GB} GB`,
       )
     }
+    // Used bytes on / for a freshly booted guest of this build: the image
+    // footprint before a task writes anything. docs/runtime.md quotes it.
+    const used = await sandbox.commands.run('df -B1 --output=used / | tail -n 1', {
+      user: 'root',
+      timeoutMs: 30_000,
+    })
+    rootUsedBytes = Number.parseInt(used.stdout.trim(), 10)
+    if (!Number.isSafeInteger(rootUsedBytes)) {
+      throw new Error(`invalid root-used output: ${JSON.stringify(used.stdout)}`)
+    }
+    // HARD GATE. Every name here must resolve or the build fails: the
+    // application launchers an OSWorld 2.0 task or its evaluator invokes
+    // directly, plus `certutil`, which the bridge shells out to when it writes
+    // the campaign CA into the guest's NSS trust store. x11vnc/websockify/novnc
+    // are deliberately NOT here - no task invokes them, they exist only for a
+    // human watching a sandbox, and their units ship disabled. They are
+    // recorded in applicationInventory below instead, which is a record, not a
+    // gate. The loop collects all missing names and exits 0 so the names reach
+    // this process as stdout rather than as a bare non-zero exit from the SDK.
+    const launchers = [
+      'musescore',
+      'wpp',
+      'wps',
+      'blender',
+      'kicad',
+      'freecad',
+      'freecadcmd',
+      'certutil',
+      'google-chrome',
+      'pdftoppm',
+    ]
+    const which = await sandbox.commands.run(
+      'missing=""; ' +
+        `for c in ${launchers.join(' ')}; do ` +
+        'command -v "$c" >/dev/null 2>&1 || missing="$missing $c"; done; ' +
+        'if [ -n "$missing" ]; then echo "MISSING$missing"; else echo LAUNCHERS_OK; fi',
+      { user: 'root', timeoutMs: 60_000 },
+    )
+    if (!which.stdout.includes('LAUNCHERS_OK')) {
+      throw new Error(
+        `launcher smoke failed: ${which.stdout.trim()} ${which.stderr.trim()}`.trim(),
+      )
+    }
+    // Versions of the applications this build installs. `dpkg-query -W` fails
+    // for the whole invocation if any one name is absent, so query one package
+    // per iteration: an absent package then names itself instead of aborting
+    // the list. Two classes here. The first loop's packages MUST be installed,
+    // so their MISSING_ marker fails the build. The VNC packages and their unit
+    // files are INVENTORY ONLY - their absence is recorded (VNC_ABSENT /
+    // VNC_UNITS_ABSENT, neither a MISSING_ marker) and does not fail the build,
+    // matching the launcher gate above.
+    const versions = await sandbox.commands.run(
+      'for p in google-chrome-stable kicad wps-office libnss3-tools poppler-utils; do ' +
+        "dpkg-query -W -f='${Package} ${Version}\\n' \"$p\" 2>/dev/null || echo \"MISSING_PACKAGE $p\"; " +
+        'done; ' +
+        'for p in x11vnc novnc websockify; do ' +
+        "dpkg-query -W -f='${Package} ${Version}\\n' \"$p\" 2>/dev/null || echo \"VNC_ABSENT $p\"; " +
+        'done; ' +
+        '/opt/blender/blender --version 2>/dev/null | head -1 || true; ' +
+        'ls /opt/musescore/squashfs-root/bin/ 2>/dev/null | head -3; ' +
+        'ls /opt/freecad/squashfs-root/usr/bin/ 2>/dev/null | grep -i freecad | head -3; ' +
+        'if [ -f /etc/systemd/user/x11vnc.service ] && [ -f /etc/systemd/user/novnc.service ]; ' +
+        'then echo VNC_UNITS_PRESENT; else echo VNC_UNITS_ABSENT; fi; ' +
+        'echo INVENTORY_DONE',
+      { user: 'root', timeoutMs: 60_000 },
+    )
+    const inventoryLines = versions.stdout
+      .trim()
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+    if (!inventoryLines.includes('INVENTORY_DONE')) {
+      throw new Error(
+        `application inventory smoke did not complete: ${versions.stdout.trim()} ` +
+          versions.stderr.trim(),
+      )
+    }
+    const inventoryFailures = inventoryLines.filter((line) => line.startsWith('MISSING_'))
+    if (inventoryFailures.length > 0) {
+      throw new Error(`application inventory smoke failed: ${inventoryFailures.join('; ')}`)
+    }
+    applicationInventory = inventoryLines.filter((line) => line !== 'INVENTORY_DONE')
   } finally {
     await sandbox.kill()
   }
@@ -114,7 +198,26 @@ async function main() {
     diskSizeMBNote:
       'E2B project disk entitlement supplies root capacity; verified from the exact immutable build.',
     rootCapacityBytes,
+    rootUsedBytes,
+    rootUsedNote:
+      'Bytes used on / by a freshly booted sandbox of this build, before any task writes. ' +
+      'This is the image footprint, not a live-run peak.',
     minimumRootCapacityGB: MIN_ROOT_CAPACITY_GB,
+    applicationInventory,
+    applicationInventoryNote:
+      'Package versions and launcher payloads observed in the smoke sandbox of this exact ' +
+      'build: dpkg versions, the Blender banner, the MuseScore 4 and FreeCAD AppImage ' +
+      'binaries, and whether both VNC user units are present. Recorded only, not gated: ' +
+      'the VNC stack is for a human watching a sandbox, no task invokes it, and its units ' +
+      'ship disabled. A launcher resolving is also not evidence that the application opens ' +
+      'a document.',
+    unpinnableVersionsNote:
+      'google-chrome-stable and kicad have no source sha256 pin: they come from mutable apt ' +
+      "sources (Google's Chrome repo and ppa:kicad/kicad-10.0-releases), which serve whatever " +
+      'version is current at build time. Both are apt-mark hold inside the guest, and the ' +
+      'versions in applicationInventory are frozen for every sandbox by this immutable build ' +
+      'id, not by a pin in template/template.ts. Re-running the build can install newer ' +
+      'versions; only the build id guarantees the ones recorded here.',
     smokeSandboxId: sandbox.sandboxId,
     networkPolicy: appliedNetworkPolicy,
     timestamp: new Date().toISOString(),

@@ -32,6 +32,10 @@ services/**/*.token
 services/**/*.pid
 services/**/*.log
 
+# Per-campaign CA/leaf certificate material (services/campaign_tls.py):
+# private keys generated at fleet launch, never committed.
+services/**/.campaign-tls/
+
 # Pinned upstream checkout and gated task data: downloaded per-consumer after
 # accepting the upstream dataset gate, never committed.
 /OSWorld-V2/

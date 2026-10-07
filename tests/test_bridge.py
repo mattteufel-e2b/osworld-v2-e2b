@@ -10,11 +10,19 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import aiohttp
+import httpx
 from aiohttp.test_utils import make_mocked_request
 from e2b import InvalidArgumentException
+from e2b.exceptions import (
+    AuthenticationException,
+    NotFoundException,
+    RateLimitException,
+    SandboxException,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -337,6 +345,598 @@ class GuestManagerTests(unittest.IsolatedAsyncioTestCase):
             "chmod 0700 /opt/hostmap_proxy.py && chmod 0600 /opt/fleet_runtime.json",
             [command for command, _kwargs in sandbox.commands.calls],
         )
+
+    async def test_guest_proxy_gets_tls_material_trust_install_and_alias_hosts(self):
+        runtime = {
+            "websites": {
+                "sandbox_id": "websites-sandbox",
+                "template": "fleet:build-id",
+                "traffic_token": "websites-traffic-token",
+                "host_suffix": "127.0.0.1.nip.io",
+                "public_host_suffix": "127.0.0.1.nip.io:8090",
+                "caddy_ingress_host": "80-websites.e2b.app",
+                "mode": "per-port-fanout",
+                "asset_url_map": {
+                    "http://dead-upstream.example/logo.png": (
+                        "https://mailhub.127.0.0.1.nip.io:8090/logo.png"
+                    )
+                },
+                "sites": {
+                    "mailhub": {
+                        "ingress_host": "13001-websites.e2b.app",
+                        "port": 13001,
+                    }
+                },
+            },
+            "gitlab": {
+                "sandbox_id": "gitlab-sandbox",
+                "template": "fleet:build-id",
+                "traffic_token": "gitlab-traffic-token",
+                "host": "gitlab.127.0.0.1.nip.io",
+                "ingress_host": "8929-gitlab.e2b.app",
+                "port": 8929,
+                "url": "https://gitlab.127.0.0.1.nip.io:8090",
+                "external_url": "https://gitlab.127.0.0.1.nip.io",
+                "aliases": ["54.174.16.65.sslip.io"],
+                "private_token": "gitlab-private-token",
+                "token_file": "/host/services/.gitlab-token",
+            },
+            "tls": {
+                "campaign_id": "test-campaign",
+                "hosts": [
+                    "mailhub.127.0.0.1.nip.io",
+                    "gitlab.127.0.0.1.nip.io",
+                    "54.174.16.65.sslip.io",
+                ],
+            },
+        }
+
+        class Files:
+            def __init__(self):
+                self.writes = {}
+                self.write_kwargs = {}
+
+            def write(self, path, content, **kwargs):
+                self.writes[path] = content
+                self.write_kwargs[path] = kwargs
+
+        class Commands:
+            def __init__(self):
+                self.calls = []
+
+            def run(self, command, **kwargs):
+                self.calls.append((command, kwargs))
+                # "ok" means the nip.io DNS probe succeeds, so the probe's own
+                # /etc/hosts fallback branch never fires -- this proves the
+                # alias entry is written unconditionally, not from that branch.
+                return type("Result", (), {"stdout": "ok\n"})()
+
+        sandbox = type("Sandbox", (), {"files": Files(), "commands": Commands()})()
+        with tempfile.TemporaryDirectory() as directory:
+            script_file = Path(directory) / "hostmap_proxy.py"
+            runtime_file = Path(directory) / "runtime.json"
+            ca_cert_file = Path(directory) / "ca.crt"
+            leaf_cert_file = Path(directory) / "leaf.crt"
+            leaf_key_file = Path(directory) / "leaf.key"
+            bundle_file = Path(directory) / "bundle.crt"
+            ca_cert_file.write_text("CACERT")
+            leaf_cert_file.write_text("LEAFCERT")
+            leaf_key_file.write_text("LEAFKEY")
+            bundle_file.write_text("BUNDLE")
+            runtime["tls"].update(
+                {
+                    "ca_cert": str(ca_cert_file),
+                    "leaf_cert": str(leaf_cert_file),
+                    "leaf_key": str(leaf_key_file),
+                    "bundle": str(bundle_file),
+                }
+            )
+            script_file.write_text("# guest proxy")
+            runtime_file.write_text(json.dumps(runtime))
+            config = bridge.BridgeConfig(
+                template=IMMUTABLE_TEMPLATE,
+                campaign_id="test-campaign",
+                guest_proxy_script=str(script_file),
+                fleet_rules=str(runtime_file),
+            )
+            bridge._install_guest_proxy(sandbox, config)
+
+        writes = sandbox.files.writes
+        calls = [command for command, _kwargs in sandbox.commands.calls]
+
+        self.assertEqual(writes["/opt/hostmap-tls/leaf.key"], "LEAFKEY")
+        self.assertEqual(writes["/opt/hostmap-tls/leaf.crt"], "LEAFCERT")
+        self.assertEqual(writes["/opt/hostmap-tls/ca.crt"], "CACERT")
+        self.assertNotIn("/opt/hostmap-tls/ca.key", writes)
+        self.assertFalse(any("CAKEY" in str(value) for value in writes.values()))
+        # The TLS material is uploaded as root, not the SDK's default user, so
+        # there is no window where the agent-controlled `user` account owns
+        # the leaf private key.
+        for tls_path in (
+            "/opt/hostmap-tls/leaf.key",
+            "/opt/hostmap-tls/leaf.crt",
+            "/opt/hostmap-tls/ca.crt",
+        ):
+            self.assertEqual(sandbox.files.write_kwargs[tls_path].get("user"), "root")
+            self.assertEqual(
+                sandbox.files.write_kwargs[tls_path].get("request_timeout"), 60
+            )
+        trust_install = [c for c in calls if "update-ca-certificates" in c][0]
+        self.assertIn(
+            "chown root:root /opt/hostmap-tls /opt/hostmap-tls/leaf.crt "
+            "/opt/hostmap-tls/leaf.key /opt/hostmap-tls/ca.crt",
+            trust_install,
+        )
+        # chown must land before the chmod that locks the key down to 0600 --
+        # ownership established after the mode narrows would leave a window
+        # where a non-root-owned file already carries a "secure" mode.
+        self.assertLess(
+            trust_install.index("chown root:root"),
+            trust_install.index("chmod 0600 /opt/hostmap-tls/leaf.key"),
+        )
+        self.assertTrue(any("chmod 0600 /opt/hostmap-tls/leaf.key" in c for c in calls))
+        self.assertTrue(any("update-ca-certificates" in c for c in calls))
+        self.assertTrue(
+            any(
+                'certutil -d sql:/home/user/.pki/nssdb -A -t "C,," -n osworld-campaign'
+                in c
+                for c in calls
+            )
+        )
+        self.assertTrue(
+            any("127.0.0.1 54.174.16.65.sslip.io" in c for c in calls)
+        )  # unconditional alias entry, even though the DNS probe said "ok"
+        start = [c for c in calls if "python3 /opt/hostmap_proxy.py" in c][0]
+        self.assertIn("HOSTMAP_PORT=80,443,8090", start)
+        self.assertIn("HOSTMAP_TLS_PORTS=443,8090", start)
+        self.assertIn(
+            "HOSTMAP_TLS_CERT=/opt/hostmap-tls/leaf.crt HOSTMAP_TLS_KEY=/opt/hostmap-tls/leaf.key",
+            start,
+        )
+        guest_runtime = json.loads(writes["/opt/fleet_runtime.json"])
+        self.assertEqual(guest_runtime["gitlab"]["aliases"], ["54.174.16.65.sslip.io"])
+        self.assertTrue(guest_runtime["websites"]["asset_url_map"])
+        serialized = json.dumps(guest_runtime)
+        self.assertNotIn("private_token", serialized)
+        self.assertNotIn("token_file", serialized)
+        self.assertNotIn("/host/", serialized)
+
+    async def test_guest_proxy_certutil_reads_installed_ca_not_hostmap_tls_dir(self):
+        # Step 1 (the chown/chmod/install trust-install command) roots-owns
+        # /opt/hostmap-tls at mode 0700, so the unprivileged `user` account
+        # that runs certutil below can never traverse into it -- that's the
+        # 0921f49 hardening this test must not weaken. Step 1 also installs a
+        # world-readable copy of the CA cert to
+        # /usr/local/share/ca-certificates/osworld-campaign.crt (mode 0644),
+        # and certutil must read that copy instead: reading anything under
+        # /opt/hostmap-tls as `user` fails with EACCES and aborts guest
+        # creation.
+        runtime = {
+            "websites": {
+                "traffic_token": "websites-traffic-token",
+                "host_suffix": "127.0.0.1.nip.io",
+                "sites": {
+                    "mailhub": {
+                        "ingress_host": "13001-websites.e2b.app",
+                        "port": 13001,
+                    }
+                },
+            },
+            "gitlab": {
+                "traffic_token": "gitlab-traffic-token",
+                "host": "gitlab.127.0.0.1.nip.io",
+                "ingress_host": "8929-gitlab.e2b.app",
+                "port": 8929,
+            },
+            "tls": {
+                "campaign_id": "test-campaign",
+                "hosts": ["mailhub.127.0.0.1.nip.io", "gitlab.127.0.0.1.nip.io"],
+            },
+        }
+
+        class Files:
+            def __init__(self):
+                self.writes = {}
+
+            def write(self, path, content, **kwargs):
+                self.writes[path] = content
+
+        class Commands:
+            def __init__(self):
+                self.calls = []
+
+            def run(self, command, **kwargs):
+                self.calls.append((command, kwargs))
+                return type("Result", (), {"stdout": "ok\n"})()
+
+        sandbox = type("Sandbox", (), {"files": Files(), "commands": Commands()})()
+        with tempfile.TemporaryDirectory() as directory:
+            script_file = Path(directory) / "hostmap_proxy.py"
+            runtime_file = Path(directory) / "runtime.json"
+            ca_cert_file = Path(directory) / "ca.crt"
+            leaf_cert_file = Path(directory) / "leaf.crt"
+            leaf_key_file = Path(directory) / "leaf.key"
+            ca_cert_file.write_text("CACERT")
+            leaf_cert_file.write_text("LEAFCERT")
+            leaf_key_file.write_text("LEAFKEY")
+            runtime["tls"].update(
+                {
+                    "ca_cert": str(ca_cert_file),
+                    "leaf_cert": str(leaf_cert_file),
+                    "leaf_key": str(leaf_key_file),
+                }
+            )
+            script_file.write_text("# guest proxy")
+            runtime_file.write_text(json.dumps(runtime))
+            config = bridge.BridgeConfig(
+                template=IMMUTABLE_TEMPLATE,
+                campaign_id="test-campaign",
+                guest_proxy_script=str(script_file),
+                fleet_rules=str(runtime_file),
+            )
+            bridge._install_guest_proxy(sandbox, config)
+
+        calls = [command for command, _kwargs in sandbox.commands.calls]
+        certutil_calls = [c for c in calls if "certutil" in c]
+        self.assertEqual(len(certutil_calls), 1)
+        certutil = certutil_calls[0]
+
+        # The bug: certutil issued against /opt/hostmap-tls/ca.crt, which
+        # step 1's chmod 0700 makes unreadable to the `user` account that
+        # runs this command, so it exits 255 and aborts guest creation.
+        self.assertNotIn("/opt/hostmap-tls", certutil)
+        # The fix: certutil reads the world-readable copy step 1 already
+        # installed.
+        self.assertIn(
+            "-i /usr/local/share/ca-certificates/osworld-campaign.crt", certutil
+        )
+
+        # The 0921f49 hardening itself must still hold: /opt/hostmap-tls
+        # stays root-owned, mode 0700, leaf.key mode 0600 -- this test must
+        # not have weakened that to make certutil pass.
+        trust_install = [c for c in calls if "update-ca-certificates" in c][0]
+        self.assertIn("chmod 0700 /opt/hostmap-tls", trust_install)
+        self.assertIn("chmod 0600 /opt/hostmap-tls/leaf.key", trust_install)
+        self.assertIn(
+            "chown root:root /opt/hostmap-tls /opt/hostmap-tls/leaf.crt "
+            "/opt/hostmap-tls/leaf.key /opt/hostmap-tls/ca.crt",
+            trust_install,
+        )
+
+        # certutil still writes the user-owned NSS database as `user`, not
+        # root -- a root-run certutil would leave root-owned files under
+        # /home/user/.pki/nssdb.
+        certutil_kwargs = [
+            kwargs
+            for command, kwargs in sandbox.commands.calls
+            if "certutil" in command
+        ][0]
+        self.assertEqual(certutil_kwargs.get("user"), "user")
+
+    async def test_guest_proxy_without_tls_section_behaves_as_before(self):
+        runtime = {
+            "websites": {
+                "traffic_token": "websites-traffic-token",
+                "host_suffix": "127.0.0.1.nip.io",
+                "sites": {
+                    "mailhub": {
+                        "ingress_host": "13001-websites.e2b.app",
+                        "port": 13001,
+                    }
+                },
+            },
+            "gitlab": {
+                "traffic_token": "gitlab-traffic-token",
+                "host": "gitlab.127.0.0.1.nip.io",
+                "ingress_host": "8929-gitlab.e2b.app",
+                "port": 8929,
+            },
+        }
+
+        class Files:
+            def __init__(self):
+                self.writes = {}
+
+            def write(self, path, content):
+                self.writes[path] = content
+
+        class Commands:
+            def __init__(self):
+                self.calls = []
+
+            def run(self, command, **kwargs):
+                self.calls.append((command, kwargs))
+                return type("Result", (), {"stdout": "no\n"})()
+
+        sandbox = type("Sandbox", (), {"files": Files(), "commands": Commands()})()
+        with tempfile.TemporaryDirectory() as directory:
+            script_file = Path(directory) / "hostmap_proxy.py"
+            runtime_file = Path(directory) / "runtime.json"
+            script_file.write_text("# guest proxy")
+            runtime_file.write_text(json.dumps(runtime))
+            config = bridge.BridgeConfig(
+                template=IMMUTABLE_TEMPLATE,
+                campaign_id="test-campaign",
+                guest_proxy_script=str(script_file),
+                fleet_rules=str(runtime_file),
+            )
+            bridge._install_guest_proxy(sandbox, config)
+
+        writes = sandbox.files.writes
+        calls = [command for command, _kwargs in sandbox.commands.calls]
+
+        self.assertFalse(any(path.startswith("/opt/hostmap-tls/") for path in writes))
+        self.assertFalse(any("certutil" in c for c in calls))
+        self.assertFalse(any("update-ca-certificates" in c for c in calls))
+        self.assertFalse(any("54.174.16.65.sslip.io" in c for c in calls))
+        start = [c for c in calls if "python3 /opt/hostmap_proxy.py" in c][0]
+        self.assertIn("HOSTMAP_PORT=80,8090", start)
+        self.assertNotIn("HOSTMAP_TLS_PORTS", start)
+        self.assertNotIn("HOSTMAP_TLS_CERT", start)
+
+    @staticmethod
+    def _proxy_install_config(directory, runtime):
+        script_file = Path(directory) / "hostmap_proxy.py"
+        runtime_file = Path(directory) / "runtime.json"
+        script_file.write_text("# guest proxy")
+        runtime_file.write_text(json.dumps(runtime))
+        return bridge.BridgeConfig(
+            template=IMMUTABLE_TEMPLATE,
+            campaign_id="test-campaign",
+            guest_proxy_script=str(script_file),
+            fleet_rules=str(runtime_file),
+        )
+
+    @staticmethod
+    def _minimal_fleet_runtime():
+        return {
+            "websites": {
+                "traffic_token": "websites-traffic-token",
+                "host_suffix": "127.0.0.1.nip.io",
+                "sites": {
+                    "mailhub": {
+                        "ingress_host": "13001-websites.e2b.app",
+                        "port": 13001,
+                    }
+                },
+            }
+        }
+
+    async def test_guest_proxy_install_probes_the_first_port_before_returning(self):
+        class Files:
+            def write(self, path, content, **kwargs):
+                pass
+
+        class Commands:
+            def __init__(self):
+                self.calls = []
+
+            def run(self, command, **kwargs):
+                self.calls.append((command, kwargs))
+                return type("Result", (), {"stdout": "no\n", "exit_code": 0})()
+
+        sandbox = type("Sandbox", (), {"files": Files(), "commands": Commands()})()
+        with tempfile.TemporaryDirectory() as directory:
+            bridge._install_guest_proxy(
+                sandbox,
+                self._proxy_install_config(directory, self._minimal_fleet_runtime()),
+            )
+
+        calls = [command for command, _kwargs in sandbox.commands.calls]
+        start = next(
+            i for i, c in enumerate(calls) if "python3 /opt/hostmap_proxy.py" in c
+        )
+        probes = [i for i, c in enumerate(calls) if "create_connection" in c]
+        self.assertEqual(len(probes), 1)
+        self.assertGreater(probes[0], start)
+        probe, probe_kwargs = sandbox.commands.calls[probes[0]]
+        self.assertIn("('127.0.0.1', 80)", probe)
+        self.assertEqual(probe_kwargs.get("user"), "root")
+        self.assertEqual(probe_kwargs.get("timeout"), 15)
+        self.assertNotIn("background", probe_kwargs)
+        # No log tail is read while the proxy comes up cleanly.
+        self.assertFalse(any("hostmap_proxy.log" in c for c in calls[probes[0] + 1 :]))
+
+    async def test_guest_proxy_install_raises_with_the_log_tail_when_it_never_listens(
+        self,
+    ):
+        class Files:
+            def write(self, path, content, **kwargs):
+                pass
+
+        class Commands:
+            def __init__(self):
+                self.calls = []
+
+            def run(self, command, **kwargs):
+                self.calls.append((command, kwargs))
+                if "create_connection" in command:
+                    raise RuntimeError("exit status 1")
+                if "hostmap_proxy.log" in command:
+                    return type(
+                        "Result",
+                        (),
+                        {
+                            "stdout": "Traceback...\nOSError: [Errno 98] in use\n",
+                            "exit_code": 0,
+                        },
+                    )()
+                return type("Result", (), {"stdout": "no\n", "exit_code": 0})()
+
+        sandbox = type("Sandbox", (), {"files": Files(), "commands": Commands()})()
+        with tempfile.TemporaryDirectory() as directory:
+            config = self._proxy_install_config(
+                directory, self._minimal_fleet_runtime()
+            )
+            with self.assertRaises(RuntimeError) as caught:
+                bridge._install_guest_proxy(sandbox, config)
+
+        message = str(caught.exception)
+        self.assertIn("guest Host-mapping proxy did not start", message)
+        self.assertIn("OSError: [Errno 98] in use", message)
+        tails = [
+            command
+            for command, _kwargs in sandbox.commands.calls
+            if "hostmap_proxy.log" in command and command.startswith("tail")
+        ]
+        self.assertEqual(tails, ["tail -n 20 /var/log/hostmap_proxy.log"])
+
+    async def test_sandbox_create_retries_burst_rejections_then_succeeds(self):
+        # A 429 from a concurrent burst of worker creates must cost a short
+        # backoff, not a whole task's inference spend.
+        templates = []
+        real_create = FakeSandbox.create
+
+        def flaky_create(template, **kwargs):
+            templates.append(template)
+            if len(templates) <= 2:
+                raise RateLimitException("429: Rate limit exceeded")
+            return real_create(template, **kwargs)
+
+        sleeps = []
+        with (
+            patch.object(bridge, "Sandbox", FakeSandbox),
+            patch.object(FakeSandbox, "create", staticmethod(flaky_create)),
+            patch.object(bridge, "time", SimpleNamespace(sleep=sleeps.append)),
+            patch.object(
+                bridge, "random", SimpleNamespace(uniform=lambda low, high: 0.5)
+            ),
+            patch.object(self.manager, "_wait_ready", AsyncMock()),
+        ):
+            guest = await self.manager.replace()
+
+        self.assertEqual(len(templates), 3)
+        self.assertEqual(templates, [IMMUTABLE_TEMPLATE] * 3)
+        self.assertEqual(sleeps, [2.5, 4.5])
+        self.assertEqual(guest.sandbox_id, FakeSandbox.created[0].sandbox_id)
+        self.assertFalse(FakeSandbox.created[0].killed)
+
+    async def test_sandbox_create_gives_up_after_the_bounded_attempts(self):
+        templates = []
+
+        def always_rejected(template, **kwargs):
+            templates.append(template)
+            raise RateLimitException("429: Rate limit exceeded")
+
+        sleeps = []
+        with (
+            patch.object(bridge, "Sandbox", FakeSandbox),
+            patch.object(FakeSandbox, "create", staticmethod(always_rejected)),
+            patch.object(bridge, "time", SimpleNamespace(sleep=sleeps.append)),
+            patch.object(
+                bridge, "random", SimpleNamespace(uniform=lambda low, high: 0.0)
+            ),
+            patch.object(self.manager, "_wait_ready", AsyncMock()),
+        ):
+            with self.assertRaises(RateLimitException):
+                await self.manager.replace()
+
+        self.assertEqual(len(templates), bridge.SANDBOX_CREATE_RETRY_ATTEMPTS)
+        self.assertEqual(sleeps, [2.0, 4.0, 6.0])
+
+    async def test_sandbox_create_retries_a_connect_timeout(self):
+        # A create that never reached the control plane left nothing behind,
+        # so a second attempt is free of orphans.
+        templates = []
+        real_create = FakeSandbox.create
+
+        def flaky_create(template, **kwargs):
+            templates.append(template)
+            if len(templates) <= 1:
+                raise httpx.ConnectTimeout("timed out connecting")
+            return real_create(template, **kwargs)
+
+        sleeps = []
+        with (
+            patch.object(bridge, "Sandbox", FakeSandbox),
+            patch.object(FakeSandbox, "create", staticmethod(flaky_create)),
+            patch.object(bridge, "time", SimpleNamespace(sleep=sleeps.append)),
+            patch.object(
+                bridge, "random", SimpleNamespace(uniform=lambda low, high: 0.0)
+            ),
+            patch.object(self.manager, "_wait_ready", AsyncMock()),
+        ):
+            guest = await self.manager.replace()
+
+        self.assertEqual(len(templates), 2)
+        self.assertEqual(sleeps, [2.0])
+        self.assertEqual(guest.sandbox_id, FakeSandbox.created[0].sandbox_id)
+
+    async def test_sandbox_create_does_not_retry_a_read_timeout(self):
+        # The request reached the control plane and the answer was lost: a
+        # retry would race a sandbox this worker can no longer name or kill.
+        templates = []
+
+        def read_timeout(template, **kwargs):
+            templates.append(template)
+            raise httpx.ReadTimeout("read timed out")
+
+        sleeps = []
+        with (
+            patch.object(bridge, "Sandbox", FakeSandbox),
+            patch.object(FakeSandbox, "create", staticmethod(read_timeout)),
+            patch.object(bridge, "time", SimpleNamespace(sleep=sleeps.append)),
+            patch.object(self.manager, "_wait_ready", AsyncMock()),
+        ):
+            with self.assertRaises(httpx.ReadTimeout):
+                await self.manager.replace()
+
+        self.assertEqual(len(templates), 1)
+        self.assertEqual(sleeps, [])
+
+    async def test_sandbox_create_does_not_retry_a_client_error(self):
+        templates = []
+
+        def forbidden(template, **kwargs):
+            templates.append(template)
+            raise SandboxException("403: forbidden")
+
+        sleeps = []
+        with (
+            patch.object(bridge, "Sandbox", FakeSandbox),
+            patch.object(FakeSandbox, "create", staticmethod(forbidden)),
+            patch.object(bridge, "time", SimpleNamespace(sleep=sleeps.append)),
+            patch.object(self.manager, "_wait_ready", AsyncMock()),
+        ):
+            with self.assertRaises(SandboxException):
+                await self.manager.replace()
+
+        self.assertEqual(len(templates), 1)
+        self.assertEqual(sleeps, [])
+
+    def test_create_retry_classifier_separates_transient_from_permanent(self):
+        # Only failures that provably never reached the control plane are
+        # retried: a create whose request was sent and then timed out on the
+        # read may already have provisioned a sandbox nobody would ever kill.
+        retryable = [
+            RateLimitException("429: Rate limit exceeded"),
+            httpx.ConnectError("connection refused"),
+            httpx.ConnectTimeout("timed out connecting"),
+            aiohttp.ClientConnectionError(),
+            SandboxException("500: internal error"),
+            SandboxException("502: bad gateway"),
+            SandboxException("no status in this message"),
+        ]
+        permanent = [
+            AuthenticationException("401: Unauthorized"),
+            SandboxException("403: forbidden"),
+            SandboxException("404: not found"),
+            NotFoundException("404: sandbox not found"),
+            InvalidArgumentException("400: bad template"),
+            ValueError("not an SDK error"),
+            # Sent-and-unanswered: the control plane may have created a guest.
+            bridge.TimeoutException("timed out"),
+            TimeoutError(),
+            httpx.ReadTimeout("read timed out"),
+            httpx.WriteTimeout("write timed out"),
+            httpx.PoolTimeout("pool timed out"),
+        ]
+        for exc in retryable:
+            with self.subTest(exc=exc):
+                self.assertTrue(bridge._is_retryable_create_error(exc))
+        for exc in permanent:
+            with self.subTest(exc=exc):
+                self.assertFalse(bridge._is_retryable_create_error(exc))
 
     async def test_replace_does_not_expand_fleet_routes_into_guest_network_rules(self):
         with (

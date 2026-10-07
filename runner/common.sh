@@ -43,15 +43,34 @@ resolve_e2b_api_key() {
 
 # Fleet + asset wiring consumed by the bridge (in-guest Host-mapping proxy) and
 # by the rollout (website suffix, GitLab, gated assets). Reads the runtime file
-# the service launchers wrote; preflight has already required it.
+# the service launchers wrote; preflight has already required it, including
+# the `tls` section's campaign CA/leaf material.
+#
+# Read complete lines so certificate paths may contain whitespace.
 export_fleet_wiring() {
-    read -r WEBSITE_HOST_SUFFIX GITLAB_URL < <(python3 - "$SERVICES_DIR/.runtime.json" <<'PY'
+    {
+        IFS= read -r WEBSITE_HOST_SUFFIX
+        IFS= read -r GITLAB_URL
+        IFS= read -r OSWORLD_CA_CERT
+        IFS= read -r OSWORLD_CA_BUNDLE
+        IFS= read -r HOSTMAP_TLS_CERT
+        IFS= read -r HOSTMAP_TLS_KEY
+    } < <(python3 - "$SERVICES_DIR/.runtime.json" <<'PY'
 import json, sys
 rt = json.load(open(sys.argv[1]))
-print(rt["websites"]["public_host_suffix"], rt["gitlab"]["url"])
+tls = rt["tls"]
+print(rt["websites"]["public_host_suffix"], rt["gitlab"]["url"], tls["ca_cert"], tls["bundle"], tls["leaf_cert"], tls["leaf_key"], sep="\n")
 PY
 )
-    export WEBSITE_HOST_SUFFIX GITLAB_URL
+    export WEBSITE_HOST_SUFFIX GITLAB_URL OSWORLD_CA_CERT HOSTMAP_TLS_CERT HOSTMAP_TLS_KEY
+    # Upstream's website scheme probe and python-gitlab use requests; the SDKs
+    # use httpx. Both get certifi's roots plus the campaign CA via these two
+    # standard library env vars, so public HTTPS keeps working alongside trust
+    # for the campaign-signed fleet origins.
+    REQUESTS_CA_BUNDLE="$OSWORLD_CA_BUNDLE"; SSL_CERT_FILE="$OSWORLD_CA_BUNDLE"
+    export REQUESTS_CA_BUNDLE SSL_CERT_FILE
+    # :8090 is TLS-only; a transient scheme-probe timeout must not select HTTP.
+    export OSWORLD_WEBSITE_SCHEME=https
     export GITLAB_PRIVATE_TOKEN="$(cat "$SERVICES_DIR/.gitlab-token")"
     export OSWORLD_FILE_BASE_URL="$TASKS_DIR/assets"
     export HOSTMAP_PROXY_SCRIPT="$SERVICES_DIR/hostmap_proxy.py"
@@ -63,15 +82,58 @@ PY
 # cannot stall the caller past ~30 iterations. Prints the log tail on failure.
 wait_for_hostmap_proxy() {
     local pid="$1" cookie="$2" logfile="$3" _
-    for _ in $(seq 1 30); do
+    # Poll count, not an operator knob: the tests shorten it so a proxy that
+    # never answers is diagnosed in seconds rather than a minute.
+    for _ in $(seq 1 "${HOSTMAP_READY_ATTEMPTS:-30}"); do
         if ! kill -0 "$pid" 2>/dev/null; then break; fi
-        if curl -fsS --connect-timeout 2 --max-time 5 -H 'Host: mailhub.127.0.0.1.nip.io' \
-            "http://127.0.0.1:8090/api/state?cookie=$cookie" >/dev/null 2>&1; then
+        # --resolve makes curl present the site name as SNI and Host so the
+        # leaf certificate's SAN matches; connecting to the bare IP would fail
+        # certificate verification even though the socket still reaches 8090.
+        if curl -fsS --connect-timeout 2 --max-time 5 --cacert "$OSWORLD_CA_CERT" \
+            --resolve 'mailhub.127.0.0.1.nip.io:8090:127.0.0.1' \
+            "https://mailhub.127.0.0.1.nip.io:8090/api/state?cookie=$cookie" >/dev/null 2>&1; then
             return 0
         fi
-        sleep 2
+        # The watchdog restarts the proxy, so this poll can be killed midway;
+        # a sleep holding the caller's stdout/stderr would outlive it.
+        sleep 2 >/dev/null 2>&1 </dev/null
     done
     echo "hostmap proxy did not become ready; last log lines:" >&2
     tail -n 40 "$logfile" >&2 2>/dev/null
     return 1
+}
+
+# Start the single host-side fleet proxy on 127.0.0.1:8090 and wait for it to
+# answer, refusing to share the port with anything already there. Reads $UV
+# (each caller builds its own) and the TLS leaf paths `export_fleet_wiring`
+# exported, sets the global `proxy_pid`, and -- when $HOSTMAP_PROXY_PID_FILE
+# names a file -- records that pid there: the coordinator's watchdog restarts
+# the proxy from a subshell, so cleanup has to read the live pid from disk
+# rather than trust its own first copy. The log is appended to for the same
+# reason: a restart must not erase what the dead proxy said on its way out.
+# Returns 2 when the port is occupied and 1 when the proxy never came up, so
+# callers keep the exit codes the inline blocks used to produce.
+start_host_proxy() {
+    local cookie="$1" logfile="$2"
+    if python3 - <<'PY'
+import socket
+s = socket.socket()
+s.settimeout(0.2)
+occupied = s.connect_ex(("127.0.0.1", 8090)) == 0
+s.close()
+raise SystemExit(1 if occupied else 0)
+PY
+    then :; else
+        echo "127.0.0.1:8090 is already occupied; refusing an ambiguous fleet proxy" >&2
+        return 2
+    fi
+    HOSTMAP_PORT="8090" HOSTMAP_TLS_PORTS="8090" \
+        HOSTMAP_TLS_CERT="$HOSTMAP_TLS_CERT" HOSTMAP_TLS_KEY="$HOSTMAP_TLS_KEY" \
+        FLEET_RUNTIME_FILE="$SERVICES_DIR/.runtime.json" \
+        $UV python "$SERVICES_DIR/hostmap_proxy.py" >>"$logfile" 2>&1 &
+    proxy_pid=$!
+    if [ -n "${HOSTMAP_PROXY_PID_FILE:-}" ]; then
+        echo "$proxy_pid" >"$HOSTMAP_PROXY_PID_FILE"
+    fi
+    wait_for_hostmap_proxy "$proxy_pid" "$cookie" "$logfile" || return 1
 }

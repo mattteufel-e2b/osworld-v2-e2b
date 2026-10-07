@@ -1,0 +1,367 @@
+{
+  "kind": "browser-probe-summary",
+  "source_receipt": "browser-probe-00124a57-267c-45e7-93d1-ca0ff196e4b8.json",
+  "acceptance": {
+    "all_origins_probed": true,
+    "cdp_domains_enabled": true,
+    "cloudcrm.all_subresources_https": true,
+    "cloudcrm.clipboard_object": true,
+    "cloudcrm.loaded": true,
+    "cloudcrm.no_mixed_content": true,
+    "cloudcrm.secure": true,
+    "cloudcrm.security_state_secure": true,
+    "cloudcrm.title_not_interstitial": true,
+    "cloudcrm.url_origin_matches": true,
+    "cookie_isolation_teamchat_to_cloudcrm": true,
+    "gitlab-041.all_subresources_https": true,
+    "gitlab-041.clipboard_object": true,
+    "gitlab-041.loaded": true,
+    "gitlab-041.no_mixed_content": true,
+    "gitlab-041.secure": true,
+    "gitlab-041.security_state_secure": true,
+    "gitlab-041.title_not_interstitial": true,
+    "gitlab-041.url_origin_matches": true,
+    "gitlab_041_title_contains_gitlab": true,
+    "mailhub.all_subresources_https": true,
+    "mailhub.clipboard_object": true,
+    "mailhub.loaded": true,
+    "mailhub.no_mixed_content": true,
+    "mailhub.secure": true,
+    "mailhub.security_state_secure": true,
+    "mailhub.title_not_interstitial": true,
+    "mailhub.url_origin_matches": true,
+    "streamview.all_subresources_https": true,
+    "streamview.clipboard_object": true,
+    "streamview.loaded": true,
+    "streamview.no_mixed_content": true,
+    "streamview.secure": true,
+    "streamview.security_state_secure": true,
+    "streamview.title_not_interstitial": true,
+    "streamview.url_origin_matches": true,
+    "studio-streamview.all_subresources_https": true,
+    "studio-streamview.clipboard_object": true,
+    "studio-streamview.loaded": true,
+    "studio-streamview.no_mixed_content": true,
+    "studio-streamview.secure": true,
+    "studio-streamview.security_state_secure": true,
+    "studio-streamview.title_not_interstitial": true,
+    "studio-streamview.url_origin_matches": true,
+    "teamchat.all_subresources_https": true,
+    "teamchat.clipboard_object": true,
+    "teamchat.clipboard_roundtrip_probe": true,
+    "teamchat.loaded": true,
+    "teamchat.no_mixed_content": true,
+    "teamchat.notifications_granted": true,
+    "teamchat.secure": true,
+    "teamchat.security_state_secure": true,
+    "teamchat.title_not_interstitial": true,
+    "teamchat.url_origin_matches": true
+  },
+  "build_id": "00124a57-267c-45e7-93d1-ca0ff196e4b8",
+  "campaign_id": "osworld-live-20260918T000607Z",
+  "cdp_9222_listening_before_socat": true,
+  "chrome_launch": [
+    "google-chrome",
+    "--remote-debugging-port=1337",
+    "about:blank"
+  ],
+  "finished_at": "2026-09-18T01:08:38.546933+00:00",
+  "origins_requested": [
+    {
+      "label": "teamchat",
+      "url": "https://teamchat.127.0.0.1.nip.io"
+    },
+    {
+      "label": "cloudcrm",
+      "url": "https://cloudcrm.127.0.0.1.nip.io"
+    },
+    {
+      "label": "mailhub",
+      "url": "https://mailhub.127.0.0.1.nip.io"
+    },
+    {
+      "label": "streamview",
+      "url": "https://streamview.127.0.0.1.nip.io"
+    },
+    {
+      "label": "studio-streamview",
+      "url": "https://studio.streamview.127.0.0.1.nip.io"
+    },
+    {
+      "label": "gitlab-041",
+      "url": "https://54.174.16.65.sslip.io/users/sign_in"
+    }
+  ],
+  "passed": true,
+  "purpose": "guest-browser secure-context probe over the campaign HTTPS fleet origins; not a benchmark score",
+  "schema_version": 1,
+  "socat_launch": [
+    "socat",
+    "tcp-listen:9222,fork",
+    "tcp:localhost:1337"
+  ],
+  "started_at": "2026-09-18T01:08:05.507742+00:00",
+  "teamchat": {
+    "bring_to_front_error": null,
+    "clipboard_permission_errors": {
+      "clipboard-read": null,
+      "clipboard-sanitized-write": {
+        "code": -32602,
+        "message": "Invalid PermissionDescriptor name: clipboard-sanitized-write"
+      },
+      "clipboard-write": null
+    },
+    "clipboard_roundtrip": {
+      "attempts": [
+        {
+          "error": null,
+          "exception": null,
+          "focus_emulation": false,
+          "value": "probe"
+        }
+      ],
+      "value": "probe"
+    },
+    "cookie_after_set": "user_id=568f19d4-10bb-4471-a5e7-70349cae0de7; probe=1",
+    "cookie_set_error": null,
+    "notification_permission_after_grant": "granted",
+    "notification_permission_error": null,
+    "origin": "https://teamchat.127.0.0.1.nip.io",
+    "set_permission_notifications_error": null
+  },
+  "template": "osworld-v2-gnome:00124a57-267c-45e7-93d1-ca0ff196e4b8",
+  "website_host_suffix": "127.0.0.1.nip.io:8090",
+  "cdp": {
+    "browser": "Chrome/153.0.8010.47",
+    "enable_errors": {
+      "Log": null,
+      "Network": null,
+      "Page": null,
+      "Runtime": null,
+      "Security": null
+    },
+    "event_count": 223
+  },
+  "origins": [
+    {
+      "blocked_urls": [],
+      "console_entries_truncated": false,
+      "evaluate_error": null,
+      "evaluate_exception": null,
+      "label": "teamchat",
+      "load_event_fired": true,
+      "requested_at": "2026-09-18T01:08:16.807077+00:00",
+      "requested_url": "https://teamchat.127.0.0.1.nip.io",
+      "values": {
+        "clipboard": "object",
+        "notif": "default",
+        "secure": true,
+        "title": "TeamChat",
+        "url": "https://teamchat.127.0.0.1.nip.io/channel/general",
+        "uuid": "function"
+      },
+      "console_entries_count": 0,
+      "log_findings_count": 0,
+      "security": {
+        "source": "Security.visibleSecurityStateChanged",
+        "value": "secure"
+      },
+      "network": {
+        "total_requests": 19,
+        "schemes": {
+          "https": 19
+        },
+        "requests_truncated": false,
+        "insecure_urls": [],
+        "requests_count": 19,
+        "failures_count": 0,
+        "insecure_requests_count": 0,
+        "mixed_content_blocked_count": 0
+      }
+    },
+    {
+      "blocked_urls": [],
+      "console_entries_truncated": false,
+      "cookie_read_error": null,
+      "cookie_visible": "user_id=4888d3bf-d372-4686-bc43-721146eb146a",
+      "evaluate_error": null,
+      "evaluate_exception": null,
+      "label": "cloudcrm",
+      "load_event_fired": true,
+      "requested_at": "2026-09-18T01:08:20.802093+00:00",
+      "requested_url": "https://cloudcrm.127.0.0.1.nip.io",
+      "values": {
+        "clipboard": "object",
+        "notif": "default",
+        "secure": true,
+        "title": "frontend",
+        "url": "https://cloudcrm.127.0.0.1.nip.io/",
+        "uuid": "function"
+      },
+      "console_entries_count": 0,
+      "log_findings_count": 0,
+      "security": {
+        "source": "Security.visibleSecurityStateChanged",
+        "value": "secure"
+      },
+      "network": {
+        "total_requests": 14,
+        "schemes": {
+          "https": 14
+        },
+        "requests_truncated": false,
+        "insecure_urls": [],
+        "requests_count": 14,
+        "failures_count": 0,
+        "insecure_requests_count": 0,
+        "mixed_content_blocked_count": 0
+      }
+    },
+    {
+      "blocked_urls": [],
+      "console_entries_truncated": false,
+      "evaluate_error": null,
+      "evaluate_exception": null,
+      "label": "mailhub",
+      "load_event_fired": true,
+      "requested_at": "2026-09-18T01:08:24.341027+00:00",
+      "requested_url": "https://mailhub.127.0.0.1.nip.io",
+      "values": {
+        "clipboard": "object",
+        "notif": "default",
+        "secure": true,
+        "title": "MailHub",
+        "url": "https://mailhub.127.0.0.1.nip.io/#/inbox",
+        "uuid": "function"
+      },
+      "console_entries_count": 0,
+      "log_findings_count": 0,
+      "security": {
+        "source": "Security.visibleSecurityStateChanged",
+        "value": "secure"
+      },
+      "network": {
+        "total_requests": 11,
+        "schemes": {
+          "https": 11
+        },
+        "requests_truncated": false,
+        "insecure_urls": [],
+        "requests_count": 11,
+        "failures_count": 0,
+        "insecure_requests_count": 0,
+        "mixed_content_blocked_count": 0
+      }
+    },
+    {
+      "blocked_urls": [],
+      "console_entries_truncated": false,
+      "evaluate_error": null,
+      "evaluate_exception": null,
+      "label": "streamview",
+      "load_event_fired": true,
+      "requested_at": "2026-09-18T01:08:27.804862+00:00",
+      "requested_url": "https://streamview.127.0.0.1.nip.io",
+      "values": {
+        "clipboard": "object",
+        "notif": "default",
+        "secure": true,
+        "title": "StreamView",
+        "url": "https://streamview.127.0.0.1.nip.io/",
+        "uuid": "function"
+      },
+      "console_entries_count": 0,
+      "log_findings_count": 0,
+      "security": {
+        "source": "Security.visibleSecurityStateChanged",
+        "value": "secure"
+      },
+      "network": {
+        "total_requests": 42,
+        "schemes": {
+          "https": 42
+        },
+        "requests_truncated": false,
+        "insecure_urls": [],
+        "requests_count": 42,
+        "failures_count": 0,
+        "insecure_requests_count": 0,
+        "mixed_content_blocked_count": 0
+      }
+    },
+    {
+      "blocked_urls": [],
+      "console_entries_truncated": false,
+      "evaluate_error": null,
+      "evaluate_exception": null,
+      "label": "studio-streamview",
+      "load_event_fired": true,
+      "requested_at": "2026-09-18T01:08:31.143554+00:00",
+      "requested_url": "https://studio.streamview.127.0.0.1.nip.io",
+      "values": {
+        "clipboard": "object",
+        "notif": "default",
+        "secure": true,
+        "title": "StreamView",
+        "url": "https://studio.streamview.127.0.0.1.nip.io/",
+        "uuid": "function"
+      },
+      "console_entries_count": 0,
+      "log_findings_count": 0,
+      "security": {
+        "source": "Security.visibleSecurityStateChanged",
+        "value": "secure"
+      },
+      "network": {
+        "total_requests": 11,
+        "schemes": {
+          "https": 11
+        },
+        "requests_truncated": false,
+        "insecure_urls": [],
+        "requests_count": 11,
+        "failures_count": 0,
+        "insecure_requests_count": 0,
+        "mixed_content_blocked_count": 0
+      }
+    },
+    {
+      "blocked_urls": [],
+      "console_entries_truncated": false,
+      "evaluate_error": null,
+      "evaluate_exception": null,
+      "label": "gitlab-041",
+      "load_event_fired": true,
+      "requested_at": "2026-09-18T01:08:34.510835+00:00",
+      "requested_url": "https://54.174.16.65.sslip.io/users/sign_in",
+      "values": {
+        "clipboard": "object",
+        "notif": "default",
+        "secure": true,
+        "title": "Sign in \u00b7 GitLab",
+        "url": "https://54.174.16.65.sslip.io/users/sign_in",
+        "uuid": "function"
+      },
+      "console_entries_count": 2,
+      "log_findings_count": 0,
+      "security": {
+        "source": "Security.visibleSecurityStateChanged",
+        "value": "secure"
+      },
+      "network": {
+        "total_requests": 32,
+        "schemes": {
+          "data": 1,
+          "https": 31
+        },
+        "requests_truncated": false,
+        "insecure_urls": [],
+        "requests_count": 32,
+        "failures_count": 2,
+        "insecure_requests_count": 0,
+        "mixed_content_blocked_count": 0
+      }
+    }
+  ],
+  "reduction_note": "Committed reduction of the raw probe record under out/osworld-v2-raw/: every acceptance value and per-origin probe value is verbatim; the per-origin request, security-event and console lists are reduced to counts and per-scheme tallies (insecure_urls and blocked_urls stay verbatim, so an empty list remains the checkable negative result)."
+}

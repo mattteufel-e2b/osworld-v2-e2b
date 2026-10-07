@@ -27,8 +27,7 @@ downloading the gated data, and starting a fleet campaign as described in the
 ## Release validation (maintainers)
 
 Everything in this section lives under `maintainer/` and is **not required to run the
-benchmark**. `runner/` holds only the benchmark path; `tools/spikes/` keeps the one-off
-probes that shaped the port (their evidence is cited from `FIDELITY.md`).
+benchmark**. `runner/` holds only the benchmark path.
 
 This exercises the harness paths across all 108 tasks with zero external model calls,
 then optionally gates a full-model benchmark receipt on that coverage. A passing path does
@@ -56,6 +55,11 @@ sentinel or attempted an evaluator-model call that an upstream metric converted 
 
 The validation coordinators leave the fleets running so later rungs can reuse the campaign;
 stop it with `uv run --env-file .env.local --locked python services/stop.py --campaign-id "$OSWORLD_CAMPAIGN_ID"` when you are done with it.
+
+Also inspect a small full-agent run's receipts for successful judge and simulator calls
+through the task loop. `check_models.py` verifies client connectivity; zero calls in an
+agent receipt do not establish coverage. M3's prompt omits `call_user`, so simulator
+coverage needs an explicit task-loop canary; a normal M3 rollout may never exercise it.
 
 To gate a full-model run on that coverage instead of running it ungated, set
 `REQUIRE_NO_MODEL_COVERAGE=1` and point `NO_MODEL_RECEIPT` at the receipt above — this is the

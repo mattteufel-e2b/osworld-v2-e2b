@@ -441,10 +441,15 @@ def list_ids_by_metadata(selectors: Mapping[str, str]) -> list[str]:
     ids: list[str] = []
     try:
         listed = Sandbox.list()
+        if callable(getattr(listed, "next_items", None)):
+            items = []
+            while listed.has_next:
+                items.extend(listed.next_items())
+        else:
+            items = getattr(listed, "sandboxes", listed)
     except Exception as exc:  # noqa: BLE001
         print(f"[profile] could not list sandboxes: {exc}", file=sys.stderr)
         return ids
-    items = getattr(listed, "sandboxes", listed)
     for item in items:
         metadata = getattr(item, "metadata", None) or {}
         if all(metadata.get(key) == value for key, value in selectors.items()):

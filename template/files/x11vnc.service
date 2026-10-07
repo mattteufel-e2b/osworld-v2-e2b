@@ -1,0 +1,9 @@
+[Unit]
+Description=x11vnc on the OSWorld desktop (:0), loopback only; disabled by default
+
+[Service]
+ExecStart=/usr/bin/x11vnc -display :0 -localhost -forever -shared -rfbport 5900 -nopw -quiet
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

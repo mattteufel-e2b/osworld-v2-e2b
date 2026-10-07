@@ -6,9 +6,37 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "runner"))
 from receipt_safety import RETRYABLE_ERROR_CAUSES  # noqa: E402
+
+
+def _apt_lines_naming_freecad(template: str) -> list[str]:
+    """Every apt path in template.ts that would (re-)install FreeCAD.
+
+    Covers both shapes the file uses for a command - a quoted entry in a
+    `.runCmd([...])` array and a single-line `.runCmd('...')` - plus a bare
+    package entry in the `.aptInstall([...])` list, which is the file's primary
+    apt entry point. `//` comment lines are dropped first so the KiCad block's
+    prose (which must quote the apt error naming freecad) does not match.
+    """
+    code = [
+        line for line in template.splitlines() if not line.lstrip().startswith("//")
+    ]
+    names_freecad = re.compile(r"freecad", re.IGNORECASE).search
+    hits = [
+        line.strip()
+        for line in code
+        if ("apt-get install" in line or "apt-mark hold" in line)
+        and names_freecad(line)
+    ]
+    apt_install_body = "\n".join(code).split(".aptInstall([")[1].split("])")[0]
+    hits += [
+        line.strip() for line in apt_install_body.splitlines() if names_freecad(line)
+    ]
+    return hits
 
 
 def test_reaper_uses_clone_safe_startup_launcher():
@@ -28,7 +56,7 @@ def test_parallel_validator_owns_proxy_and_namespaces_task_service_ports():
 
     assert 'PARALLEL_CONCURRENCY="${PARALLEL_CONCURRENCY:-80}"' in coordinator
     assert 'if [ "$PARALLEL_CONCURRENCY" -gt 80 ]; then' in coordinator
-    assert 'HOSTMAP_PORT="8090"' in coordinator
+    assert "start_host_proxy " in coordinator
     assert 'task_id" = "082"' in coordinator
     assert 'task_service_ports="3000:3000"' in coordinator
     assert 'OSWORLD_TASK_SERVICE_PORTS="$task_service_ports"' in coordinator
@@ -38,8 +66,7 @@ def test_parallel_validator_owns_proxy_and_namespaces_task_service_ports():
 def test_sequential_validator_owns_host_proxy_for_whole_run():
     validator = (ROOT / "maintainer" / "validate.sh").read_text()
 
-    assert 'HOSTMAP_PORT="8090"' in validator
-    assert '$UV python "$SERVICES_DIR/hostmap_proxy.py"' in validator
+    assert "start_host_proxy " in validator
     assert "trap cleanup_all EXIT INT TERM" in validator
 
 
@@ -93,6 +120,7 @@ def test_fetch_server_applies_every_committed_patch_to_the_pinned_checkout():
     assert "lock.release" in build
     assert [patch.name for patch in patches] == [
         "osworld-server-atspi-guards.patch",
+        "osworld-server-atspi-serialization.patch",
         "osworld-server-runtime-reliability.patch",
     ]
     assert 'PATCH_DIR="$REPO_ROOT/patches"' in fetch
@@ -470,8 +498,8 @@ def test_openboard_snap_contract_maps_to_ubuntu_package_without_snapd():
     template = (ROOT / "template" / "template.ts").read_text()
     snap_compat = (ROOT / "template" / "files" / "snap-openboard-compat.sh").read_text()
 
-    assert "apt-get install -y musescore3 shotcut freecad openboard" in template
-    assert "apt-mark hold musescore3 shotcut freecad openboard" in template
+    assert "apt-get install -y shotcut openboard" in template
+    assert "apt-mark hold shotcut openboard" in template
     assert "mkdir -p /snap/bin" in template
     assert "ln -sfn /usr/bin/OpenBoard /snap/bin/openboard" in template
     assert ".copy('snap-openboard-compat.sh', '/usr/local/bin/snap'" in template
@@ -480,13 +508,195 @@ def test_openboard_snap_contract_maps_to_ubuntu_package_without_snapd():
     assert "unsupported snap command" in snap_compat
 
 
+# Every application installed from a vendor artifact rather than from Ubuntu's
+# archive, in the shape they all share: the file the build downloads and the
+# sha256 it is pinned at, the command name a task or evaluator invokes, and the
+# first-run config baked to the path that application reads plus the keys in it
+# that a before/after diff on a live guest proved decisive. The configs are
+# slimmed to those keys rather than committed as verbatim captures, so this
+# table is the only record of why each one is there.
+# (name, artifact, sha256, launcher, config, destination, decisive keys)
+VENDOR_APPLICATIONS = [
+    (
+        "musescore",  # task 067's score was written in MuseScore Studio 4
+        "MuseScore-Studio-4.6.5.253511702-x86_64.AppImage",
+        "193daa0ea18bcfa90a47145a842275b8069b7b2b8d153e562b15fab5fe50fcaf",
+        ".copy('musescore-launcher.sh', '/usr/local/bin/musescore'",
+        "MuseScore4.ini",
+        "/home/user/.config/MuseScore/MuseScore4.ini",
+        # setup wizard; "Enjoy free cloud storage"; the update-available modal
+        [
+            "hasCompletedFirstLaunchSetup=true",
+            "welcomeDialogShowOnStartup=false",
+            "checkForUpdate=false",
+        ],
+    ),
+    (
+        "wps-office",  # tasks 049/076/079/080/091 invoke wpp / wps / et
+        "wps-office_11.1.0.11723.XA_amd64.deb",
+        "fe6326210f69d94efdbf2728914d293036be391b93a614f58cd0e1ff1d4923b3",
+        "test -x /usr/bin/wpp && test -x /usr/bin/wps && test -x /usr/bin/et",
+        "wps-office.conf",
+        "/home/user/.config/Kingsoft/Office.conf",
+        # the EULA modal, then the "System Check" missing-font warning
+        [
+            "common\\AcceptedEULA=true",
+            "common\\system_check\\no_necessary_symbol_fonts=false",
+        ],
+    ),
+    (
+        "blender",  # task 092; userpref.blend is written at build time, not baked
+        "blender-4.5.14-linux-x64.tar.xz",
+        "9ba871ff2ecd36526b77432745980b7e6664ecd0c7ca11c48849073dcfe06da3",
+        "ln -sf /opt/blender/blender /usr/local/bin/blender",
+        None,
+        None,
+        [],
+    ),
+    (
+        "freecad",  # tasks 103/104, which grade through freecadcmd
+        "FreeCAD_1.1.3-Linux-x86_64-py311.AppImage",
+        "3a853eb69ee595f779f2255dbf80a765926981d8ff68903cefee4dfb03a8f5ef",
+        ".copy('freecad-launcher.sh', '/usr/local/bin/freecad'",
+        "freecad-user.cfg",
+        "/home/user/.config/FreeCAD/v1-1/user.cfg",
+        # `FirstStart`, `FirstTime` and `ShowOnStartup` were each tried on a
+        # live guest and none suppressed the in-window "Welcome to FreeCAD"
+        # block; only the 2024-suffixed key does. Migration2024Complete is what
+        # keeps it: without it FreeCAD's 2024 settings migration rewrites the
+        # Start group on startup and drops FirstStart2024 entirely, so the
+        # suppression is gone before it is read. Proved by an A/B on a scratch
+        # sandbox - same file with and without this one key.
+        [
+            '<FCBool Name="Migration2024Complete" Value="1"/>',
+            '<FCBool Name="FirstStart2024" Value="0"/>',
+        ],
+    ),
+    (
+        "kicad",  # tasks 107/108; from task 107's own PPA, so no artifact to pin
+        None,
+        None,
+        "test -x /usr/bin/kicad",
+        "kicad-config",
+        "/home/user/.config/kicad/10.0",
+        # working_dir is whatever cwd KiCad was launched in and is where its
+        # file dialogs open; captured through the guest server it was
+        # /opt/osworld-server, which `user` cannot write and which tasks 107/108
+        # save files from. Both update nags are off because the ladder runs far
+        # longer than the launcher smoke. The library tables stop KiCad raising
+        # its own configure dialogs behind the Setup wizard.
+        [
+            '"working_dir": "/home/user"',
+            '"check_for_updates": false',
+            '"check_for_kicad_updates": false',
+            "/usr/share/kicad/template/sym-lib-table",
+            "/usr/share/kicad/template/fp-lib-table",
+            "/usr/share/kicad/template/design-block-lib-table",
+        ],
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "name, artifact, sha256, launcher, config, destination, decisive_keys",
+    VENDOR_APPLICATIONS,
+    ids=[row[0] for row in VENDOR_APPLICATIONS],
+)
+def test_template_pins_each_application_launcher_and_first_run_config(
+    name, artifact, sha256, launcher, config, destination, decisive_keys
+):
+    template = (ROOT / "template" / "template.ts").read_text()
+
+    assert "<PASTE_SHA256_HERE>" not in template
+    if artifact is not None:
+        assert re.fullmatch(r"[0-9a-f]{64}", sha256), name
+        assert artifact in template, name
+        assert sha256 in template, name
+    assert launcher in template, name
+    if config is None:
+        return
+    source = ROOT / "template" / "files" / config
+    assert source.exists(), name
+    # The bare filename alone would still pass if the destination drifted,
+    # which is the failure mode that matters: the file ships, nothing errors,
+    # and the dialog is back in front of the agent.
+    assert f".copy('{config}', '{destination}')" in template, name
+    paths = (
+        sorted(path for path in source.rglob("*") if path.is_file())
+        if source.is_dir()
+        else [source]
+    )
+    baked = "\n".join(path.read_text() for path in paths)
+    for key in decisive_keys:
+        assert key in baked, f"{name}: {key}"
+
+
+def test_template_build_gates_the_applications_apt_cannot_be_trusted_for():
+    template = (ROOT / "template" / "template.ts").read_text()
+    musescore = (ROOT / "template" / "files" / "musescore-launcher.sh").read_text()
+    freecad = (ROOT / "template" / "files" / "freecad-launcher.sh").read_text()
+
+    # jammy's musescore3 is a different application from the MuseScore Studio 4
+    # that wrote task 067's score.
+    assert "musescore3" not in template
+    assert not (ROOT / "template" / "files" / "MuseScore3.ini").exists()
+    assert "'apt-get install -y musescore3 shotcut freecad openboard'" not in template
+    # No apt path may (re-)introduce FreeCAD: jammy's apt freecad 0.19 is the
+    # package the KiCad PPA's libocct 7.6 breaks, so FreeCAD must come from the
+    # AppImage only.
+    assert not _apt_lines_naming_freecad(template)
+    assert "--appimage-extract" in template
+    assert "exec /opt/musescore/squashfs-root/AppRun" in musescore
+    assert "exec /opt/freecad/squashfs-root/AppRun" in freecad
+    # Mutable sources: hold what apt could upgrade out from under a task.
+    assert "apt-mark hold wps-office" in template
+    assert "apt-mark hold kicad" in template
+    assert "libtiff5" in template  # the bundled PDF engine links libtiff.so.5
+    assert "ppa:kicad/kicad-10.0-releases" in template  # task 107's own source
+    # tasks 103/104 grade by running `freecadcmd`, which apt FreeCAD supplied.
+    assert "ln -sfn /usr/local/bin/freecad /usr/local/bin/freecadcmd" in template
+    # Their extractor degrades silently to {"error": "numpy_unavailable"}, so
+    # the build must assert numpy under the AppImage's own bundled py311.
+    assert "freecadcmd -c 'import numpy;" in template
+    assert "grep -q NUMPY_OK" in template
+
+
+def test_blender_writes_its_own_userpref_and_leaves_no_cache_behind():
+    template = (ROOT / "template" / "template.ts").read_text()
+
+    # Blender writes userpref.blend in background mode rather than the repo
+    # committing a 173 KB binary blob; `show_splash = False` is the one setting
+    # that differs from factory defaults, so it must stay on that line.
+    assert "bpy.context.preferences.view.show_splash = False" in template
+    assert "bpy.ops.wm.save_userpref()" in template
+    assert "test -s /home/user/.config/blender/4.5/config/userpref.blend" in template
+    # The cache guard. Running Blender under HOME=/home/user leaves a ~/.cache
+    # behind, and build c324b7e4 shipped that directory and came up with a
+    # colord polkit modal over the whole desktop on every sandbox. The first
+    # version of this cleanup was `rmdir ... || true` - a no-op that removed
+    # nothing and failed nothing - so pin the asserting form. Comment lines are
+    # dropped first because the comment above these commands has to quote the
+    # discarded `rmdir` form.
+    code = "\n".join(
+        line for line in template.splitlines() if not line.lstrip().startswith("//")
+    )
+    cache_lines = [line.strip() for line in code.splitlines() if "/.cache" in line]
+    assert cache_lines == [
+        "'rm -rf /home/user/.cache',",
+        "'test ! -d /home/user/.cache',",
+    ], cache_lines
+    assert "rmdir" not in code
+
+
 def test_full_agent_coordinator_bounds_sandboxes_and_namespaces_task_service_ports():
     coordinator = (ROOT / "runner" / "run_agent_parallel.sh").read_text()
     aggregator = (ROOT / "runner" / "aggregate_agent.py").read_text()
 
     assert 'PARALLEL_CONCURRENCY="${PARALLEL_CONCURRENCY:-80}"' in coordinator
-    assert 'if [ "$PARALLEL_CONCURRENCY" -gt 80 ]; then' in coordinator
-    assert 'HOSTMAP_PORT="8090"' in coordinator
+    # The default stays 80; the hard cap is 120 for an operator who has
+    # confirmed the org quota (the account admitted 201 in the live probe).
+    assert 'if [ "$PARALLEL_CONCURRENCY" -gt 120 ]; then' in coordinator
+    assert "start_host_proxy " in coordinator
     assert 'task_id" = "082"' in coordinator
     assert 'task_service_ports="3000:3000"' in coordinator
     assert "OSWORLD_TASK_082_HOST_PORT" not in coordinator
@@ -607,6 +817,20 @@ def test_template_build_smoke_covers_ipv4_and_ipv6_protected_ranges():
         assert cidr in build
 
 
+def test_slide_evaluators_have_pdf_renderer_installed_and_build_gated():
+    template = (ROOT / "template" / "template.ts").read_text()
+    build = (ROOT / "template" / "build.ts").read_text()
+
+    # Tasks 079/087 require this renderer for slide-based scoring.
+    assert re.search(r"apt-get install[^\n]*\bpoppler-utils\b", template)
+    launchers = build.split("const launchers = [", 1)[1].split("]", 1)[0]
+    assert "'pdftoppm'" in launchers
+    required_packages = re.search(r"for p in ([^;]+); do", build).group(1).split()
+    assert "poppler-utils" in required_packages
+    assert 'echo \\"MISSING_PACKAGE $p\\"' in build
+    assert "throw new Error(`application inventory smoke failed:" in build
+
+
 def test_guest_server_dependency_contract_excludes_broken_anyio_release():
     requirements = {
         name.lower(): version
@@ -625,11 +849,80 @@ def test_host_proxy_readiness_is_shared_and_bounded():
     common = (ROOT / "runner/common.sh").read_text()
     assert "wait_for_hostmap_proxy()" in common
     assert "--connect-timeout 2 --max-time 5" in common
+    # start_host_proxy is the only caller, so every script gets the same
+    # bounded readiness poll instead of a curl loop of its own.
+    assert 'wait_for_hostmap_proxy "$proxy_pid" "$cookie" "$logfile"' in common
     for script in (
         "runner/run_agent_parallel.sh",
         "maintainer/validate.sh",
         "maintainer/validate_parallel.sh",
     ):
         text = (ROOT / script).read_text()
-        assert "wait_for_hostmap_proxy" in text, script
-        assert "api/state?cookie=" not in text, script  # no private curl loops left
+        assert "start_host_proxy " in text, script
+        assert "wait_for_hostmap_proxy" not in text, script
+        # The coordinator's fleet-liveness curl is the only direct probe left
+        # anywhere; nothing re-implements readiness.
+        assert text.count("api/state?cookie=") == text.count(
+            "api/state?cookie=liveness"
+        ), script
+    # Both liveness probes are bounded like the readiness one: an unbounded
+    # curl would wedge the watchdog that also restarts the proxy.
+    coordinator = (ROOT / "runner/run_agent_parallel.sh").read_text()
+    assert coordinator.count("--connect-timeout 2 --max-time 5") == 2
+
+
+def test_template_bakes_vnc_units_disabled_and_nss_trust_tooling():
+    template = (ROOT / "template" / "template.ts").read_text()
+    x11vnc = (ROOT / "template" / "files" / "x11vnc.service").read_text()
+    novnc = (ROOT / "template" / "files" / "novnc.service").read_text()
+
+    for pkg in ("x11vnc", "novnc", "websockify", "libnss3-tools"):
+        assert f"'{pkg}'" in template, pkg
+    assert ".copy('x11vnc.service', '/etc/systemd/user/x11vnc.service')" in template
+    assert ".copy('novnc.service', '/etc/systemd/user/novnc.service')" in template
+    assert "systemctl --user enable" not in template
+    assert "-localhost" in x11vnc and "-rfbport 5900" in x11vnc
+    assert "--web /usr/share/novnc 6080 localhost:5900" in novnc
+    assert "certutil -N -d sql:/home/user/.pki/nssdb --empty-password" in template
+    # The db must be created before the final recursive chown, or it stays
+    # root-owned and Chrome cannot read the trust store the bridge writes the
+    # campaign CA into. Ordering, not mere presence.
+    nssdb_dir = template.index("'mkdir -p /home/user/.pki/nssdb'")
+    nssdb_init = template.index(
+        "'certutil -N -d sql:/home/user/.pki/nssdb --empty-password'"
+    )
+    final_chown = template.index("'chown -R user:user /opt/osworld-server /home/user'")
+    assert nssdb_dir < final_chown
+    assert nssdb_init < final_chown
+
+
+def test_host_proxy_is_started_with_tls_and_probed_over_https():
+    # One starter, in common.sh: three inline copies of the env line drifted
+    # apart and had to be kept in step by hand.
+    common = (ROOT / "runner" / "common.sh").read_text()
+    assert "start_host_proxy()" in common
+    assert 'HOSTMAP_PORT="8090" HOSTMAP_TLS_PORTS="8090"' in common
+    assert (
+        'HOSTMAP_TLS_CERT="$HOSTMAP_TLS_CERT" HOSTMAP_TLS_KEY="$HOSTMAP_TLS_KEY"'
+        in common
+    )
+    assert '$UV python "$SERVICES_DIR/hostmap_proxy.py"' in common
+    for script in (
+        "runner/run_agent_parallel.sh",
+        "maintainer/validate.sh",
+        "maintainer/validate_parallel.sh",
+    ):
+        text = (ROOT / script).read_text()
+        assert "start_host_proxy " in text, script
+        assert "HOSTMAP_PORT=" not in text, script  # no inline copy left behind
+        assert "hostmap_proxy.py" not in text, script
+        assert "export_fleet_wiring" in text, script
+    assert (
+        'curl -fsS --connect-timeout 2 --max-time 5 --cacert "$OSWORLD_CA_CERT"'
+        in common
+    )
+    # --resolve makes curl present the site name as SNI and Host so the leaf's
+    # SAN matches; connecting to the bare IP would fail certificate verification.
+    assert "--resolve 'mailhub.127.0.0.1.nip.io:8090:127.0.0.1'" in common
+    assert '"https://mailhub.127.0.0.1.nip.io:8090/api/state?cookie=$cookie"' in common
+    assert "export REQUESTS_CA_BUNDLE SSL_CERT_FILE" in common

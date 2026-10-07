@@ -1,0 +1,40 @@
+{
+  "cap_usd": 160,
+  "user_limit_usd": 200,
+  "pricing_source": "https://platform.claude.com/docs/en/about-claude/pricing",
+  "description": "Before each request reserve the full context and max output cost; retain reservations for failed or unmeasured calls; settle only measured calls. Keys and prompts are not logged.",
+  "models": {
+    "anthropic.claude-haiku-4-5": {
+      "rates_usd_per_million": {
+        "input": 1.1,
+        "output": 5.5,
+        "cache_write": 2.2,
+        "cache_read": 0.11
+      },
+      "reservation": {
+        "context_tokens": 200000,
+        "input_rate": 2.5,
+        "output_rate": 6
+      }
+    },
+    "anthropic.claude-sonnet-5": {
+      "rates_usd_per_million": {
+        "input": 2.2,
+        "output": 11.0,
+        "cache_write": 4.4,
+        "cache_read": 0.22
+      },
+      "reservation": {
+        "context_tokens": 1000000,
+        "input_rate": 5,
+        "output_rate": 12
+      }
+    }
+  },
+  "pricing_note": "Estimate uses published standard prices plus 10% regional allowance; cache writes conservatively use one-hour pricing. This is not an AWS billing invoice.",
+  "scope": "All sample attempts, live model checks, judge and simulator controls, and request-validation probes in this campaign.",
+  "requests": 830,
+  "estimated_measured_usd": 55.248202,
+  "retained_uncertain_reservations_usd": 40.36864,
+  "accounted_usd": 95.616842
+}

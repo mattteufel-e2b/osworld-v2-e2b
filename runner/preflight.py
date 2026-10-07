@@ -128,6 +128,7 @@ def main() -> int:
             "sites",
         ),
         "gitlab": ("sandbox_id", "template", "traffic_token", "url", "private_token"),
+        "tls": ("campaign_id", "hosts", "ca_cert", "leaf_cert", "leaf_key", "bundle"),
     }
     campaign_id = os.environ.get("OSWORLD_CAMPAIGN_ID")
     if not campaign_id:
@@ -141,8 +142,17 @@ def main() -> int:
             fail(
                 f"service runtime {section} missing required fields: {', '.join(missing)}"
             )
+        # tls carries campaign_id too, so this generic check also confirms the
+        # campaign CA/leaf material belongs to the current campaign.
         if value.get("campaign_id") != campaign_id:
             fail(f"service runtime {section} belongs to a different campaign")
+
+    require_private_file(Path(runtime["tls"]["leaf_key"]), "campaign leaf key")
+    # The CA key path is deliberately not published in the `tls` section (see
+    # campaign_tls.ensure_campaign_tls); it always lives next to ca_cert as
+    # ca.key, so derive it rather than trusting an extra runtime field.
+    ca_key_path = Path(runtime["tls"]["ca_cert"]).with_name("ca.key")
+    require_private_file(ca_key_path, "campaign CA key")
 
     if not token_path.read_text().strip():
         fail(f"GitLab token file is empty: {token_path}")
@@ -192,6 +202,17 @@ def main() -> int:
     ]
     if missing_tasks:
         fail(f"gated task files missing for ids: {', '.join(missing_tasks)}")
+
+    if (
+        "092" in selected
+        and os.environ.get("OSWORLD_EVAL_MODEL_MODE") != "stub"
+        and not os.environ.get("OPENAI_API_KEY")
+    ):
+        fail(
+            "task 092 requires OPENAI_API_KEY for its legacy video-judge presence check; "
+            "with an explicitly configured non-OpenAI judge, set it to "
+            "bedrock-legacy-presence-only"
+        )
 
     if "082" in selected:
         probe = socket.socket()

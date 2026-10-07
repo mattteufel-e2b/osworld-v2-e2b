@@ -1,0 +1,423 @@
+{
+  "campaign_id": "osworld-v2-native-parity-20260920",
+  "configuration": {
+    "campaign_id": "osworld-v2-native-parity-20260920",
+    "guest_template": "osworld-v2-gnome:cd4a1a63-eb56-418f-9ac3-60fbbf2b838e",
+    "fleet_template": "osworld-v2-fleet-base:76176a74-7195-4216-968a-7c8cd98360b7",
+    "task_ids": [
+      "008",
+      "030",
+      "041",
+      "079",
+      "087",
+      "092"
+    ],
+    "agent_kind": "claude",
+    "model": "anthropic.claude-opus-5",
+    "judge_model": "anthropic.claude-haiku-4-5",
+    "simulator_model": "anthropic.claude-haiku-4-5",
+    "max_steps": 500,
+    "effort": "max",
+    "max_tokens": 16000,
+    "parallel_concurrency": 6,
+    "action_pause_s": 0,
+    "deadline_s": 28800,
+    "user_budget_usd": 125,
+    "budget_guard_usd": 124,
+    "budget_scope": "fresh allocation for this requested campaign, separate from previous samples",
+    "automatic_task_retries": 0,
+    "reference_vm_comparison": false,
+    "legacy_openai_presence_gate": "Non-secret sentinel; task092 visual-evaluator presence gate only. Agent, judge, and simulator credentials explicitly routed to Bedrock guard.",
+    "reference_limitations": [
+      "No matched reference VM run available.",
+      "Upstream launcher uses Sonnet4.6, absent from tested Bedrock catalog.",
+      "Haiku judge differs from upstream Sonnet4.6.",
+      "No inline150/300checkpoint evaluations."
+    ],
+    "harness_commit": "00dda3cdc01c06709879f1ba9dc30c743b7d25aa",
+    "initial_budget_guard_usd": 120
+  },
+  "results": [
+    {
+      "id": "008",
+      "path_status": "OK",
+      "score": 0.9091,
+      "steps_taken": 447,
+      "wall_clock_s": 4294.1,
+      "evaluator_ran": true,
+      "transport_ok": true,
+      "eval_model_call_attempts": 17,
+      "eval_model_successes": 17,
+      "user_sim_call_attempts": 0,
+      "user_sim_successes": 0,
+      "error_cause": null
+    },
+    {
+      "id": "030",
+      "path_status": "OK",
+      "score": 1.0,
+      "steps_taken": 124,
+      "wall_clock_s": 2940.1,
+      "evaluator_ran": true,
+      "transport_ok": true,
+      "eval_model_call_attempts": 0,
+      "eval_model_successes": 0,
+      "user_sim_call_attempts": 0,
+      "user_sim_successes": 0,
+      "error_cause": null
+    },
+    {
+      "id": "041",
+      "path_status": "OK",
+      "score": 0.8215,
+      "steps_taken": 135,
+      "wall_clock_s": 1784.6,
+      "evaluator_ran": true,
+      "transport_ok": true,
+      "eval_model_call_attempts": 1,
+      "eval_model_successes": 1,
+      "user_sim_call_attempts": 0,
+      "user_sim_successes": 0,
+      "error_cause": null
+    },
+    {
+      "id": "079",
+      "path_status": "ERROR",
+      "score": null,
+      "steps_taken": 265,
+      "wall_clock_s": 5586.5,
+      "evaluator_ran": false,
+      "transport_ok": true,
+      "eval_model_call_attempts": 0,
+      "eval_model_successes": 0,
+      "user_sim_call_attempts": 0,
+      "user_sim_successes": 0,
+      "error_cause": "interrupted"
+    },
+    {
+      "id": "087",
+      "path_status": "OK",
+      "score": 0.64,
+      "steps_taken": 171,
+      "wall_clock_s": 3346.8,
+      "evaluator_ran": true,
+      "transport_ok": true,
+      "eval_model_call_attempts": 3,
+      "eval_model_successes": 3,
+      "user_sim_call_attempts": 0,
+      "user_sim_successes": 0,
+      "error_cause": null
+    },
+    {
+      "id": "092",
+      "path_status": "OK",
+      "score": 1.0,
+      "steps_taken": 151,
+      "wall_clock_s": 2333.9,
+      "evaluator_ran": true,
+      "transport_ok": true,
+      "eval_model_call_attempts": 1,
+      "eval_model_successes": 1,
+      "user_sim_call_attempts": 0,
+      "user_sim_successes": 0,
+      "error_cause": null
+    }
+  ],
+  "inference_accounting": {
+    "user_budget_usd": 125,
+    "guard_usd": 124,
+    "estimated_usd": 116.054094,
+    "unsettled_requests": 0,
+    "models": {
+      "anthropic.claude-haiku-4-5": {
+        "requests": 26,
+        "estimated_usd": 0.046434,
+        "input_tokens": 40108,
+        "output_tokens": 421,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0
+      },
+      "anthropic.claude-opus-5": {
+        "requests": 1294,
+        "estimated_usd": 116.00766,
+        "input_tokens": 2588,
+        "output_tokens": 632261,
+        "cache_creation_input_tokens": 6373750,
+        "cache_read_input_tokens": 99612213
+      }
+    },
+    "method": "Provider-reported usage, official token/cache TTL rates, plus 10% margin; not an AWS invoice. Fresh allocation separate from earlier samples.",
+    "pricing_source": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "cache_telemetry_note": "Workers started before cache-token receipt fix; guard ledger retains complete cache usage. Older per-task receipts cannot reconstruct per-task cache charges."
+  },
+  "resource_profiles": [
+    {
+      "task_id": "008",
+      "aggregate": {
+        "cpu_cores_used_peak": 1.553,
+        "cpu_count": 4,
+        "cpu_saturated": false,
+        "cpu_used_pct_of_allocation_peak": 38.82,
+        "disk_pressure": false,
+        "disk_total_bytes": 114839875584,
+        "disk_total_gib": 106.953,
+        "disk_used_bytes_peak": 17960300544,
+        "disk_used_gib_peak": 16.727,
+        "mem_pressure": false,
+        "mem_total_bytes": 8343158784,
+        "mem_total_gib": 7.77,
+        "mem_used_bytes_peak": 2207006720,
+        "mem_used_gib_peak": 2.055,
+        "profiled_sandbox_count": 1
+      },
+      "flags": []
+    },
+    {
+      "task_id": "030",
+      "aggregate": {
+        "cpu_cores_used_peak": 4.0,
+        "cpu_count": 4,
+        "cpu_saturated": true,
+        "cpu_used_pct_of_allocation_peak": 100.0,
+        "disk_pressure": false,
+        "disk_total_bytes": 114839875584,
+        "disk_total_gib": 106.953,
+        "disk_used_bytes_peak": 19826581504,
+        "disk_used_gib_peak": 18.465,
+        "mem_pressure": false,
+        "mem_total_bytes": 8343158784,
+        "mem_total_gib": 7.77,
+        "mem_used_bytes_peak": 2627133440,
+        "mem_used_gib_peak": 2.447,
+        "profiled_sandbox_count": 1
+      },
+      "flags": [
+        "cpu_saturated"
+      ]
+    },
+    {
+      "task_id": "041",
+      "aggregate": {
+        "cpu_cores_used_peak": 3.082,
+        "cpu_count": 4,
+        "cpu_saturated": false,
+        "cpu_used_pct_of_allocation_peak": 77.04,
+        "disk_pressure": false,
+        "disk_total_bytes": 114839875584,
+        "disk_total_gib": 106.953,
+        "disk_used_bytes_peak": 17960218624,
+        "disk_used_gib_peak": 16.727,
+        "mem_pressure": false,
+        "mem_total_bytes": 8343158784,
+        "mem_total_gib": 7.77,
+        "mem_used_bytes_peak": 1590775808,
+        "mem_used_gib_peak": 1.482,
+        "profiled_sandbox_count": 1
+      },
+      "flags": []
+    },
+    {
+      "task_id": "079",
+      "aggregate": {
+        "cpu_cores_used_peak": 3.186,
+        "cpu_count": 4,
+        "cpu_saturated": false,
+        "cpu_used_pct_of_allocation_peak": 79.64,
+        "disk_pressure": false,
+        "disk_total_bytes": 114839875584,
+        "disk_total_gib": 106.953,
+        "disk_used_bytes_peak": 18050654208,
+        "disk_used_gib_peak": 16.811,
+        "mem_pressure": false,
+        "mem_total_bytes": 8343158784,
+        "mem_total_gib": 7.77,
+        "mem_used_bytes_peak": 2364977152,
+        "mem_used_gib_peak": 2.203,
+        "profiled_sandbox_count": 1
+      },
+      "flags": []
+    },
+    {
+      "task_id": "087",
+      "aggregate": {
+        "cpu_cores_used_peak": 1.325,
+        "cpu_count": 4,
+        "cpu_saturated": false,
+        "cpu_used_pct_of_allocation_peak": 33.13,
+        "disk_pressure": false,
+        "disk_total_bytes": 114839875584,
+        "disk_total_gib": 106.953,
+        "disk_used_bytes_peak": 17958535168,
+        "disk_used_gib_peak": 16.725,
+        "mem_pressure": false,
+        "mem_total_bytes": 8343158784,
+        "mem_total_gib": 7.77,
+        "mem_used_bytes_peak": 1612603392,
+        "mem_used_gib_peak": 1.502,
+        "profiled_sandbox_count": 1
+      },
+      "flags": []
+    },
+    {
+      "task_id": "092",
+      "aggregate": {
+        "cpu_cores_used_peak": 3.707,
+        "cpu_count": 4,
+        "cpu_saturated": true,
+        "cpu_used_pct_of_allocation_peak": 92.68,
+        "disk_pressure": false,
+        "disk_total_bytes": 114839875584,
+        "disk_total_gib": 106.953,
+        "disk_used_bytes_peak": 17741541376,
+        "disk_used_gib_peak": 16.523,
+        "mem_pressure": false,
+        "mem_total_bytes": 8343158784,
+        "mem_total_gib": 7.77,
+        "mem_used_bytes_peak": 3929841664,
+        "mem_used_gib_peak": 3.66,
+        "profiled_sandbox_count": 1
+      },
+      "flags": [
+        "cpu_saturated"
+      ]
+    }
+  ],
+  "source_receipts": [
+    {
+      "path": "out/osworld-v2-raw/native-parity-20260920/agent-raw/workers/task_008.json",
+      "sha256": "4ab55d0a44c748bc4eccb577daa71f0ef085e6ae8c637bdd0be21dbfb6392721"
+    },
+    {
+      "path": "out/osworld-v2-raw/native-parity-20260920/agent-raw/workers/task_030.json",
+      "sha256": "1a8c80d55eae53b425231e686dcf758f341d0699960e7577e6225e67ae05c0ca"
+    },
+    {
+      "path": "out/osworld-v2-raw/native-parity-20260920/agent-raw/workers/task_041.json",
+      "sha256": "6cddcb706bb54efaae89954a5bf86eee3803affefb6df48157ad4dc7e656871c"
+    },
+    {
+      "path": "out/osworld-v2-raw/native-parity-20260920/agent-raw/workers/task_079.json",
+      "sha256": "84e1af77ced2de4fdcee11ceea6a4a8670e0a3c95c4a8d2adafb0cd3a6d31a99"
+    },
+    {
+      "path": "out/osworld-v2-raw/native-parity-20260920/agent-raw/workers/task_087.json",
+      "sha256": "1f141849b836e91dde8022c7a4db6e0d8765f44d8e3a57da16f39c445193f952"
+    },
+    {
+      "path": "out/osworld-v2-raw/native-parity-20260920/agent-raw/workers/task_092.json",
+      "sha256": "a760eb4432e720c235cda28276a31928c3ad7e52c67669f830a9d5ce949f547b"
+    }
+  ],
+  "comparison_limits": [
+    "No matched reference VM run available.",
+    "Upstream launcher uses Sonnet4.6, absent from tested Bedrock catalog.",
+    "Haiku judge differs from upstream Sonnet4.6.",
+    "No inline150/300checkpoint evaluations.",
+    "Requested Bauhaus 93 font absent; agent used Radis Sans for task092.",
+    "Blender4.5.14LTS differs from upstream image-building recipe5.0.0; pinned reference AMI inventory unverified.",
+    "WPS symbol-font substitution remains documented.",
+    "Complete108-task evaluator ladder has not been rerun on this immutable guest.",
+    "Sample requested6workers; budget reservation queuing and recorded worker pauses prevent full-agent throughput conclusions.",
+    "Native Unicode typing retains upstream Ctrl+V, which does not paste in the default GNOME Terminal; the clipboard pipe repair preserves this agent behavior.",
+    "CountTokens preflight returned HTTP403: this key lacks bedrock-mantle:CountTokens. Full-context reservations can stop inference below the dollar allocation."
+  ],
+  "execution_repairs": {
+    "rollouts_precede_repairs": true,
+    "native_wait_control": "wait-control.json",
+    "native_clipboard_control": "native-clipboard-control.json",
+    "full_task_rerun_after_repairs": false
+  },
+  "budget_stop": {
+    "task_id": "079",
+    "observed_at": "2026-09-21T04:39:30Z",
+    "reason": "Budget guard rejected the next full-context Opus request; operator stops the worker to avoid upstream permanent-error retries.",
+    "estimated_usd": 116.0540942,
+    "guard_usd": 124,
+    "user_budget_usd": 125,
+    "next_opus_reservation_usd": 7.98,
+    "unsettled_requests": 0,
+    "completed_actions": 265,
+    "agent_completion_forced": false,
+    "evaluator_invoked_by_operator": false
+  },
+  "cleanup": {
+    "verified_at": "2026-09-21T04:39:43Z",
+    "campaign_live_sandboxes": 0,
+    "unsettled_model_requests": 0,
+    "local_ports_listening": {
+      "8090": false,
+      "18091": false
+    },
+    "budget_proxy_stopped": true,
+    "all_worker_receipts_present": true
+  },
+  "guard_maintenance": [
+    {
+      "purpose": "Admission-queue guard replacement without cancelling Bedrock requests",
+      "started_at": 1789961274.9217012,
+      "finished_at": 1789961281.76041,
+      "pause_s": 6.839,
+      "cap_usd": 120,
+      "replaced": true,
+      "inflight_at_replacement": 0,
+      "active_request_sockets_at_replacement": 0
+    },
+    {
+      "purpose": "TTL-aware cache settlement at verified rates; cap and reservations unchanged",
+      "started_at": 1789962576.830712,
+      "finished_at": 1789962578.566238,
+      "pause_s": 1.736,
+      "cap_usd": 120,
+      "replaced": true,
+      "inflight_at_replacement": 0,
+      "active_request_sockets_at_replacement": 0,
+      "accounted_before_usd": 81.60030175,
+      "repriced_requests": 940,
+      "accounted_after_usd": 66.513799,
+      "pricing_source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    {
+      "purpose": "Use the authorized $125 allocation with a $124 hard guard and unchanged 10% pricing margin",
+      "started_at": 1789963950.6816099,
+      "finished_at": 1789963977.3887281,
+      "pause_s": 26.707,
+      "cap_usd": 124,
+      "replaced": true,
+      "inflight_at_replacement": 0,
+      "active_request_sockets_at_replacement": 0
+    },
+    {
+      "purpose": "Reserve full context at the documented five-minute cache ceiling; retain $124 cap and conservative one-hour fallback",
+      "started_at": 1789965059.4922209,
+      "finished_at": 1789965131.09278,
+      "pause_s": 71.601,
+      "cap_usd": 124,
+      "replaced": true,
+      "inflight_at_replacement": 0,
+      "active_request_sockets_at_replacement": 0,
+      "opus_five_minute_reservation_usd": 7.98,
+      "opus_other_reservation_usd": 12.48,
+      "cache_policy_source": "https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html"
+    }
+  ],
+  "worker_pause_total_s": 106.883,
+  "final_code_validation": {
+    "harness_commit": "15170de",
+    "tests_passed": 518,
+    "subtests_passed": 2,
+    "tests_skipped": 0,
+    "lint_passed": true,
+    "format_check_passed": true,
+    "shell_syntax_passed": true,
+    "pinned_checkout_verified": true,
+    "full_rollout_after_execution_repairs": false
+  },
+  "task_audits": {
+    "008": "task-008-audit.json",
+    "030": "task-030-audit.json",
+    "041": "task-041-audit.json",
+    "079": "task-079-audit.json",
+    "087": "task-087-audit.json",
+    "092": "task-092-artifact-audit.json"
+  }
+}
